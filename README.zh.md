@@ -28,11 +28,28 @@ agent 执行真实 workflow 前，需要先配置运行时设置。请通过应�
 
 金融数据设置包括：
 
-- 仅为需要使用的 provider 配置凭证。
-- 数据源选项，例如 Wind、Tushare、搜索 provider、雪球模拟交易、yfinance / Yahoo Finance 和 TradingView。
+- 仅为需要使用的 provider 配置凭证。对个人研究型金融工作台 来说，最困难的通常不是 LLM 本身，而是数据：如何取得数据、验证 provider 是否返回了预期 schema、区分 source time 和 fetch time，并在再次访问外部 provider 前优先复用已验证的本地数据。
+- 数据源应被视为受治理的 provider path，而不是匿名 fallback blob。只配置当前 workflow 实际使用的 provider。
 - 当本地网络需要时，配置可选代理。
-- 对依赖海外网站的 provider，需要全局网络访问或可用代理，尤其是 yfinance / Yahoo Finance 和 TradingView。
 - 用于 session、memory、generated dashboards、local cache、provider evidence、logs 和 user-created artifacts 的运行时数据目录。
+
+数据源对比：
+
+| 来源组 | 最适合用途 | 主要边界 | Provenance 处理 |
+|---|---|---|---|
+| 本地读回 / SQLite | 复用已验证数据、dashboard、report、strategy rerun 和类离线连续性 | 只有 freshness 和 coverage 满足 workflow 时才有效 | 优先使用；展示 cache status、source time、fetch time、provider 和 schema/table。 |
+| TDX / gotdx | A 股 quote、K-line、指数、tick、逐笔和市场结构数据 | 依赖本地 gotdx/runtime health；接口编码与 schema 强相关 | 持久化已注册 schema，并在 API Health 分类 runtime 或 transport failure。 |
+| EastMoney / AkShare | A 股、基金、板块、热榜、新闻、排名、资金流和市场结构公开数据 | sidecar/route health 与 wrapper 行为可能变化 | 通过 provider-specific adapter 归一化；区分 invalid-parameter 与 transport failure。 |
+| Sina / Tencent | 额外公开 A 股 quote/K-line/ranking 覆盖和 fallback 多样性 | 公开 endpoint 有选择性，不能假设完整覆盖 | 只注册已验证 capability，unsupported row 不进入正常 routing。 |
+| Wind / AIFinMarket | 授权专业数据、宏观、基本面、文档和高级金融数据 | 受 credential、quota 和 permission 约束 | 优先 cache/readback；live refresh 前展示额度、权限和凭证状态。 |
+| Tushare Pro | 当前 token 有权限的 A 股结构化参考数据 | endpoint 权限随账号变化 | 禁用 unsupported endpoint，权限失败后避免反复重试。 |
+| yfinance / Yahoo Finance | 全球标的、跨市场上下文、profile、options、actions、holders 和 news | 需要 Python sidecar 与全局网络或代理 | 持久化 typed global dataset；不替代中国 A 股主 provider。 |
+| 搜索、宏观和研究页面 | 叙事解释、宏观归因、事件上下文和来源发现 | 不自动等同于 canonical market data | 在支持时记录 source/date/hash；只有稳定 schema 才提升为可复用表。 |
+
+凭证与访问方式表：
+
+| 数据源 | 是否需要 key | 获取 / 配置位置 | 主要用途 |
+|---|---|---|---|
 
 服务依赖包括：
 
@@ -42,6 +59,18 @@ agent 执行真实 workflow 前，需要先配置运行时设置。请通过应�
 - 缺少凭证应只阻断对应的受限 provider 路径；本地读回和公共数据源工作流仍应可用。
 
 会话、仪表盘、生成报告、日志、缓存、memory、cookie 和 API key 等运行时数据应存放在仓库外部。
+
+## 设计指南
+
+设计指南是源码合同的一部分，并随对应代码领域出现而加入。新增或实质修改设计指南时，应在同一个源码变更 commit 中更新 `README.md` 和 `README.zh.md`，使 README 描述该历史节点的代码状态。
+
+英文：
+
+- `docs/design/data-provenance/data-provenance-design-guide.md`
+
+中文：
+
+- `docs/design/data-provenance/data-provenance-design-guide.zh.md`
 
 ## 开发
 

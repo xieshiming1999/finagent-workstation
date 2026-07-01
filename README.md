@@ -28,11 +28,28 @@ Minimum model settings:
 
 Finance data settings:
 
-- Provider credentials only for providers you intend to use.
-- Data source options such as Wind, Tushare, search providers, Xueqiu simulated trading, yfinance/Yahoo Finance, and TradingView.
+- Provider credentials only for providers you intend to use. A personal research finance workstation usually fails first on data access, not on the LLM: the hard work is retrieving data, proving the provider returned the expected schema, preserving source time separately from fetch time, and reusing verified local rows before spending another external call.
+- Data source options should be treated as governed provider paths, not anonymous fallback blobs. Configure only the providers used by your workflow.
 - Optional local proxy settings when your network requires them.
-- Global web access or a working proxy for providers that depend on overseas web services, especially yfinance/Yahoo Finance and TradingView.
 - Runtime data directory for sessions, memory, generated dashboards, local cache, provider evidence, logs, and user-created artifacts.
+
+Data-source comparison:
+
+| Source group | Best use | Main boundary | Provenance treatment |
+|---|---|---|---|
+| Local readback / SQLite | Reusing previously verified rows, dashboards, reports, strategy reruns, and offline-ish continuity | Only valid when freshness and coverage match the workflow | Prefer first; show cache status, source time, fetch time, provider, and schema/table. |
+| TDX / gotdx | A-share quote, K-line, index, tick, transactions, and market-structure data | Requires local gotdx/runtime health; endpoint encodings are schema-specific | Persist registered schemas and classify runtime or transport failures in API Health. |
+| EastMoney / AkShare | A-share, fund, sector, hot-list, news, ranking, flow, and market-structure public data | Sidecar/route health and wrapper behavior can drift | Normalize through provider-specific adapters; keep invalid-parameter and transport failures separate. |
+| Sina / Tencent | Extra public A-share quote/K-line/ranking coverage and fallback diversity | Public endpoints are selective and should not be assumed complete | Register only verified capabilities and keep unsupported rows out of normal routing. |
+| Wind / AIFinMarket | Licensed professional, macro, fundamental, document, and advanced finance data | Credential, quota, and permission gated | Prefer cache/readback; expose quota, permission, and credential status before live refresh. |
+| Tushare Pro | Structured A-share reference data when the token has permission | Endpoint permissions vary by account | Disable unsupported endpoints and avoid retry loops after permission failure. |
+| yfinance / Yahoo Finance | Global instruments, cross-market context, profile, options, actions, holders, and news | Needs Python sidecar plus global web access or proxy | Persist typed global datasets; do not replace China A-share primary providers. |
+| Search, macro, and research pages | Narrative explanation, macro attribution, event context, and source discovery | Not automatically canonical market data | Store evidence with source/date/hash where supported; promote only stable schemas into reusable tables. |
+
+Credential and access matrix:
+
+| Data source | Key required | Where to get / configure | Main use |
+|---|---|---|---|
 
 Service dependencies:
 
@@ -42,6 +59,18 @@ Service dependencies:
 - Missing credentials should block only the credentialed provider path; local readback and public-source workflows should remain usable.
 
 Runtime data such as sessions, dashboards, generated reports, logs, cache, memory, cookies, and API keys belongs outside this repository.
+
+## Design Guides
+
+Design guides are part of the source contract. They are added as the corresponding code domains appear. When a design guide is added or materially changed, update both `README.md` and `README.zh.md` in the same source-change commit so the README describes the code at that point in history.
+
+English:
+
+- `docs/design/data-provenance/data-provenance-design-guide.md`
+
+Chinese:
+
+- `docs/design/data-provenance/data-provenance-design-guide.zh.md`
 
 ## Development
 
