@@ -1,0 +1,78 @@
+<!DOCTYPE html>
+<html lang="zh">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>{{TITLE}}</title>
+<style>
+:root {
+  --bg: #131722; --bg-card: #1e222d; --bg-hover: #2a2e39; --border: #2a2e39;
+  --text: #d1d4dc; --text-dim: #787b86; --text-bright: #f0f3fa;
+  --accent: #2962ff; --green: #26a69a; --red: #ef5350; --yellow: #ffc107;
+  --radius: 6px; --font: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, sans-serif;
+}
+* { margin: 0; padding: 0; box-sizing: border-box; }
+html, body { background: var(--bg); color: var(--text); font-family: var(--font); font-size: 13px; line-height: 1.6; }
+.container { max-width: 720px; margin: 0 auto; padding: 16px; }
+.header { margin-bottom: 16px; padding-bottom: 12px; border-bottom: 1px solid var(--border); }
+.title { font-size: 18px; font-weight: 700; color: var(--text-bright); }
+.subtitle { font-size: 12px; color: var(--text-dim); margin-top: 4px; }
+.section { margin-bottom: 16px; }
+.section-title { font-size: 14px; font-weight: 600; color: var(--text-bright); margin-bottom: 8px; padding-left: 8px; border-left: 3px solid var(--accent); }
+.pnl-card { display: flex; gap: 12px; margin-bottom: 12px; }
+.pnl-item { flex: 1; background: var(--bg-card); border: 1px solid var(--border); border-radius: var(--radius); padding: 12px; text-align: center; }
+.pnl-label { font-size: 11px; color: var(--text-dim); }
+.pnl-value { font-size: 20px; font-weight: 700; margin-top: 4px; }
+.pnl-up { color: var(--green); }
+.pnl-down { color: var(--red); }
+.stock-row { display: flex; align-items: center; padding: 8px 12px; background: var(--bg-card); border: 1px solid var(--border); border-radius: var(--radius); margin-bottom: 6px; }
+.stock-name { font-weight: 600; font-size: 13px; color: var(--text-bright); flex: 1; }
+.stock-change { font-weight: 700; font-size: 14px; min-width: 60px; text-align: right; }
+.stock-note { font-size: 11px; color: var(--text-dim); margin-left: 12px; }
+.insight { background: var(--bg-card); border: 1px solid var(--border); border-radius: var(--radius); padding: 12px; margin-bottom: 8px; font-size: 13px; line-height: 1.7; }
+</style>
+</head>
+<body>
+<div class="container" id="content"><div style="color:var(--text-dim);text-align:center;padding:40px;">Loading...</div></div>
+<script>
+var CONFIG = { title: "Weekly Report", period: "", summary: {}, holdings: [], signals: [], reflections: [], outlook: "" };
+function render() {
+  var c = document.getElementById('content');
+  var h = '<div class="header"><div class="title">' + CONFIG.title + '</div>';
+  if (CONFIG.period) h += '<div class="subtitle">' + CONFIG.period + '</div>';
+  h += '</div>';
+  if (CONFIG.summary) {
+    h += '<div class="section"><div class="section-title">本周概况</div><div class="pnl-card">';
+    var s = CONFIG.summary;
+    h += '<div class="pnl-item"><div class="pnl-label">本周收益</div><div class="pnl-value ' + ((s.weekReturn||0)>=0?'pnl-up':'pnl-down') + '">' + (s.weekReturn||'—') + '</div></div>';
+    h += '<div class="pnl-item"><div class="pnl-label">累计收益</div><div class="pnl-value ' + ((s.totalReturn||0)>=0?'pnl-up':'pnl-down') + '">' + (s.totalReturn||'—') + '</div></div>';
+    h += '<div class="pnl-item"><div class="pnl-label">持仓数</div><div class="pnl-value" style="color:var(--text-bright)">' + (s.holdingCount||0) + '</div></div>';
+    h += '</div></div>';
+  }
+  if (CONFIG.holdings && CONFIG.holdings.length) {
+    h += '<div class="section"><div class="section-title">持仓表现</div>';
+    CONFIG.holdings.forEach(function(s) {
+      var cls = (s.change||0) >= 0 ? 'pnl-up' : 'pnl-down';
+      h += '<div class="stock-row"><span class="stock-name">' + s.name + '</span><span class="stock-change ' + cls + '">' + (s.change||'—') + '</span><span class="stock-note">' + (s.note||'') + '</span></div>';
+    });
+    h += '</div>';
+  }
+  if (CONFIG.signals && CONFIG.signals.length) {
+    h += '<div class="section"><div class="section-title">本周信号</div>';
+    CONFIG.signals.forEach(function(s) { h += '<div class="insight">' + s + '</div>'; });
+    h += '</div>';
+  }
+  if (CONFIG.reflections && CONFIG.reflections.length) {
+    h += '<div class="section"><div class="section-title">反思与教训</div>';
+    CONFIG.reflections.forEach(function(r) { h += '<div class="insight">' + r + '</div>'; });
+    h += '</div>';
+  }
+  if (CONFIG.outlook) {
+    h += '<div class="section"><div class="section-title">下周展望</div><div class="insight">' + CONFIG.outlook + '</div></div>';
+  }
+  c.innerHTML = h;
+}
+render();
+</script>
+</body>
+</html>

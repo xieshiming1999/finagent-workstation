@@ -1,0 +1,177 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>{{TITLE}}</title>
+<style>
+:root {
+  --bg: #131722; --bg-card: #1e222d; --bg-hover: #2a2e39; --border: #2a2e39;
+  --text: #d1d4dc; --text-dim: #787b86; --text-bright: #f0f3fa;
+  --accent: #2962ff; --green: #26a69a; --red: #ef5350; --yellow: #ffc107;
+  --radius: 6px; --font: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, sans-serif;
+}
+* { margin: 0; padding: 0; box-sizing: border-box; }
+html, body { background: var(--bg); color: var(--text); font-family: var(--font); font-size: 13px; }
+.container { padding: 12px; }
+.toolbar { display: flex; gap: 6px; align-items: center; padding: 8px 12px; flex-wrap: wrap; }
+.toolbar .btn {
+  padding: 3px 8px; border: 1px solid var(--border); border-radius: 4px;
+  background: var(--bg-card); color: var(--text-dim); font-size: 11px; cursor: pointer;
+}
+.toolbar .btn:hover { color: var(--text-bright); }
+.toolbar .btn.active { background: var(--accent); color: #fff; border-color: var(--accent); }
+.search-box {
+  padding: 4px 8px; border: 1px solid var(--border); border-radius: 4px;
+  background: var(--bg-card); color: var(--text); font-size: 12px; outline: none; width: 160px;
+}
+.search-box:focus { border-color: var(--accent); }
+
+table { width: 100%; border-collapse: collapse; }
+th, td { padding: 7px 10px; text-align: left; border-bottom: 1px solid var(--border); font-size: 12px; }
+th {
+  color: var(--text-dim); font-weight: 500; text-transform: uppercase; font-size: 10px;
+  letter-spacing: 0.5px; cursor: pointer; user-select: none; position: sticky; top: 0; background: var(--bg);
+}
+th:hover { color: var(--text-bright); }
+th .sort-arrow { font-size: 9px; margin-left: 3px; }
+tr:hover td { background: var(--bg-hover); }
+.text-green { color: var(--green); }
+.text-red { color: var(--red); }
+.text-right { text-align: right; }
+.loading-text { color: var(--text-dim); font-size: 12px; text-align: center; padding: 40px; }
+.row-count { color: var(--text-dim); font-size: 11px; padding: 6px 12px; }
+#table-wrapper { overflow: auto; max-height: calc(100vh - 80px); }
+</style>
+</head>
+<body>
+<div class="toolbar" id="toolbar">
+  <input class="search-box" id="search" type="text" placeholder="Filter...">
+</div>
+<div id="table-wrapper">
+  <table id="data-table">
+    <thead id="thead"></thead>
+    <tbody id="tbody"></tbody>
+  </table>
+  <div class="loading-text" id="loading">Loading data...</div>
+</div>
+<div class="row-count" id="row-count"></div>
+
+<script>
+if (typeof Bridge === 'undefined') {
+  console.error('Bridge API unavailable: open this dashboard in a FinAgent Workstation WebView panel.');
+}
+</script>
+
+<script>
+/**
+ * Data Table Template
+ *
+ * Agent should customize:
+ * 1. Replace {{TITLE}} with table title
+ * 2. Set CONFIG.columns and CONFIG.apiPath (or CONFIG.data for static data)
+ */
+
+var CONFIG = {
+  // columns: [{key:'ts_code', label:'Code'}, {key:'close', label:'Price', align:'right', format:'number'}],
+  // apiPath: '/api/finance/tushare',
+  // apiParams: {},
+  // data: null,  // static data alternative
+  // colorFields: { pct_change: true },  // fields to color green/red
+};
+
+var _allRows = [];
+var _sortCol = null;
+var _sortDesc = false;
+
+function renderTable(columns, rows) {
+  var thead = document.getElementById('thead');
+  var tbody = document.getElementById('tbody');
+  document.getElementById('loading').style.display = 'none';
+
+  // Header
+  thead.innerHTML = '<tr>' + columns.map(function(col) {
+    var arrow = '';
+    if (_sortCol === col.key) arrow = '<span class="sort-arrow">' + (_sortDesc ? '▼' : '▲') + '</span>';
+    var align = col.align === 'right' ? ' class="text-right"' : '';
+    return '<th' + align + ' data-key="' + col.key + '">' + col.label + arrow + '</th>';
+  }).join('') + '</tr>';
+
+  // Body
+  tbody.innerHTML = rows.map(function(row) {
+    return '<tr>' + columns.map(function(col) {
+      var val = row[col.key];
+      if (val == null) val = '-';
+      var cls = [];
+      if (col.align === 'right') cls.push('text-right');
+      if (CONFIG.colorFields && CONFIG.colorFields[col.key]) {
+        var n = parseFloat(val);
+        if (n > 0) cls.push('text-green');
+        else if (n < 0) cls.push('text-red');
+      }
+      if (col.format === 'number' && typeof val === 'number') val = val.toLocaleString();
+      if (col.format === 'pct') val = (parseFloat(val) || 0).toFixed(2) + '%';
+      return '<td' + (cls.length ? ' class="' + cls.join(' ') + '"' : '') + '>' + val + '</td>';
+    }).join('') + '</tr>';
+  }).join('');
+
+  document.getElementById('row-count').textContent = rows.length + ' rows';
+}
+
+function sortRows(key) {
+  if (_sortCol === key) _sortDesc = !_sortDesc;
+  else { _sortCol = key; _sortDesc = false; }
+  var sorted = _allRows.slice().sort(function(a, b) {
+    var va = a[key], vb = b[key];
+    if (va == null) return 1; if (vb == null) return -1;
+    if (typeof va === 'number' && typeof vb === 'number') return _sortDesc ? vb - va : va - vb;
+    return _sortDesc ? String(vb).localeCompare(String(va)) : String(va).localeCompare(String(vb));
+  });
+  renderTable(CONFIG.columns || [], sorted);
+}
+
+function filterRows(query) {
+  if (!query) { renderTable(CONFIG.columns || [], _allRows); return; }
+  var q = query.toLowerCase();
+  var filtered = _allRows.filter(function(row) {
+    return Object.values(row).some(function(v) { return v != null && String(v).toLowerCase().indexOf(q) !== -1; });
+  });
+  renderTable(CONFIG.columns || [], filtered);
+}
+
+// Event listeners
+document.getElementById('thead').addEventListener('click', function(e) {
+  var th = e.target.closest('th');
+  if (th && th.dataset.key) sortRows(th.dataset.key);
+});
+document.getElementById('search').addEventListener('input', function(e) {
+  filterRows(e.target.value);
+});
+
+function loadData() {
+  if (CONFIG.data) {
+    _allRows = CONFIG.data;
+    renderTable(CONFIG.columns || [], _allRows);
+    return;
+  }
+  if (!CONFIG.apiPath) {
+    document.getElementById('loading').textContent = 'No data configured.';
+    return;
+  }
+  Bridge.fetch(CONFIG.apiPath, CONFIG.apiParams || {}).then(function(resp) {
+    if (resp.error) { Bridge.alert('Data fetch failed: ' + resp.error); return; }
+    _allRows = resp.data || resp.items || resp;
+    if (!Array.isArray(_allRows)) _allRows = [];
+    renderTable(CONFIG.columns || [], _allRows);
+  });
+}
+
+Bridge.onPush('table', function(data) {
+  if (data.rows) { _allRows = data.rows; renderTable(CONFIG.columns || [], _allRows); }
+  else loadData();
+});
+
+loadData();
+</script>
+</body>
+</html>

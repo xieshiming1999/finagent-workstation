@@ -1,0 +1,458 @@
+<!DOCTYPE html>
+<html lang="zh">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>{{TITLE}}</title>
+<style>
+:root {
+  --bg: #131722; --bg-card: #1e222d; --bg-hover: #2a2e39; --border: #2a2e39;
+  --text: #d1d4dc; --text-dim: #787b86; --text-bright: #f0f3fa;
+  --accent: #2962ff; --green: #26a69a; --red: #ef5350; --yellow: #ffc107;
+  --radius: 6px; --font: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, sans-serif;
+}
+* { margin: 0; padding: 0; box-sizing: border-box; }
+html, body { background: var(--bg); color: var(--text); font-family: var(--font); font-size: 13px; line-height: 1.6; }
+.container { max-width: 720px; margin: 0 auto; padding: 16px; }
+.report-header { margin-bottom: 20px; padding-bottom: 12px; border-bottom: 1px solid var(--border); }
+.report-title { font-size: 18px; font-weight: 700; color: var(--text-bright); margin-bottom: 4px; }
+.report-date { font-size: 12px; color: var(--text-dim); }
+.section { margin-bottom: 20px; }
+.section-title { font-size: 14px; font-weight: 600; color: var(--text-bright); margin-bottom: 10px; padding-left: 8px; border-left: 3px solid var(--accent); }
+.grid { display: grid; gap: 10px; }
+.grid-2 { grid-template-columns: repeat(2, 1fr); }
+.grid-3 { grid-template-columns: repeat(3, 1fr); }
+.grid-4 { grid-template-columns: repeat(4, 1fr); }
+.kpi-card { background: var(--bg-card); border: 1px solid var(--border); border-radius: var(--radius); padding: 12px; }
+.kpi-label { font-size: 11px; color: var(--text-dim); text-transform: uppercase; letter-spacing: 0.3px; margin-bottom: 4px; }
+.kpi-value { font-size: 20px; font-weight: 700; color: var(--text-bright); }
+.kpi-change { font-size: 12px; margin-top: 3px; }
+.kpi-change.up { color: var(--green); }
+.kpi-change.down { color: var(--red); }
+.kpi-change.flat { color: var(--text-dim); }
+.highlight-list { list-style: none; }
+.highlight-item { background: var(--bg-card); border: 1px solid var(--border); border-radius: var(--radius); padding: 10px 14px; margin-bottom: 8px; display: flex; align-items: center; gap: 8px; }
+.highlight-icon { color: var(--green); font-size: 14px; flex-shrink: 0; }
+.highlight-icon.risk { color: var(--red); }
+.report-table { width: 100%; border-collapse: collapse; background: var(--bg-card); border-radius: var(--radius); overflow: hidden; }
+.report-table th { background: var(--bg-hover); font-size: 12px; color: var(--text-dim); text-align: left; padding: 8px 12px; font-weight: 500; }
+.report-table td { padding: 8px 12px; border-top: 1px solid var(--border); font-size: 13px; }
+.report-table tr:hover td { background: var(--bg-hover); }
+.text-block { background: var(--bg-card); border: 1px solid var(--border); border-radius: var(--radius); padding: 14px; font-size: 13px; line-height: 1.8; overflow-wrap: anywhere; }
+.text-block p { margin-bottom: 8px; }
+.text-block p:last-child { margin-bottom: 0; }
+.tag { display: inline-block; padding: 2px 8px; border-radius: 3px; font-size: 11px; font-weight: 500; }
+.tag-green { background: rgba(38,166,154,0.15); color: var(--green); }
+.tag-red { background: rgba(239,83,80,0.15); color: var(--red); }
+.tag-yellow { background: rgba(255,193,7,0.15); color: var(--yellow); }
+.tag-blue { background: rgba(41,98,255,0.15); color: var(--accent); }
+.verdict { text-align: center; padding: 16px; margin-top: 12px; background: var(--bg-card); border: 1px solid var(--border); border-radius: var(--radius); }
+.verdict-label { font-size: 12px; color: var(--text-dim); margin-bottom: 6px; }
+.verdict-value { font-size: 22px; font-weight: 700; }
+@media (max-width: 400px) {
+  .grid-3, .grid-4 { grid-template-columns: repeat(2, 1fr); }
+  .kpi-value { font-size: 16px; }
+  .report-title { font-size: 16px; }
+}
+</style>
+</head>
+<body>
+<div class="container" id="content">
+  <div style="color:var(--text-dim);text-align:center;padding:40px;">Loading report...</div>
+</div>
+
+<script>
+var CONFIG = {
+  title: "Report",
+  date: "",
+  sections: []
+};
+
+function escapeHtml(value) {
+  return String(value == null ? '' : value)
+    .replace(/&/g, '&amp;')
+    .replace(/</g, '&lt;')
+    .replace(/>/g, '&gt;')
+    .replace(/"/g, '&quot;')
+    .replace(/'/g, '&#39;');
+}
+
+function nonEmpty(value) {
+  return value !== undefined && value !== null && String(value).trim() !== '';
+}
+
+function joinFields(fields, sep) {
+  return fields.filter(function(item) { return nonEmpty(item); }).map(escapeHtml).join(sep || ' · ');
+}
+
+function candidateValue(candidate, keys) {
+  for (var i = 0; i < keys.length; i++) {
+    var value = candidate[keys[i]];
+    if (nonEmpty(value)) return value;
+  }
+  return '';
+}
+
+function normalizedMetric(metric) {
+  var item = metric || {};
+  return {
+    label: candidateValue(item, ['label', 'name', 'title', 'key', 'field']),
+    value: candidateValue(item, ['value', 'displayValue', 'text', 'content', 'amount']),
+    change: candidateValue(item, ['change', 'delta', 'changePct']),
+    direction: candidateValue(item, ['direction', 'trend']) || 'flat'
+  };
+}
+
+function hasRenderableSection(section) {
+  if (!section) return false;
+  if (nonEmpty(section.title)) {
+    if (nonEmpty(section.content) || nonEmpty(section.html) || nonEmpty(section.notes) || nonEmpty(section.source) || nonEmpty(section.asOf) || nonEmpty(section.fetchedAt)) return true;
+    if (Array.isArray(section.items) && section.items.length) return true;
+    if (Array.isArray(section.metrics) && section.metrics.length) return true;
+    if (Array.isArray(section.headers) && section.headers.length) return true;
+    if (Array.isArray(section.rows) && section.rows.length) return true;
+  }
+  return false;
+}
+
+function renderCandidateTable(candidates) {
+  var rows = candidates.map(function(candidate) {
+    var code = candidateValue(candidate, ['code', 'symbol']);
+    var name = candidateValue(candidate, ['name', 'displayName']);
+    var reason = candidateValue(candidate, ['reason', 'rationale', 'summary']);
+    var source = joinFields([
+      candidateValue(candidate, ['dataSource', 'source']),
+      candidateValue(candidate, ['dataTime', 'asOf', 'sourceTime']),
+      candidateValue(candidate, ['fetchedAt', 'retrievedAt'])
+    ]);
+    var watch = candidateValue(candidate, ['watchCondition', 'watch', 'observationCondition']);
+    var risks = candidateValue(candidate, ['risks', 'risk']);
+    return [
+      joinFields([code, name], '<br>'),
+      reason,
+      source,
+      watch,
+      risks
+    ];
+  });
+
+  var html = '<table class="report-table"><thead><tr>';
+  ['候选', '理由', '来源/时间', '观察条件', '风险'].forEach(function(header) {
+    html += '<th>' + header + '</th>';
+  });
+  html += '</tr></thead><tbody>';
+  rows.forEach(function(row) {
+    html += '<tr>';
+    row.forEach(function(cell) { html += '<td>' + escapeHtml(cell).replace(/&lt;br&gt;/g, '<br>') + '</td>'; });
+    html += '</tr>';
+  });
+  html += '</tbody></table>';
+  return html;
+}
+
+function renderObjectTable(items) {
+  var rows = Array.isArray(items) ? items : [];
+  var headers = [];
+  rows.forEach(function(item) {
+    Object.keys(item || {}).forEach(function(key) {
+      if (headers.indexOf(key) === -1) headers.push(key);
+    });
+  });
+  if (!headers.length) return '';
+
+  var html = '<table class="report-table"><thead><tr>';
+  headers.forEach(function(header) { html += '<th>' + escapeHtml(header) + '</th>'; });
+  html += '</tr></thead><tbody>';
+  rows.forEach(function(row) {
+    html += '<tr>';
+    headers.forEach(function(header) {
+      html += '<td>' + escapeHtml(row && row[header]) + '</td>';
+    });
+    html += '</tr>';
+  });
+  html += '</tbody></table>';
+  return html;
+}
+
+function renderFlexibleTable(table) {
+  if (Array.isArray(table)) return renderObjectTable(table);
+  if (!table || typeof table !== 'object') return '';
+
+  var headers = Array.isArray(table.headers) ? table.headers : [];
+  var rows = Array.isArray(table.rows) ? table.rows : [];
+  if (!headers.length && rows.length && rows[0] && typeof rows[0] === 'object' && !Array.isArray(rows[0])) {
+    return renderObjectTable(rows);
+  }
+  if (!headers.length && !rows.length) return '';
+
+  var html = '<table class="report-table"><thead><tr>';
+  headers.forEach(function(header) { html += '<th>' + escapeHtml(header) + '</th>'; });
+  html += '</tr></thead><tbody>';
+  rows.forEach(function(row) {
+    html += '<tr>';
+    var cells = Array.isArray(row) ? row : headers.map(function(header) { return row && row[header]; });
+    cells.forEach(function(cell) { html += '<td>' + escapeHtml(cell) + '</td>'; });
+    html += '</tr>';
+  });
+  html += '</tbody></table>';
+  return html;
+}
+
+function renderList(items) {
+  var html = '<ul class="highlight-list">';
+  (items || []).forEach(function(item) {
+    html += '<li class="highlight-item"><span class="highlight-icon risk">!</span><span>' + escapeHtml(item) + '</span></li>';
+  });
+  html += '</ul>';
+  return html;
+}
+
+function normalizeTextContent(content) {
+  return String(content || '')
+    .replace(/([。；;])\s*(\d+\.)/g, '$1\n$2')
+    .replace(/([。；;])\s*([-•])/g, '$1\n$2');
+}
+
+function renderAnalysisEvidence(evidence) {
+  if (!evidence || evidence.contract !== 'analysis-evidence-v1') return '';
+  var subject = evidence.subject || {};
+  var coverage = evidence.sourceCoverage || {};
+  var rows = [
+    ['类别', evidence.kind || '-'],
+    ['标的', joinFields([subject.name, subject.id || subject.type]) || '-'],
+    ['置信度', evidence.confidence || '-'],
+    ['策略状态', evidence.strategyReadiness || '-'],
+    ['来源', Array.isArray(coverage.sources) ? coverage.sources.join(', ') : coverage.sources],
+    ['接口', coverage.interfaceId || '-'],
+    ['表/Schema', joinFields([coverage.canonicalTable, coverage.canonicalSchema]) || '-'],
+    ['读回动作', coverage.readbackAction || '-'],
+    ['数据时间', coverage.sourceDataTime || '-'],
+    ['获取时间', coverage.fetchedAt || '-'],
+    ['缓存/覆盖', joinFields([coverage.cacheStatus, coverage.coverageStatus]) || '-']
+  ];
+  var html = renderFlexibleTable({
+    headers: ['字段', '值'],
+    rows: rows
+  });
+  var lists = [
+    ['观察事实', evidence.observedFacts],
+    ['解释', evidence.interpretations],
+    ['缺口', evidence.missingEvidence]
+  ];
+  lists.forEach(function(group) {
+    if (Array.isArray(group[1]) && group[1].length) {
+      html += '<div style="margin-top:10px">';
+      html += '<div style="font-size:12px;color:var(--text-dim);margin-bottom:6px">' + escapeHtml(group[0]) + '</div>';
+      html += renderList(group[1]);
+      html += '</div>';
+    }
+  });
+  return html;
+}
+
+function buildSectionsFromConfig(config) {
+  if (Array.isArray(config.sections) && config.sections.length) {
+    var directSections = config.sections.map(function(section) {
+      var normalized = Object.assign({}, section || {});
+      if (!normalized.title && normalized.heading) normalized.title = normalized.heading;
+      if (!normalized.type && Array.isArray(normalized.metrics)) {
+        normalized.type = 'kpi';
+        normalized.items = normalized.metrics;
+        normalized.cols = normalized.cols || (normalized.metrics.length >= 4 ? 4 : 3);
+      }
+      if (!normalized.type && typeof normalized.content === 'string' && /<\/?[a-z][\s\S]*>/i.test(normalized.content)) {
+        normalized.type = 'html';
+      }
+      return normalized;
+    });
+    var directEvidenceHtml = renderAnalysisEvidence(config.analysisEvidence || (config.evidence && config.evidence.analysisEvidence));
+    if (directEvidenceHtml) {
+      directSections.push({ title: '分析证据', type: 'html', content: directEvidenceHtml });
+    }
+    return directSections.filter(hasRenderableSection);
+  }
+
+  var sections = [];
+  var overview = [];
+  if (nonEmpty(config.subtitle)) overview.push(config.subtitle);
+  if (nonEmpty(config.asOf) || nonEmpty(config.fetchedAt)) {
+    overview.push('数据时间: ' + joinFields([config.asOf]) + '；获取时间: ' + joinFields([config.fetchedAt]));
+  }
+  if (config.index) {
+    var indexText = joinFields([
+      candidateValue(config.index, ['name']),
+      candidateValue(config.index, ['code', 'symbol']),
+      nonEmpty(config.index.price) ? '点位 ' + config.index.price : '',
+      nonEmpty(config.index.changePct) ? '涨跌幅 ' + config.index.changePct + '%' : '',
+      candidateValue(config.index, ['source'])
+    ]);
+    if (indexText) overview.push('指数背景: ' + indexText);
+  }
+  if (nonEmpty(config.method)) overview.push(config.method);
+  if (overview.length) {
+    sections.push({ title: '筛选口径与数据状态', type: 'text', content: overview.join('\n') });
+  }
+
+  if (Array.isArray(config.candidates) && config.candidates.length) {
+    sections.push({ title: '候选观察列表', type: 'html', content: renderCandidateTable(config.candidates) });
+  }
+
+  if (Array.isArray(config.funds) && config.funds.length) {
+    sections.push({ title: '基金基础信息', type: 'html', content: renderObjectTable(config.funds) });
+  }
+
+  if (Array.isArray(config.data) && config.data.length) {
+    sections.push({ title: '数据更新结果', type: 'html', content: renderObjectTable(config.data) });
+  }
+
+  if (config.comparisonTable) {
+    var comparisonHtml = renderFlexibleTable(config.comparisonTable);
+    if (comparisonHtml) sections.push({ title: '基金对比表', type: 'html', content: comparisonHtml });
+  }
+
+  if (nonEmpty(config['类别差异']) || nonEmpty(config.categoryDifference)) {
+    sections.push({ title: '类别差异', type: 'text', content: config['类别差异'] || config.categoryDifference });
+  }
+
+  if (nonEmpty(config.html)) {
+    sections.push({ title: config.htmlTitle || '报告正文', type: 'html', content: String(config.html) });
+  }
+
+  if (nonEmpty(config.observationConditions)) {
+    sections.push({ title: '观察条件', type: 'text', content: config.observationConditions });
+  }
+
+  var evidenceHtml = renderAnalysisEvidence(config.analysisEvidence || (config.evidence && config.evidence.analysisEvidence));
+  if (evidenceHtml) {
+    sections.push({ title: '分析证据', type: 'html', content: evidenceHtml });
+  }
+
+  if (Array.isArray(config.gaps) && config.gaps.length) {
+    sections.push({ title: '数据缺口', type: 'html', content: renderList(config.gaps) });
+  } else if (nonEmpty(config.dataGaps)) {
+    sections.push({ title: '数据缺口', type: 'text', content: config.dataGaps });
+  }
+
+  if (nonEmpty(config.risks) || nonEmpty(config['风险提示']) || nonEmpty(config.riskWarning)) {
+    sections.push({ title: '风险提示', type: 'text', content: config.risks || config['风险提示'] || config.riskWarning });
+  }
+  if (nonEmpty(config.dataNote) || nonEmpty(config['数据说明'])) {
+    sections.push({ title: '数据说明', type: 'text', content: config.dataNote || config['数据说明'] });
+  }
+  if (nonEmpty(config.disclaimer)) {
+    sections.push({ title: '声明', type: 'text', content: config.disclaimer });
+  }
+
+  return sections;
+}
+
+function render() {
+  var c = document.getElementById('content');
+  var html = '<div class="report-header">';
+  var title = nonEmpty(CONFIG.title) ? CONFIG.title : document.title;
+  html += '<div class="report-title">' + escapeHtml(title || 'Report') + '</div>';
+  var reportDate = CONFIG.date || CONFIG.asOf || CONFIG.fetchedAt || '';
+  if (reportDate) html += '<div class="report-date">' + reportDate + '</div>';
+  html += '</div>';
+
+  buildSectionsFromConfig(CONFIG).filter(hasRenderableSection).forEach(function(s) {
+    html += '<div class="section">';
+    if (s.title) html += '<div class="section-title">' + s.title + '</div>';
+
+    var sectionType = inferSectionType(s);
+    switch (sectionType) {
+      case 'kpi':
+        var cols = s.cols || 3;
+        html += '<div class="grid grid-' + cols + '">';
+        (s.items || s.metrics || []).map(normalizedMetric).filter(function(k) {
+          return nonEmpty(k.label) || nonEmpty(k.value);
+        }).forEach(function(k) {
+          var dir = k.direction || 'flat';
+          var arrow = dir === 'up' ? '▲ ' : dir === 'down' ? '▼ ' : '';
+          html += '<div class="kpi-card"><div class="kpi-label">' + escapeHtml(k.label||'') + '</div>';
+          html += '<div class="kpi-value">' + escapeHtml(k.value||'—') + '</div>';
+          if (k.change) html += '<div class="kpi-change ' + dir + '">' + arrow + escapeHtml(k.change) + '</div>';
+          html += '</div>';
+        });
+        html += '</div>';
+        if (nonEmpty(s.notes)) {
+          html += '<div class="text-block" style="margin-top:10px">' + escapeHtml(s.notes) + '</div>';
+        }
+        if (nonEmpty(s.source) || nonEmpty(s.asOf) || nonEmpty(s.fetchedAt)) {
+          html += '<div style="font-size:12px;color:var(--text-dim);margin-top:8px">' +
+            escapeHtml(joinFields([
+              s.source ? '来源: ' + s.source : '',
+              s.asOf ? '数据时间: ' + s.asOf : '',
+              s.fetchedAt ? '获取时间: ' + s.fetchedAt : ''
+            ])) +
+            '</div>';
+        }
+        break;
+
+      case 'highlight':
+        html += '<ul class="highlight-list">';
+        (s.items || []).forEach(function(item) {
+          var icon = s.icon || '✦';
+          var cls = s.risk ? 'highlight-icon risk' : 'highlight-icon';
+          html += '<li class="highlight-item"><span class="' + cls + '">' + icon + '</span><span>' + item + '</span></li>';
+        });
+        html += '</ul>';
+        break;
+
+      case 'table':
+        html += '<table class="report-table"><thead><tr>';
+        (s.headers || []).forEach(function(h) { html += '<th>' + h + '</th>'; });
+        html += '</tr></thead><tbody>';
+        (s.rows || []).forEach(function(row) {
+          html += '<tr>';
+          row.forEach(function(cell) { html += '<td>' + cell + '</td>'; });
+          html += '</tr>';
+        });
+        html += '</tbody></table>';
+        break;
+
+      case 'text':
+        html += '<div class="text-block">';
+        var content = normalizeTextContent(s.content || '');
+        content.split('\n').forEach(function(p) {
+          if (p.trim()) html += '<p>' + escapeHtml(p) + '</p>';
+        });
+        html += '</div>';
+        break;
+
+      case 'html':
+        html += s.content || '';
+        break;
+
+      case 'verdict':
+        var color = s.color || 'var(--text-bright)';
+        html += '<div class="verdict"><div class="verdict-label">' + (s.label||'综合评级') + '</div>';
+        html += '<div class="verdict-value" style="color:' + color + '">' + (s.value||'—') + '</div>';
+        if (s.sub) html += '<div style="font-size:12px;color:var(--text-dim);margin-top:6px">' + s.sub + '</div>';
+        html += '</div>';
+        break;
+
+      default:
+        if (s.content) {
+          html += '<div class="text-block">' + s.content + '</div>';
+        }
+        break;
+    }
+    html += '</div>';
+  });
+
+  c.innerHTML = html;
+}
+
+function inferSectionType(section) {
+  if (section.type) return section.type;
+  if ((Array.isArray(section.items) && section.items.length) || (Array.isArray(section.metrics) && section.metrics.length)) return 'kpi';
+  if (Array.isArray(section.headers) || Array.isArray(section.rows)) return 'table';
+  if (section.content) return 'text';
+  return '';
+}
+
+render();
+</script>
+</body>
+</html>

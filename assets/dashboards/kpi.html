@@ -1,0 +1,137 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>{{TITLE}}</title>
+<style>
+:root {
+  --bg: #131722; --bg-card: #1e222d; --bg-hover: #2a2e39; --border: #2a2e39;
+  --text: #d1d4dc; --text-dim: #787b86; --text-bright: #f0f3fa;
+  --accent: #2962ff; --green: #26a69a; --red: #ef5350; --yellow: #ffc107;
+  --radius: 6px; --font: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, sans-serif;
+}
+* { margin: 0; padding: 0; box-sizing: border-box; }
+html, body { background: var(--bg); color: var(--text); font-family: var(--font); font-size: 13px; }
+.container { padding: 12px; }
+.grid { display: grid; gap: 10px; }
+.grid-2 { grid-template-columns: repeat(2, 1fr); }
+.grid-3 { grid-template-columns: repeat(3, 1fr); }
+.grid-4 { grid-template-columns: repeat(4, 1fr); }
+.kpi-card {
+  background: var(--bg-card); border: 1px solid var(--border); border-radius: var(--radius);
+  padding: 14px; position: relative; overflow: hidden;
+}
+.kpi-label { font-size: 11px; color: var(--text-dim); text-transform: uppercase; letter-spacing: 0.5px; margin-bottom: 6px; }
+.kpi-value { font-size: 22px; font-weight: 700; color: var(--text-bright); }
+.kpi-change { font-size: 12px; margin-top: 4px; }
+.kpi-change.up { color: var(--green); }
+.kpi-change.down { color: var(--red); }
+.kpi-change.flat { color: var(--text-dim); }
+.kpi-sub { font-size: 11px; color: var(--text-dim); margin-top: 2px; }
+.sparkline { position: absolute; bottom: 0; right: 0; width: 60px; height: 30px; opacity: 0.4; }
+.text-dim { color: var(--text-dim); }
+.loading-text { color: var(--text-dim); font-size: 12px; text-align: center; padding: 40px; }
+h2 { font-size: 15px; color: var(--text-bright); font-weight: 600; margin-bottom: 10px; }
+.section { margin-bottom: 16px; }
+@media (max-width: 400px) {
+  .grid-2, .grid-3, .grid-4 { grid-template-columns: 1fr 1fr; }
+  .kpi-value { font-size: 18px; }
+}
+</style>
+</head>
+<body>
+<div class="container" id="content">
+  <div class="loading-text">Loading KPIs...</div>
+</div>
+
+<script>
+if (typeof Bridge === 'undefined') {
+  console.error('Bridge API unavailable: open this dashboard in a FinAgent Workstation WebView panel.');
+}
+</script>
+
+<script>
+/**
+ * KPI Dashboard Template
+ *
+ * Agent should customize:
+ * 1. Replace {{TITLE}}
+ * 2. Set CONFIG.sections[] with groups of KPI cards
+ */
+
+var CONFIG = {
+  // gridCols: 4,  // override grid columns (2/3/4)
+  sections: [
+    // Example:
+    // {
+    //   title: 'Market Overview',
+    //   kpis: [
+    //     { id: 'sh_index', label: 'Shanghai', value: '3245.28', change: '+1.23%', direction: 'up', sub: 'SSE Composite' },
+    //     { id: 'sz_index', label: 'Shenzhen', value: '10892.45', change: '-0.34%', direction: 'down' },
+    //   ]
+    // }
+  ]
+};
+
+function sparklineSVG(data) {
+  if (!data || data.length < 2) return '';
+  var max = Math.max.apply(null, data);
+  var min = Math.min.apply(null, data);
+  var range = max - min || 1;
+  var w = 60, h = 30;
+  var points = data.map(function(v, i) {
+    return (i / (data.length - 1) * w) + ',' + (h - (v - min) / range * h);
+  }).join(' ');
+  var color = data[data.length - 1] >= data[0] ? '#26a69a' : '#ef5350';
+  return '<svg class="sparkline" viewBox="0 0 ' + w + ' ' + h + '" preserveAspectRatio="none">' +
+    '<polyline fill="none" stroke="' + color + '" stroke-width="1.5" points="' + points + '"/></svg>';
+}
+
+function render() {
+  var container = document.getElementById('content');
+  if (!CONFIG.sections || CONFIG.sections.length === 0) {
+    container.innerHTML = '<div class="loading-text">No KPIs configured.</div>';
+    return;
+  }
+  var cols = CONFIG.gridCols || 4;
+  container.innerHTML = CONFIG.sections.map(function(section) {
+    var html = '<div class="section">';
+    if (section.title) html += '<h2>' + section.title + '</h2>';
+    html += '<div class="grid grid-' + cols + '">';
+    html += (section.kpis || []).map(function(kpi) {
+      var dir = kpi.direction || 'flat';
+      var arrow = dir === 'up' ? '▲ ' : dir === 'down' ? '▼ ' : '';
+      var spark = kpi.sparkData ? sparklineSVG(kpi.sparkData) : '';
+      return '<div class="kpi-card" id="kpi-' + (kpi.id || '') + '">' +
+        '<div class="kpi-label">' + (kpi.label || '') + '</div>' +
+        '<div class="kpi-value">' + (kpi.value || '—') + '</div>' +
+        (kpi.change ? '<div class="kpi-change ' + dir + '">' + arrow + kpi.change + '</div>' : '') +
+        (kpi.sub ? '<div class="kpi-sub">' + kpi.sub + '</div>' : '') +
+        spark + '</div>';
+    }).join('');
+    html += '</div></div>';
+    return html;
+  }).join('');
+}
+
+// Update a single KPI by id
+function updateKPI(id, data) {
+  CONFIG.sections.forEach(function(s) {
+    (s.kpis || []).forEach(function(kpi) {
+      if (kpi.id === id) Object.assign(kpi, data);
+    });
+  });
+  render();
+}
+
+Bridge.onPush('kpi', function(data) {
+  if (data.id) updateKPI(data.id, data);
+  else if (data.sections) { CONFIG.sections = data.sections; render(); }
+  else render();
+});
+
+render();
+</script>
+</body>
+</html>

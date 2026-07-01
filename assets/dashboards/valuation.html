@@ -1,0 +1,200 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>{{TITLE}}</title>
+<style>
+:root {
+  --bg: #131722; --bg-card: #1e222d; --border: #2a2e39;
+  --text: #d1d4dc; --text-dim: #787b86;
+  --green: #26a69a; --red: #ef5350; --yellow: #ffc107; --accent: #2962ff;
+  --font: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, sans-serif;
+}
+* { margin: 0; padding: 0; box-sizing: border-box; }
+html, body { background: var(--bg); color: var(--text); font-family: var(--font); font-size: 13px; }
+.container { padding: 8px; }
+.header { display: flex; justify-content: space-between; align-items: center; margin-bottom: 10px; padding: 8px 12px; background: var(--bg-card); border: 1px solid var(--border); border-radius: 6px; }
+.header-left h2 { font-size: 15px; font-weight: 700; }
+.header-left .code { font-size: 11px; color: var(--text-dim); }
+.header-right { text-align: right; }
+.header-right .price { font-size: 18px; font-weight: 700; }
+.header-right .verdict { font-size: 11px; margin-top: 2px; }
+.section-title { font-size: 10px; color: var(--text-dim); text-transform: uppercase; letter-spacing: 0.5px; margin: 12px 0 6px; }
+#field-chart { width: 100%; height: 240px; }
+.summary-grid { display: grid; grid-template-columns: repeat(auto-fit, minmax(120px, 1fr)); gap: 6px; margin-top: 8px; }
+.summary-card { background: var(--bg-card); border: 1px solid var(--border); border-radius: 6px; padding: 8px 10px; }
+.summary-card .label { font-size: 9px; color: var(--text-dim); text-transform: uppercase; }
+.summary-card .value { font-size: 14px; font-weight: 700; margin-top: 2px; }
+.summary-card .range { font-size: 10px; color: var(--text-dim); margin-top: 1px; }
+.assumptions { margin-top: 10px; padding: 8px 12px; background: var(--bg-card); border: 1px solid var(--border); border-radius: 6px; }
+.assumptions h4 { font-size: 10px; color: var(--text-dim); text-transform: uppercase; margin-bottom: 4px; }
+.assumptions table { width: 100%; font-size: 11px; border-collapse: collapse; }
+.assumptions td { padding: 2px 4px; border-bottom: 1px solid var(--border); }
+.assumptions td:first-child { color: var(--text-dim); width: 40%; }
+.disclaimer { margin-top: 10px; padding: 6px 10px; font-size: 9px; color: var(--text-dim); border-top: 1px solid var(--border); }
+</style>
+<script src="https://cdn.jsdelivr.net/npm/echarts@5/dist/echarts.min.js"></script>
+</head>
+<body>
+<div class="container">
+  <div class="header">
+    <div class="header-left">
+      <h2 id="company-name"></h2>
+      <div class="code" id="company-code"></div>
+    </div>
+    <div class="header-right">
+      <div class="price" id="current-price"></div>
+      <div class="verdict" id="verdict-text"></div>
+    </div>
+  </div>
+  <div class="section-title">Football Field</div>
+  <div id="field-chart"></div>
+  <div class="section-title">Summary</div>
+  <div class="summary-grid" id="summary-grid"></div>
+  <div class="assumptions" id="assumptions"></div>
+  <div class="disclaimer">⚠️ 以上估值基于模型假设，仅供参考，不构成投资建议。</div>
+</div>
+<script>
+var CONFIG = {};
+
+function render() {
+  var c = CONFIG;
+  document.getElementById('company-name').textContent = c.company || '';
+  document.getElementById('company-code').textContent = c.code || '';
+  document.getElementById('current-price').textContent = '¥' + (c.currentPrice || 0);
+
+  var methods = c.methods || [];
+  var allLow = methods.map(function(m){ return m.low; });
+  var allHigh = methods.map(function(m){ return m.high; });
+  var globalMin = Math.min.apply(null, allLow) * 0.9;
+  var globalMax = Math.max.apply(null, allHigh) * 1.1;
+
+  // Verdict
+  var avgMid = methods.reduce(function(s,m){ return s+m.mid; }, 0) / methods.length;
+  var avgLow = methods.reduce(function(s,m){ return s+m.low; }, 0) / methods.length;
+  var avgHigh = methods.reduce(function(s,m){ return s+m.high; }, 0) / methods.length;
+  var price = c.currentPrice || 0;
+  var verdictEl = document.getElementById('verdict-text');
+  if (price < avgLow) {
+    verdictEl.textContent = '低估 (低于保守价 ¥' + avgLow.toFixed(0) + ')';
+    verdictEl.style.color = 'var(--green)';
+  } else if (price > avgHigh) {
+    verdictEl.textContent = '高估 (高于乐观价 ¥' + avgHigh.toFixed(0) + ')';
+    verdictEl.style.color = 'var(--red)';
+  } else {
+    var pct = ((price - avgLow) / (avgHigh - avgLow) * 100).toFixed(0);
+    verdictEl.textContent = '合理区间 (位于 ' + pct + '% 分位)';
+    verdictEl.style.color = 'var(--yellow)';
+  }
+
+  // Football Field chart
+  var chart = echarts.init(document.getElementById('field-chart'));
+  var yLabels = methods.map(function(m){ return m.name; });
+  yLabels.push('综合');
+
+  var barData = [];
+  methods.forEach(function(m, i) {
+    barData.push([m.low, i, m.high - m.low, m.mid, m.name]);
+  });
+  // Composite
+  barData.push([avgLow, methods.length, avgHigh - avgLow, avgMid, '综合']);
+
+  chart.setOption({
+    grid: { left: 70, right: 30, top: 10, bottom: 30 },
+    xAxis: {
+      type: 'value', min: globalMin, max: globalMax,
+      axisLabel: { color: '#787b86', fontSize: 10, formatter: '¥{value}' },
+      splitLine: { lineStyle: { color: '#2a2e39' } }
+    },
+    yAxis: {
+      type: 'category', data: yLabels.concat().reverse(),
+      axisLabel: { color: '#d1d4dc', fontSize: 11 },
+      axisTick: { show: false }, axisLine: { show: false }
+    },
+    series: [
+      {
+        type: 'custom',
+        renderItem: function(params, api) {
+          var idx = params.dataIndex;
+          var d = barData[barData.length - 1 - idx];
+          var low = d[0], range = d[2], mid = d[3];
+          var yCoord = api.coord([0, idx])[1];
+          var lowX = api.coord([low, idx])[0];
+          var highX = api.coord([low + range, idx])[0];
+          var midX = api.coord([mid, idx])[0];
+          var h = 18;
+          var isComposite = idx === 0;
+          return {
+            type: 'group',
+            children: [
+              { type: 'rect', shape: { x: lowX, y: yCoord - h/2, width: highX - lowX, height: h, r: 3 },
+                style: { fill: isComposite ? 'rgba(41,98,255,0.4)' : 'rgba(41,98,255,0.2)', stroke: isComposite ? '#2962ff' : '#2962ff55', lineWidth: 1 } },
+              { type: 'line', shape: { x1: midX, y1: yCoord - h/2 - 2, x2: midX, y2: yCoord + h/2 + 2 },
+                style: { stroke: '#d1d4dc', lineWidth: 2 } }
+            ]
+          };
+        },
+        data: barData.map(function(d,i){ return [i]; })
+      },
+      {
+        type: 'scatter', symbol: 'diamond', symbolSize: 12,
+        data: [[price, yLabels.length - 1 - methods.length]],
+        itemStyle: { color: '#ffc107' },
+        z: 10
+      }
+    ]
+  });
+
+  // Mark line for current price
+  chart.setOption({
+    series: [{}, {
+      markLine: {
+        silent: true, symbol: 'none',
+        lineStyle: { color: '#ffc107', type: 'dashed', width: 1 },
+        data: [{ xAxis: price }],
+        label: { formatter: '当前 ¥' + price, fontSize: 9, color: '#ffc107' }
+      }
+    }]
+  });
+
+  // Summary cards
+  var grid = document.getElementById('summary-grid');
+  grid.innerHTML = '';
+  methods.forEach(function(m) {
+    var card = document.createElement('div');
+    card.className = 'summary-card';
+    card.innerHTML = '<div class="label">' + m.name + '</div>' +
+      '<div class="value">¥' + m.mid.toFixed(0) + '</div>' +
+      '<div class="range">¥' + m.low.toFixed(0) + ' - ¥' + m.high.toFixed(0) + '</div>';
+    grid.appendChild(card);
+  });
+  // Composite card
+  var compCard = document.createElement('div');
+  compCard.className = 'summary-card';
+  compCard.style.borderColor = 'var(--accent)';
+  compCard.innerHTML = '<div class="label">综合</div>' +
+    '<div class="value" style="color:var(--accent)">¥' + avgMid.toFixed(0) + '</div>' +
+    '<div class="range">¥' + avgLow.toFixed(0) + ' - ¥' + avgHigh.toFixed(0) + '</div>';
+  grid.appendChild(compCard);
+
+  // Assumptions
+  var assumDiv = document.getElementById('assumptions');
+  if (c.assumptions && c.assumptions.length > 0) {
+    var html = '<h4>Key Assumptions</h4><table>';
+    c.assumptions.forEach(function(a) {
+      html += '<tr><td>' + a.label + '</td><td>' + a.value + '</td></tr>';
+    });
+    html += '</table>';
+    assumDiv.innerHTML = html;
+  } else {
+    assumDiv.style.display = 'none';
+  }
+
+  window.addEventListener('resize', function() { chart.resize(); });
+}
+
+render();
+</script>
+</body>
+</html>
