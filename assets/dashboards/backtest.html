@@ -1,0 +1,215 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>{{TITLE}}</title>
+<style>
+:root {
+  --bg: #131722; --bg-card: #1e222d; --border: #2a2e39;
+  --text: #d1d4dc; --text-dim: #787b86;
+  --green: #26a69a; --red: #ef5350; --yellow: #ffc107; --accent: #2962ff;
+  --font: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, sans-serif;
+}
+* { margin: 0; padding: 0; box-sizing: border-box; }
+html, body { background: var(--bg); color: var(--text); font-family: var(--font); font-size: 13px; }
+.container { padding: 8px; }
+.kpi-grid { display: grid; grid-template-columns: repeat(auto-fit, minmax(90px, 1fr)); gap: 6px; margin-bottom: 8px; }
+.kpi { background: var(--bg-card); border: 1px solid var(--border); border-radius: 6px; padding: 8px; text-align: center; }
+.kpi-label { font-size: 9px; color: var(--text-dim); text-transform: uppercase; letter-spacing: 0.3px; }
+.kpi-value { font-size: 16px; font-weight: 700; margin-top: 2px; }
+.kpi-sub { font-size: 9px; color: var(--text-dim); margin-top: 1px; }
+#equity-chart { width: 100%; height: 220px; }
+#dd-chart { width: 100%; height: 100px; margin-top: 4px; }
+.trades-table { width: 100%; border-collapse: collapse; font-size: 11px; margin-top: 8px; }
+.trades-table th { text-align: left; color: var(--text-dim); font-size: 9px; text-transform: uppercase; padding: 4px 6px; border-bottom: 1px solid var(--border); }
+.trades-table td { padding: 3px 6px; border-bottom: 1px solid var(--border); }
+.section-title { font-size: 10px; color: var(--text-dim); text-transform: uppercase; letter-spacing: 0.5px; margin: 10px 0 4px; }
+.compare-bar { display: flex; align-items: center; gap: 6px; padding: 4px 8px; background: var(--bg-card); border: 1px solid var(--border); border-radius: 4px; margin-bottom: 4px; }
+.compare-name { width: 80px; font-size: 11px; font-weight: 600; }
+.compare-fill { height: 16px; border-radius: 3px; min-width: 2px; transition: width 0.5s; }
+.compare-val { font-size: 11px; font-weight: 600; min-width: 60px; text-align: right; }
+</style>
+<script src="https://cdn.jsdelivr.net/npm/echarts@5/dist/echarts.min.js"></script>
+</head>
+<body>
+<div class="container">
+  <div id="kpis" class="kpi-grid"></div>
+  <div id="score-section" style="display:flex;gap:6px;margin-bottom:8px"></div>
+  <div id="signal-section"></div>
+  <div id="equity-chart"></div>
+  <div id="dd-chart"></div>
+  <div id="compare-section"></div>
+  <div id="trades-section"></div>
+</div>
+<script>
+// CONFIG is injected by the agent. Structure:
+// For single strategy:
+//   { mode: 'single', symbol, strategy, period, buy_hold_return_pct, metrics: {...}, equity_curve: [...], trades: [...] }
+// For compare:
+//   { mode: 'compare', symbol, period, buy_hold_return_pct, strategies: [...] }
+var CONFIG = {{CONFIG}};
+
+function fmt(v, decimals) {
+  if (v == null || v === 'Infinity') return v || '-';
+  return typeof v === 'number' ? v.toFixed(decimals || 2) : v;
+}
+function color(v) { return v > 0 ? 'var(--green)' : v < 0 ? 'var(--red)' : 'var(--text)'; }
+
+function renderKPIs(metrics, buyHold) {
+  var items = [
+    { label: '总收益', value: fmt(metrics.total_return_pct) + '%', color: color(metrics.total_return_pct) },
+    { label: '买入持有', value: fmt(buyHold) + '%', color: color(buyHold) },
+    { label: '交易次数', value: metrics.total_trades, sub: metrics.winners + 'W / ' + metrics.losers + 'L' },
+    { label: '胜率', value: fmt(metrics.win_rate_pct) + '%' },
+    { label: '夏普', value: fmt(metrics.sharpe_ratio) },
+    { label: '最大回撤', value: fmt(metrics.max_drawdown_pct) + '%', color: 'var(--red)' },
+    { label: '盈亏比', value: fmt(metrics.profit_factor) },
+    { label: '期望值', value: fmt(metrics.expectancy_pct) + '%', color: color(metrics.expectancy_pct) },
+  ];
+  var html = '';
+  items.forEach(function(k) {
+    html += '<div class="kpi"><div class="kpi-label">' + k.label + '</div>'
+      + '<div class="kpi-value" style="color:' + (k.color || 'var(--text)') + '">' + k.value + '</div>'
+      + (k.sub ? '<div class="kpi-sub">' + k.sub + '</div>' : '') + '</div>';
+  });
+  document.getElementById('kpis').innerHTML = html;
+}
+
+function renderEquityCurve(curve) {
+  if (!curve || curve.length < 2) return;
+  var chart = echarts.init(document.getElementById('equity-chart'));
+  var dates = curve.map(function(p) { return p.date; });
+  var equity = curve.map(function(p) { return p.equity; });
+  chart.setOption({
+    backgroundColor: 'transparent',
+    grid: { left: 50, right: 12, top: 20, bottom: 24 },
+    tooltip: { trigger: 'axis', backgroundColor: '#1e222d', borderColor: '#2a2e39', textStyle: { color: '#d1d4dc', fontSize: 11 } },
+    xAxis: { type: 'category', data: dates, axisLabel: { color: '#787b86', fontSize: 9 }, axisLine: { lineStyle: { color: '#2a2e39' } } },
+    yAxis: { type: 'value', axisLabel: { color: '#787b86', fontSize: 9 }, splitLine: { lineStyle: { color: '#2a2e39' } } },
+    series: [{
+      type: 'line', data: equity, smooth: true, symbol: 'none',
+      lineStyle: { color: '#2962ff', width: 2 },
+      areaStyle: { color: { type: 'linear', x: 0, y: 0, x2: 0, y2: 1, colorStops: [{ offset: 0, color: 'rgba(41,98,255,0.3)' }, { offset: 1, color: 'rgba(41,98,255,0.02)' }] } }
+    }]
+  });
+  // Drawdown chart
+  var dd = curve.map(function(p) { return p.drawdown_pct; });
+  var ddChart = echarts.init(document.getElementById('dd-chart'));
+  ddChart.setOption({
+    backgroundColor: 'transparent',
+    grid: { left: 50, right: 12, top: 8, bottom: 24 },
+    xAxis: { type: 'category', data: dates, show: false },
+    yAxis: { type: 'value', axisLabel: { color: '#787b86', fontSize: 9 }, splitLine: { lineStyle: { color: '#2a2e39' } } },
+    series: [{ type: 'bar', data: dd, itemStyle: { color: '#ef5350' }, barMaxWidth: 4 }]
+  });
+}
+
+function renderCompare(strategies, buyHold) {
+  if (!strategies || !strategies.length) return;
+  var maxReturn = Math.max.apply(null, strategies.map(function(s) { return Math.abs(s.total_return_pct || 0); }).concat([Math.abs(buyHold)]));
+  if (maxReturn === 0) maxReturn = 1;
+
+  var html = '<div class="section-title">策略对比 (按评分排名)</div>';
+  strategies.forEach(function(s, i) {
+    var ret = s.total_return_pct || 0;
+    var w = Math.abs(ret) / maxReturn * 100;
+    var c = ret > 0 ? 'var(--green)' : 'var(--red)';
+    var gradeC = s.grade === 'A' ? 'var(--green)' : s.grade === 'B' ? 'var(--accent)' : s.grade === 'C' ? 'var(--yellow)' : 'var(--red)';
+    html += '<div class="compare-bar">'
+      + '<span style="color:' + gradeC + ';font-size:11px;font-weight:700;width:20px">' + (s.grade || '') + '</span>'
+      + '<span class="compare-name">' + s.strategy + '</span>'
+      + '<div style="flex:1;background:var(--bg);border-radius:3px;overflow:hidden"><div class="compare-fill" style="width:' + w + '%;background:' + c + '"></div></div>'
+      + '<span class="compare-val" style="color:' + c + '">' + fmt(ret) + '%</span>'
+      + '<span style="font-size:9px;color:var(--text-dim);width:36px;text-align:right">' + (s.score || '-') + '</span>'
+      + '</div>';
+  });
+  // Buy & hold reference
+  html += '<div class="compare-bar" style="border-color:var(--yellow)">'
+    + '<span style="color:var(--yellow);font-size:10px;width:20px">⊙</span>'
+    + '<span class="compare-name" style="color:var(--yellow)">Buy&Hold</span>'
+    + '<div style="flex:1;background:var(--bg);border-radius:3px;overflow:hidden"><div class="compare-fill" style="width:' + (Math.abs(buyHold)/maxReturn*100) + '%;background:var(--yellow)"></div></div>'
+    + '<span class="compare-val" style="color:var(--yellow)">' + fmt(buyHold) + '%</span>'
+    + '<span style="width:36px"></span></div>';
+  document.getElementById('compare-section').innerHTML = html;
+}
+
+function renderTrades(trades) {
+  if (!trades || !trades.length) return;
+  var html = '<div class="section-title">最近交易</div><table class="trades-table"><thead><tr>'
+    + '<th>入场</th><th>出场</th><th>收益</th></tr></thead><tbody>';
+  trades.forEach(function(t) {
+    var c = color(t.return_pct);
+    html += '<tr><td>' + t.entry + '</td><td>' + t.exit + '</td>'
+      + '<td style="color:' + c + ';font-weight:600">' + fmt(t.return_pct) + '%</td></tr>';
+  });
+  html += '</tbody></table>';
+  document.getElementById('trades-section').innerHTML = html;
+}
+
+// ─── Render ───
+if (CONFIG.mode === 'compare') {
+  if (CONFIG.strategies.length > 0) {
+    renderKPIs(CONFIG.strategies[0], CONFIG.buy_hold_return_pct);
+    if (CONFIG.strategies[0].equity_curve) renderEquityCurve(CONFIG.strategies[0].equity_curve);
+  }
+  renderCompare(CONFIG.strategies, CONFIG.buy_hold_return_pct);
+} else {
+  renderKPIs(CONFIG.metrics, CONFIG.buy_hold_return_pct);
+  renderEquityCurve(CONFIG.equity_curve);
+  renderTrades(CONFIG.trades);
+}
+// Score radar + signal (enhanced mode)
+if (CONFIG.score) renderScore(CONFIG.score);
+if (CONFIG.currentSignal) renderSignal(CONFIG.currentSignal);
+
+function renderScore(score) {
+  var section = document.getElementById('score-section');
+  // Score badge
+  var gradeColor = score.grade === 'A' ? 'var(--green)' : score.grade === 'B' ? 'var(--accent)' : score.grade === 'C' ? 'var(--yellow)' : 'var(--red)';
+  var badge = '<div style="background:var(--bg-card);border:1px solid var(--border);border-radius:6px;padding:10px 14px;text-align:center;min-width:80px">'
+    + '<div style="font-size:28px;font-weight:800;color:' + gradeColor + '">' + score.grade + '</div>'
+    + '<div style="font-size:18px;font-weight:700;margin-top:2px">' + score.score + '</div>'
+    + '<div style="font-size:9px;color:var(--text-dim)">综合评分</div>'
+    + (score.overfit_risk === 'high' ? '<div style="font-size:8px;color:var(--red);margin-top:3px">⚠️ 过拟合风险</div>' : '')
+    + '</div>';
+
+  // Radar chart
+  var radar = '<div id="radar-chart" style="flex:1;height:130px"></div>';
+  section.innerHTML = badge + radar;
+
+  if (score.components) {
+    var chart = echarts.init(document.getElementById('radar-chart'));
+    var labels = ['收益', '风险控制', '稳定性', '效率', '统计显著'];
+    var values = [score.components.returns || 0, score.components.risk || 0, score.components.stability || 0, score.components.efficiency || 0, score.components.significance || 0];
+    chart.setOption({
+      backgroundColor: 'transparent',
+      radar: {
+        indicator: labels.map(function(l) { return {name: l, max: 100}; }),
+        radius: '65%', center: ['50%', '55%'],
+        axisName: { color: '#787b86', fontSize: 9 },
+        splitArea: { areaStyle: { color: ['transparent'] } },
+        splitLine: { lineStyle: { color: '#2a2e39' } },
+        axisLine: { lineStyle: { color: '#2a2e39' } }
+      },
+      series: [{ type: 'radar', data: [{ value: values, areaStyle: { color: 'rgba(41,98,255,0.2)' }, lineStyle: { color: '#2962ff' }, itemStyle: { color: '#2962ff' } }] }]
+    });
+  }
+}
+
+function renderSignal(signal) {
+  if (!signal || signal.status === 'insufficient_data' || signal.status === 'unsupported') return;
+  var section = document.getElementById('signal-section');
+  var statusColor = signal.status === 'triggered' ? 'var(--green)' : signal.status === 'approaching' ? 'var(--yellow)' : signal.status === 'holding' ? 'var(--accent)' : 'var(--text-dim)';
+  var statusLabel = signal.status === 'triggered' ? '✅ 信号触发' : signal.status === 'approaching' ? '⏳ 接近触发' : signal.status === 'holding' ? '📈 持有中' : '— 远离信号';
+  section.innerHTML = '<div style="background:var(--bg-card);border:1px solid ' + statusColor + ';border-radius:6px;padding:8px 12px;margin-bottom:8px">'
+    + '<div style="display:flex;justify-content:space-between;align-items:center">'
+    + '<span style="font-size:11px;font-weight:600;color:' + statusColor + '">' + statusLabel + '</span>'
+    + '<span style="font-size:10px;color:var(--text-dim)">' + (signal.indicator || '') + ': ' + (signal.currentValue || '') + '</span>'
+    + '</div>'
+    + '<div style="font-size:10px;color:var(--text);margin-top:4px">' + (signal.suggestion || '') + '</div>'
+    + '</div>';
+}
+</script>
+</body>
+</html>
