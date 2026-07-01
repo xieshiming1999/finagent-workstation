@@ -30,6 +30,7 @@ Finance data settings:
 
 - Provider credentials only for providers you intend to use. A personal research finance workstation usually fails first on data access, not on the LLM: the hard work is retrieving data, proving the provider returned the expected schema, preserving source time separately from fetch time, and reusing verified local rows before spending another external call.
 - Data source options should be treated as governed provider paths, not anonymous fallback blobs. Configure only the providers used by your workflow.
+- TDX, EastMoney, and public market-data paths: useful for A-share quote, K-line, fund, market-structure, news, and ranking data. Each provider has different schema stability, route behavior, and transport reliability.
 - Optional local proxy settings when your network requires them.
 - Runtime data directory for sessions, memory, generated dashboards, local cache, provider evidence, logs, and user-created artifacts.
 
@@ -50,6 +51,9 @@ Credential and access matrix:
 
 | Data source | Key required | Where to get / configure | Main use |
 |---|---|---|---|
+| TDX / gotdx public market data | No API key | Local gotdx sidecar/runtime path | A-share quote, K-line, index and market-structure paths. |
+| EastMoney public data | No API key | Public EastMoney routes | A-share, ETF, sector, hot-rank, flow, limit-pool and related public data. |
+| AkShare public wrappers | No API key | Python sidecar with AkShare installed | Useful compatibility path; still needs sidecar health and schema validation. |
 
 Service dependencies:
 

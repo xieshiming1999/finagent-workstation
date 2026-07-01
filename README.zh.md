@@ -28,8 +28,9 @@ agent 执行真实 workflow 前，需要先配置运行时设置。请通过应�
 
 金融数据设置包括：
 
-- 仅为需要使用的 provider 配置凭证。对个人研究型金融工作台 来说，最困难的通常不是 LLM 本身，而是数据：如何取得数据、验证 provider 是否返回了预期 schema、区分 source time 和 fetch time，并在再次访问外部 provider 前优先复用已验证的本地数据。
+- 仅为需要使用的 provider 配置凭证。对个人研究型金融工作台来说，最困难的通常不是 LLM 本身，而是数据：如何取得数据、验证 provider 是否返回了预期 schema、区分 source time 和 fetch time，并在再次访问外部 provider 前优先复用已验证的本地数据。
 - 数据源应被视为受治理的 provider path，而不是匿名 fallback blob。只配置当前 workflow 实际使用的 provider。
+- TDX、EastMoney 和公开 market-data 路径：适合 A 股 quote、K-line、基金、市场结构、新闻和排名数据。各 provider 的 schema 稳定性、route 行为和 transport reliability 不同。
 - 当本地网络需要时，配置可选代理。
 - 用于 session、memory、generated dashboards、local cache、provider evidence、logs 和 user-created artifacts 的运行时数据目录。
 
@@ -50,6 +51,9 @@ agent 执行真实 workflow 前，需要先配置运行时设置。请通过应�
 
 | 数据源 | 是否需要 key | 获取 / 配置位置 | 主要用途 |
 |---|---|---|---|
+| TDX / gotdx 公开行情 | 不需要 API key | 本地 gotdx sidecar / runtime path | A 股 quote、K-line、指数和市场结构路径。 |
+| EastMoney 公开数据 | 不需要 API key | 公开 EastMoney route | A 股、ETF、板块、热榜、资金流、涨跌停池等公开数据。 |
+| AkShare 公开 wrapper | 不需要 API key | Python sidecar 并安装 AkShare | 兼容路径；仍需要 sidecar health 和 schema validation。 |
 
 服务依赖包括：
 
