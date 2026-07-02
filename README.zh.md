@@ -100,11 +100,13 @@ agent 执行真实 workflow 前，需要先配置运行时设置。请通过应�
 
 英文：
 
+- `docs/design/agent/agent-design-guide.md`
 - `docs/design/data-provenance/data-provenance-design-guide.md`
 - `docs/design/strategy-provenance/strategy-provenance-design-guide.md`
 
 中文：
 
+- `docs/design/agent/agent-design-guide.zh.md`
 - `docs/design/data-provenance/data-provenance-design-guide.zh.md`
 - `docs/design/strategy-provenance/strategy-provenance-design-guide.zh.md`
 

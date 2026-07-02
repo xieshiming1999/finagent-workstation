@@ -100,11 +100,13 @@ Design guides are part of the source contract. They are added as the correspondi
 
 English:
 
+- `docs/design/agent/agent-design-guide.md`
 - `docs/design/data-provenance/data-provenance-design-guide.md`
 - `docs/design/strategy-provenance/strategy-provenance-design-guide.md`
 
 Chinese:
 
+- `docs/design/agent/agent-design-guide.zh.md`
 - `docs/design/data-provenance/data-provenance-design-guide.zh.md`
 - `docs/design/strategy-provenance/strategy-provenance-design-guide.zh.md`
 
