@@ -1,0 +1,560 @@
+{
+  "version": "2026-06-17",
+  "interfaces": {
+    "stock.quote": {
+      "status": "implemented",
+      "reader": "readRecentQuoteSnapshot",
+      "policy": "quote_snapshot.timestamp max-age"
+    },
+    "stock.daily_kline": {
+      "status": "implemented",
+      "reader": "readKlineRows",
+      "policy": "kline_daily.date requested-window coverage"
+    },
+    "stock.identity_list": {
+      "status": "implemented",
+      "reader": "readStockIdentityList",
+      "policy": "stock_list minimum row coverage"
+    },
+    "index.quote": {
+      "status": "implemented",
+      "reader": "readRecentQuoteSnapshot",
+      "policy": "quote_snapshot.timestamp all-requested-index coverage"
+    },
+    "index.daily_kline": {
+      "status": "implemented",
+      "reader": "readKlineRows",
+      "policy": "kline_daily.date requested-window coverage"
+    },
+    "index.constituents": {
+      "status": "implemented",
+      "reader": "readIndexConstituentRows",
+      "policy": "index_constituent minimum row coverage by index/as-of/provider"
+    },
+    "stock.money_flow": {
+      "status": "implemented",
+      "reader": "readMoneyFlowRows",
+      "policy": "money_flow minimum row coverage"
+    },
+    "stock.daily_valuation": {
+      "status": "implemented",
+      "reader": "readFundamentalRows",
+      "policy": "fundamental minimum row coverage"
+    },
+    "stock.chip_distribution": {
+      "status": "implemented",
+      "reader": "readChipDistributionRows",
+      "policy": "chip_distribution minimum row coverage"
+    },
+    "fund.identity_list": {
+      "status": "implemented",
+      "reader": "readFundIdentityList",
+      "policy": "fund_list minimum row coverage"
+    },
+    "fund.nav_history": {
+      "status": "implemented",
+      "reader": "readFundNavRows",
+      "policy": "fund_nav date requested-window coverage"
+    },
+    "fund.holding": {
+      "status": "implemented",
+      "reader": "readFundHoldingRows",
+      "policy": "fund_holding minimum row coverage"
+    },
+    "fund.company_info": {
+      "status": "implemented",
+      "reader": "readCompanyInfoRows",
+      "policy": "stock_company_info fund code/info_type coverage"
+    },
+    "fund.financials": {
+      "status": "implemented",
+      "reader": "readFundamentalRows",
+      "policy": "fundamental fund code/report_date coverage"
+    },
+    "fund.investor_holders": {
+      "status": "implemented",
+      "reader": "readCompanyInfoRows",
+      "policy": "stock_company_info fund holder code/info_type coverage"
+    },
+    "fund.performance_metrics": {
+      "status": "implemented",
+      "reader": "readFundPerformanceMetricRows",
+      "policy": "fund_performance_metrics minimum row coverage by fund code/date/provider"
+    },
+    "market.sector_ranking": {
+      "status": "implemented",
+      "reader": "readSectorRankingRows",
+      "policy": "sector_ranking minimum row coverage"
+    },
+    "market.sector_constituents": {
+      "status": "implemented",
+      "reader": "readSectorConstituentRows",
+      "policy": "industry_map membership plus latest quote_snapshot coverage"
+    },
+    "market.board_ranking": {
+      "status": "implemented",
+      "reader": "readSectorRankingRows",
+      "policy": "sector_ranking board_type/date minimum row coverage"
+    },
+    "market.board_members": {
+      "status": "implemented",
+      "reader": "readSectorConstituentRows",
+      "policy": "industry_map board membership plus latest quote_snapshot coverage"
+    },
+    "market.limit_pool": {
+      "status": "implemented",
+      "reader": "readLimitPoolRows",
+      "policy": "limit_pool minimum row coverage"
+    },
+    "market.northbound_flow": {
+      "status": "implemented",
+      "reader": "readNorthboundFlowRows",
+      "policy": "northbound_flow minimum row coverage"
+    },
+    "market.northbound_holding": {
+      "status": "implemented",
+      "reader": "readNorthboundHoldingRows",
+      "policy": "northbound_holding minimum row coverage"
+    },
+    "market.hot_rank": {
+      "status": "implemented",
+      "reader": "readHotRankRows",
+      "policy": "hot_rank minimum row coverage"
+    },
+    "market.dragon_tiger": {
+      "status": "implemented",
+      "reader": "readDragonTigerRows",
+      "policy": "dragon_tiger minimum row coverage"
+    },
+    "market.unusual_activity": {
+      "status": "implemented",
+      "reader": "readUnusualActivityRows",
+      "policy": "unusual_activity minimum row coverage"
+    },
+    "market.flow_rank": {
+      "status": "implemented",
+      "reader": "readFlowRankRows",
+      "policy": "flow_rank minimum row coverage"
+    },
+    "fund.etf_quote": {
+      "status": "implemented",
+      "reader": "readEtfQuoteRows",
+      "policy": "stock_list ETF identities plus quote_snapshot.timestamp coverage"
+    },
+    "fund.etf_daily_ohlcv_bars": {
+      "status": "implemented",
+      "reader": "readKlineRows",
+      "policy": "kline_daily.date requested-window coverage for ETF symbols"
+    },
+    "fund.manager": {
+      "status": "implemented",
+      "reader": "readFundManagerRows",
+      "policy": "fund_manager minimum row coverage"
+    },
+    "calendar.trade_days": {
+      "status": "implemented",
+      "reader": "readTradeCalendarRows",
+      "policy": "trade_calendar full requested-year coverage"
+    },
+    "news.finance_feed": {
+      "status": "implemented",
+      "reader": "readFinanceNewsRows",
+      "policy": "finance_news.published_at max-age and keyword/source coverage"
+    },
+    "market.margin_trading": {
+      "status": "implemented",
+      "reader": "queryMarginTradingRows",
+      "policy": "margin_trading trade_date/code/provider coverage"
+    },
+    "data.coverage": {
+      "status": "implemented",
+      "reader": "getReusableDataSummary",
+      "policy": "data_coverage code/data_type/latest_date and reusable table summary coverage"
+    },
+    "data.health": {
+      "status": "implemented",
+      "reader": "buildDataInterfaceHealth",
+      "policy": "generated data-health evidence from local metadata, API log summaries, and governance artifacts"
+    },
+    "data.feed_status": {
+      "status": "implemented",
+      "reader": "dataFeeds",
+      "policy": "local Data Manager configured-feed status readback"
+    },
+    "wind.financial_document": {
+      "status": "implemented",
+      "reader": "readWindDocumentRows",
+      "policy": "wind_document minimum row coverage through WindDataApiService"
+    },
+    "wind.economic_series": {
+      "status": "implemented",
+      "reader": "readWindEconomicSeriesRows",
+      "policy": "wind_economic_series minimum row coverage through WindDataApiService"
+    },
+    "wind.analytics_result": {
+      "status": "implemented",
+      "reader": "readWindAnalyticsRows",
+      "policy": "wind_analytics_result minimum row coverage through WindDataApiService"
+    },
+    "stock.tick_chart_intraday": {
+      "status": "implemented",
+      "reader": "readTickChartRows",
+      "policy": "tick_chart_intraday trade_date/code coverage"
+    },
+    "stock.transactions": {
+      "status": "implemented",
+      "reader": "readTransactionRows",
+      "policy": "transactions trade_date/code coverage"
+    },
+    "stock.volume_profile": {
+      "status": "implemented",
+      "reader": "readVolumeProfileRows",
+      "policy": "volume_profile trade_date/code coverage"
+    },
+    "stock.xdxr_events": {
+      "status": "implemented",
+      "reader": "readXdxrRows",
+      "policy": "xdxr_event event_date/code coverage"
+    },
+    "stock.auction_snapshot": {
+      "status": "implemented",
+      "reader": "readAuctionRows",
+      "policy": "auction_snapshot trade_date/code coverage"
+    },
+    "stock.company_info": {
+      "status": "implemented",
+      "reader": "readCompanyInfoRows",
+      "policy": "stock_company_info code/info_type coverage"
+    },
+    "stock.risk_metrics": {
+      "status": "implemented",
+      "reader": "readCompanyInfoRows",
+      "policy": "stock_company_info risk-metrics code/info_type/provider coverage"
+    },
+    "stock.shareholders": {
+      "status": "implemented",
+      "reader": "readStockShareholderRows",
+      "policy": "stock_shareholder code/report_date/provider coverage"
+    },
+    "market.tdx_block_member": {
+      "status": "implemented",
+      "reader": "readTdxBlockMemberRows",
+      "policy": "tdx_block_member block/member coverage"
+    },
+    "provider.api_call_log": {
+      "status": "implemented",
+      "reader": "queryApiCalls",
+      "policy": "api_call_log recent-window/source/provider/interface/capability coverage"
+    },
+    "provider.fetch_task_queue": {
+      "status": "implemented",
+      "reader": "fetchStatus",
+      "policy": "fetch_tasks pending/running queue status coverage"
+    },
+    "provider.coverage": {
+      "status": "implemented",
+      "reader": "readProviderCoverageRows",
+      "policy": "tdx_security_count plus tdx_chart_sampling minimum row coverage"
+    },
+    "provider.table_metadata": {
+      "status": "implemented",
+      "reader": "readProviderTableMetadataRows",
+      "policy": "ex_category plus ex_table_entry minimum row coverage"
+    },
+    "market.tdx_top_board": {
+      "status": "implemented",
+      "reader": "readTdxTopBoardRows",
+      "policy": "tdx_top_board board_date/category/side coverage"
+    },
+    "index.momentum": {
+      "status": "implemented",
+      "reader": "readIndexMomentumRows",
+      "policy": "tdx_index_momentum trade_date/code coverage"
+    },
+    "index.profile": {
+      "status": "implemented",
+      "reader": "readCompanyInfoRows",
+      "policy": "stock_company_info index code/info_type coverage"
+    },
+    "index.fundamentals": {
+      "status": "implemented",
+      "reader": "readFundamentalRows",
+      "policy": "fundamental index code/report_date/provider coverage"
+    },
+    "global.company_profile": {
+      "status": "implemented",
+      "reader": "readYfinanceResearchRows",
+      "policy": "yfinance_profile_fields symbol/updated_at coverage"
+    },
+    "global.financial_statements": {
+      "status": "implemented",
+      "reader": "readYfinanceResearchRows",
+      "policy": "yfinance_statement_items symbol/period coverage"
+    },
+    "global.income_statement": {
+      "status": "implemented",
+      "reader": "readYfinanceResearchRows",
+      "policy": "yfinance_statement_items symbol and income statement coverage"
+    },
+    "global.balance_sheet": {
+      "status": "implemented",
+      "reader": "readYfinanceResearchRows",
+      "policy": "yfinance_statement_items symbol and balance sheet coverage"
+    },
+    "global.cash_flow": {
+      "status": "implemented",
+      "reader": "readYfinanceResearchRows",
+      "policy": "yfinance_statement_items symbol and cash flow coverage"
+    },
+    "global.earnings_calendar": {
+      "status": "implemented",
+      "reader": "readYfinanceResearchRows",
+      "policy": "yfinance_statement_items symbol and earnings_dates/earnings_history dataset coverage"
+    },
+    "global.earnings_history": {
+      "status": "implemented",
+      "reader": "readYfinanceResearchRows",
+      "policy": "yfinance_statement_items symbol and earnings_history dataset coverage"
+    },
+    "global.earnings_estimates": {
+      "status": "implemented",
+      "reader": "readYfinanceResearchRows",
+      "policy": "yfinance_statement_items symbol and earnings estimate dataset coverage"
+    },
+    "global.eps_revisions": {
+      "status": "implemented",
+      "reader": "readYfinanceResearchRows",
+      "policy": "yfinance_statement_items symbol and eps_revisions dataset coverage"
+    },
+    "global.eps_trend": {
+      "status": "implemented",
+      "reader": "readYfinanceResearchRows",
+      "policy": "yfinance_statement_items symbol and eps_trend dataset coverage"
+    },
+    "global.quarterly_financial_statements": {
+      "status": "implemented",
+      "reader": "readYfinanceResearchRows",
+      "policy": "yfinance_statement_items symbol and quarterly statement dataset coverage"
+    },
+    "global.quarterly_income_statement": {
+      "status": "implemented",
+      "reader": "readYfinanceResearchRows",
+      "policy": "yfinance_statement_items symbol and quarterly income statement coverage"
+    },
+    "global.quarterly_balance_sheet": {
+      "status": "implemented",
+      "reader": "readYfinanceResearchRows",
+      "policy": "yfinance_statement_items symbol and quarterly balance sheet coverage"
+    },
+    "global.quarterly_cash_flow": {
+      "status": "implemented",
+      "reader": "readYfinanceResearchRows",
+      "policy": "yfinance_statement_items symbol and quarterly cash flow coverage"
+    },
+    "global.recommendations": {
+      "status": "implemented",
+      "reader": "readYfinanceResearchRows",
+      "policy": "yfinance_recommendations symbol/updated_at coverage"
+    },
+    "global.upgrade_downgrade_events": {
+      "status": "implemented",
+      "reader": "readYfinanceResearchRows",
+      "policy": "yfinance_recommendations symbol and upgrades_downgrades dataset coverage"
+    },
+    "global.holders": {
+      "status": "implemented",
+      "reader": "readYfinanceResearchRows",
+      "policy": "yfinance_holders symbol/holder_type coverage"
+    },
+    "global.major_holders": {
+      "status": "implemented",
+      "reader": "readYfinanceResearchRows",
+      "policy": "yfinance_holders symbol/holder_type major_holders coverage"
+    },
+    "global.insider_transactions": {
+      "status": "implemented",
+      "reader": "readYfinanceResearchRows",
+      "policy": "yfinance_insider_transactions symbol/start_date coverage"
+    },
+    "option.expiry_calendar": {
+      "status": "implemented",
+      "reader": "readYfinanceOptionRows",
+      "policy": "yfinance_option_expiries symbol coverage"
+    },
+    "option.contract_list": {
+      "status": "implemented",
+      "reader": "readYfinanceOptionRows",
+      "policy": "yfinance_option_contracts symbol/expiry/type coverage"
+    },
+    "option.quote": {
+      "status": "implemented",
+      "reader": "readYfinanceOptionRows",
+      "policy": "yfinance_option_contracts contract symbol/expiry/type quote-field coverage"
+    },
+    "option.daily_kline": {
+      "status": "implemented",
+      "reader": "readKlineRows",
+      "policy": "kline_daily.date requested-window coverage for option contract symbols"
+    },
+    "option.open_interest": {
+      "status": "implemented",
+      "reader": "readYfinanceOptionRows",
+      "policy": "yfinance_option_contracts symbol/expiry/type open_interest and volume coverage"
+    },
+    "option.implied_volatility": {
+      "status": "implemented",
+      "reader": "readYfinanceOptionRows",
+      "policy": "yfinance_option_contracts symbol/expiry/type implied_volatility and moneyness coverage"
+    },
+    "option.chain_snapshot": {
+      "status": "implemented",
+      "reader": "readYfinanceOptionRows",
+      "policy": "yfinance_option_expiries plus yfinance_option_contracts symbol/expiry coverage"
+    },
+    "global.options_chain": {
+      "status": "implemented",
+      "reader": "readYfinanceOptionRows",
+      "policy": "yfinance_option_expiries and yfinance_option_contracts symbol/expiry coverage"
+    },
+    "global.corporate_actions": {
+      "status": "implemented",
+      "reader": "readYfinanceCorporateActionRows",
+      "policy": "yfinance_corporate_actions symbol/action_date coverage"
+    },
+    "global.dividends": {
+      "status": "implemented",
+      "reader": "readYfinanceCorporateActionRows",
+      "policy": "yfinance_corporate_actions symbol/action_date dividend coverage"
+    },
+    "global.capital_gains": {
+      "status": "implemented",
+      "reader": "readYfinanceCorporateActionRows",
+      "policy": "yfinance_corporate_actions symbol/action_date capital gains coverage"
+    },
+    "global.stock_splits": {
+      "status": "implemented",
+      "reader": "readYfinanceCorporateActionRows",
+      "policy": "yfinance_corporate_actions symbol/action_date split coverage"
+    },
+    "global.finance_news": {
+      "status": "implemented",
+      "reader": "readYfinanceNewsRows",
+      "policy": "yfinance_news symbol/published_at coverage"
+    },
+    "market.screening": {
+      "status": "implemented",
+      "reader": "readMarketScreeningSnapshots",
+      "policy": "market_screening_snapshot request/provider/symbol coverage"
+    },
+    "bond.convertible_quote": {
+      "status": "implemented",
+      "reader": "readRecentQuoteSnapshot",
+      "policy": "quote_snapshot convertible-bond code/source timestamp coverage"
+    },
+    "bond.convertible_daily_kline": {
+      "status": "implemented",
+      "reader": "readKlineRows",
+      "policy": "kline_daily convertible-bond date/adjust/source coverage"
+    },
+    "bond.profile": {
+      "status": "implemented",
+      "reader": "readCompanyInfoRows",
+      "policy": "stock_company_info bond code/info_type coverage"
+    },
+    "bond.market_data": {
+      "status": "implemented",
+      "reader": "readCompanyInfoRows",
+      "policy": "stock_company_info bond market-data code/info_type coverage"
+    },
+    "bond.issuer_financials": {
+      "status": "implemented",
+      "reader": "readFundamentalRows",
+      "policy": "fundamental bond issuer code/report_date coverage"
+    },
+    "technical.indicator_series": {
+      "status": "implemented",
+      "reader": "readTechnicalIndicatorSeries",
+      "policy": "technical_indicator_series symbol/indicator/source_date coverage"
+    },
+    "stock.alpha_factors": {
+      "status": "implemented",
+      "reader": "readAlphaFactorRows",
+      "policy": "alpha_factor symbol/factor_name/source_date coverage"
+    },
+    "option.volume": {
+      "status": "implemented",
+      "reader": "readYfinanceOptionRows",
+      "policy": "yfinance_option_contracts symbol/expiry/type volume coverage"
+    },
+    "option.moneyness": {
+      "status": "implemented",
+      "reader": "readYfinanceOptionRows",
+      "policy": "yfinance_option_contracts symbol/expiry/type in_the_money coverage"
+    },
+    "option.bid_ask_spread": {
+      "status": "implemented",
+      "reader": "readYfinanceOptionRows",
+      "policy": "yfinance_option_contracts symbol/expiry/type bid/ask coverage"
+    },
+    "option.price_change": {
+      "status": "implemented",
+      "reader": "readYfinanceOptionRows",
+      "policy": "yfinance_option_contracts symbol/expiry/type change/percent_change coverage"
+    },
+    "option.trade_recency": {
+      "status": "implemented",
+      "reader": "readYfinanceOptionRows",
+      "policy": "yfinance_option_contracts symbol/expiry/type last_trade_date coverage"
+    },
+    "global.institutional_holders": {
+      "status": "implemented",
+      "reader": "readYfinanceResearchRows",
+      "policy": "yfinance_holders symbol/holder_type institutional_holders/institutional coverage"
+    },
+    "global.mutual_fund_holders": {
+      "status": "implemented",
+      "reader": "readYfinanceResearchRows",
+      "policy": "yfinance_holders symbol/holder_type mutualfund_holders/fund coverage"
+    },
+    "data.store_stats": {
+      "status": "implemented",
+      "reader": "stats",
+      "policy": "generated reusable data store size/table summary and local reusable coverage evidence"
+    },
+    "data.runtime_probe": {
+      "status": "implemented",
+      "reader": "runtimeProbe",
+      "policy": "runtime_probes status.json and live-status/latest.json durable runtime evidence"
+    },
+    "provider.source_status": {
+      "status": "implemented",
+      "reader": "sources",
+      "policy": "generated provider source/rate-limiter status and nominal routing policy evidence"
+    },
+    "fund.money_yield_history": {
+      "status": "implemented",
+      "reader": "readFundMoneyYieldRows",
+      "policy": "fund_money_yield date requested-window coverage"
+    },
+    "fund.dividend_factor": {
+      "status": "implemented",
+      "reader": "readFundDividendFactorRows",
+      "policy": "fund_dividend_factor event_date requested-window coverage"
+    },
+    "market.intraday_ohlcv_bars": {
+      "status": "implemented",
+      "reader": "readIntradayOhlcvRows",
+      "policy": "intraday_ohlcv_bars bar_time requested-window coverage"
+    },
+    "fund.etf_transactions": {
+      "status": "implemented",
+      "reader": "readTransactionRows",
+      "policy": "transactions trade_date/code coverage for ETF symbols"
+    },
+    "fund.listed_fund_quote": {
+      "status": "implemented",
+      "reader": "readEtfQuoteRows",
+      "policy": "stock_list listed_fund identities plus quote_snapshot.timestamp coverage"
+    }
+  }
+}
