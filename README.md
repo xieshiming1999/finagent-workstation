@@ -70,8 +70,20 @@ Credential and access matrix:
 | TDX / gotdx public market data | No API key | Local gotdx sidecar/runtime path | A-share quote, K-line, index and market-structure paths. |
 | EastMoney public data | No API key | Public EastMoney routes | A-share, ETF, sector, hot-rank, flow, limit-pool and related public data. |
 | AkShare public wrappers | No API key | Python sidecar with AkShare installed | Useful compatibility path; still needs sidecar health and schema validation. |
+| Sina public finance data | No API key | Public Sina finance routes through governed provider paths | A-share public data when verified by probes. |
+| Tencent public finance data | No API key | Public Tencent/proxy.finance.qq.com routes through governed provider paths | Quote/K-line/ranking style public data when verified by probes. |
 | Wind / AIFinMarket | `WIND_API_KEY` | Wind AIFinMarket / Wind account or portal | Professional, macro, fundamental, document and advanced finance data; quota and permission gated. |
 | Tushare Pro | `TUSHARE_TOKEN` | Tushare account -> personal center -> account token | Structured A-share reference data; endpoint permissions vary by account. |
+| Yahoo Finance / yfinance-style global data | No API key in this app | Public Yahoo/yfinance-compatible routes; workstation uses Python sidecar | Global quote/history/research/options/actions; usually needs global web access or proxy. |
+| TradingView visual/chart layer | No API key in this app | Web access / embedded chart resources | Visual chart enhancement, not canonical persisted data. |
+| Brave Search | `BRAVE_SEARCH_KEY` | Brave Search API dashboard | Research/source discovery, not canonical market data. |
+| Tavily Search | `TAVILY_API_KEY` | Tavily Platform dashboard | Research/source discovery and extraction, not canonical market data. |
+| FRED macro data | `FRED_API_KEY` | FRED account API key page | Official US macro/rates series. |
+| BLS public macro data | No API key in current implementation | BLS public API / public releases | US labor/inflation evidence; rate limits and source availability still apply. |
+| BEA macro data | `BEA_API_KEY` or `~/.fin_electron/bea.txt` fallback | BEA API signup | US national accounts and growth evidence. |
+| EIA energy data | `EIA_API_KEY` | EIA Open Data API registration | Energy inventory/commodity macro evidence. |
+| Xueqiu simulated trading | `XQ_COOKIE`; optional `XQ_PORTFOLIO` | Logged-in Xueqiu browser session and simulation group ids/names | Simulation validation only; keep separate from real broker execution. |
+| Public macro/research pages | Usually no API key | Official/public pages; sometimes browser/manual validation | Research narrative and attribution evidence until promoted into governed schema. |
 
 Service dependencies:
 

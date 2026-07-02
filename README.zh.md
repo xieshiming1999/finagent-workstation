@@ -70,8 +70,20 @@ agent 执行真实 workflow 前，需要先配置运行时设置。请通过应�
 | TDX / gotdx 公开行情 | 不需要 API key | 本地 gotdx sidecar / runtime path | A 股 quote、K-line、指数和市场结构路径。 |
 | EastMoney 公开数据 | 不需要 API key | 公开 EastMoney route | A 股、ETF、板块、热榜、资金流、涨跌停池等公开数据。 |
 | AkShare 公开 wrapper | 不需要 API key | Python sidecar 并安装 AkShare | 兼容路径；仍需要 sidecar health 和 schema validation。 |
+| Sina 公开金融数据 | 不需要 API key | 通过受治理 provider path 访问公开 Sina finance route | 经 probe 验证后的 A 股公开数据。 |
+| Tencent 公开金融数据 | 不需要 API key | 通过受治理 provider path 访问 Tencent/proxy.finance.qq.com route | 经 probe 验证后的 quote/K-line/ranking 类公开数据。 |
 | Wind / AIFinMarket | `WIND_API_KEY` | Wind AIFinMarket / Wind 账号或门户 | 专业数据、宏观、基本面、文档和高级金融数据；受额度和权限限制。 |
 | Tushare Pro | `TUSHARE_TOKEN` | Tushare 账号 -> 个人中心 -> 账号 TOKEN | A 股结构化参考数据；不同账号的 endpoint 权限不同。 |
+| Yahoo Finance / yfinance-style 全球数据 | 本应用不需要 API key | 公开 Yahoo/yfinance-compatible route；workstation 通过 Python sidecar | 全球 quote/history/research/options/actions；通常需要全局网络或代理。 |
+| TradingView 图表层 | 本应用不需要 API key | Web 访问 / embedded chart resources | 图表视觉增强，不是 canonical persisted data。 |
+| Brave Search | `BRAVE_SEARCH_KEY` | Brave Search API dashboard | 研究和来源发现，不是 canonical market data。 |
+| Tavily Search | `TAVILY_API_KEY` | Tavily Platform dashboard | 研究、来源发现和抽取，不是 canonical market data。 |
+| FRED 宏观数据 | `FRED_API_KEY` | FRED 账号 API key 页面 | 美国官方宏观和利率序列。 |
+| BLS 公开宏观数据 | 当前实现不需要 API key | BLS public API / public releases | 美国就业和通胀证据；仍受访问限制和源可用性影响。 |
+| BEA 宏观数据 | `BEA_API_KEY` 或 `~/.fin_electron/bea.txt` fallback | BEA API signup | 美国国民账户和增长证据。 |
+| EIA 能源数据 | `EIA_API_KEY` | EIA Open Data API registration | 能源库存和商品宏观证据。 |
+| 雪球模拟交易 | `XQ_COOKIE`；可选 `XQ_PORTFOLIO` | 已登录雪球浏览器 session 和模拟组合 id/name | 只用于模拟交易验证；必须与真实券商执行分离。 |
+| 公开宏观 / 研究页面 | 通常不需要 API key | 官方/公开页面；有时需要浏览器或人工验证 | 研究叙事和归因证据，直到被提升为受治理 schema。 |
 
 服务依赖包括：
 
