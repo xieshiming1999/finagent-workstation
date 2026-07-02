@@ -2,6 +2,15 @@
 
 FinAgent Workstation 是一个Electron / React 金融工作台，包含 TypeScript agent runtime、本地数据存储、provider provenance、仪表盘、策略工作流和模拟交易边界。
 
+## 能力概览
+
+- 桌面 agent runtime：chat agent、event agent、session、memory、工具执行、permission gate、workflow automation hook、dashboard/WebView 工具，以及重启后可诊断的 evidence。
+- 金融数据层：local-first DataStore、受治理 provider interface、sidecar-backed public provider、live probe、provider matrix、API Health、source time 与 fetch time 分离和 typed readback。
+- Provider governance：Wind、Tushare、TDX/gotdx、EastMoney、AkShare、Sina、Tencent、Yahoo/yfinance、搜索、宏观和研究来源都通过显式 capability 使用，而不是匿名 fallback。
+- 分析层：市场概览、股票/基金研究、宏观研究、新闻/搜索上下文、风险提示、source-health evidence，以及生成式报告和工作台面板。
+- 策略与回测：内置策略库、custom StrategySpec validation、backtest execution、saved strategy lifecycle、rerun evidence、portfolio-style comparison，以及 monitor/watchlist handoff。
+- Workflow surface：Data Manager、API Health、Macro Research、Strategy Library、watchlist、dashboard、模拟交易、生成式 WebView report 和 evidence-first workflow test。
+
 ## 快速启动
 
 安装依赖：
@@ -71,10 +80,12 @@ agent 执行真实 workflow 前，需要先配置运行时设置。请通过应�
 英文：
 
 - `docs/design/data-provenance/data-provenance-design-guide.md`
+- `docs/design/strategy-provenance/strategy-provenance-design-guide.md`
 
 中文：
 
 - `docs/design/data-provenance/data-provenance-design-guide.zh.md`
+- `docs/design/strategy-provenance/strategy-provenance-design-guide.zh.md`
 
 ## 开发
 

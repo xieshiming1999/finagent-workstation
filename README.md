@@ -2,6 +2,15 @@
 
 FinAgent Workstation is an Electron and React finance workstation with a TypeScript agent runtime, local data store, provider provenance, dashboards, strategy workflows, and simulated-trading boundaries.
 
+## Abilities
+
+- Desktop agent runtime: chat agent, event agent, sessions, memory, tool execution, permission gates, workflow automation hooks, dashboard/WebView tools, and restart-diagnosable evidence.
+- Finance data layer: local-first DataStore, governed provider interfaces, sidecar-backed public providers, live probes, provider matrix, API Health, source time versus fetch time, and typed readbacks.
+- Provider governance: Wind, Tushare, TDX/gotdx, EastMoney, AkShare, Sina, Tencent, Yahoo/yfinance, search, macro, and research sources are routed through explicit capabilities instead of anonymous fallbacks.
+- Analysis layer: market overview, stock/fund research, macro research, news/search context, risk notes, source-health evidence, and generated reports/workstation panels.
+- Strategy and backtest: built-in strategy library, custom StrategySpec validation, backtest execution, saved strategy lifecycle, rerun evidence, portfolio-style comparison, and monitor/watchlist handoff.
+- Workflow surfaces: Data Manager, API Health, Macro Research, Strategy Library, watchlists, dashboards, simulated trading, generated WebView reports, and evidence-first workflow tests.
+
 ## Quick Start
 
 Install dependencies:
@@ -71,10 +80,12 @@ Design guides are part of the source contract. They are added as the correspondi
 English:
 
 - `docs/design/data-provenance/data-provenance-design-guide.md`
+- `docs/design/strategy-provenance/strategy-provenance-design-guide.md`
 
 Chinese:
 
 - `docs/design/data-provenance/data-provenance-design-guide.zh.md`
+- `docs/design/strategy-provenance/strategy-provenance-design-guide.zh.md`
 
 ## Development
 
