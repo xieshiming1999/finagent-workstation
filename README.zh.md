@@ -38,9 +38,16 @@ agent 执行真实 workflow 前，需要先配置运行时设置。请通过应�
 金融数据设置包括：
 
 - 仅为需要使用的 provider 配置凭证。对个人研究型金融工作台来说，最困难的通常不是 LLM 本身，而是数据：如何取得数据、验证 provider 是否返回了预期 schema、区分 source time 和 fetch time，并在再次访问外部 provider 前优先复用已验证的本地数据。
-- 数据源应被视为受治理的 provider path，而不是匿名 fallback blob。只配置当前 workflow 实际使用的 provider。
-- TDX、EastMoney 和公开 market-data 路径：适合 A 股 quote、K-line、基金、市场结构、新闻和排名数据。各 provider 的 schema 稳定性、route 行为和 transport reliability 不同。
+- 数据源选项，例如 Wind、Tushare、搜索 provider、雪球模拟交易、yfinance / Yahoo Finance、TradingView 和 sidecar-backed public providers。
+- Wind / AIFinMarket：如已具备 Wind AIFinMarket 访问权限，配置 `WIND_API_KEY`。它适合专业授权数据、宏观序列、文档和高级金融事实；额度、权限和失败分类应在 API health 中可见。
+- Tushare：如需要支持范围内的 A 股结构化参考数据，配置从 Tushare 账户获取的 `TUSHARE_TOKEN`。部分财报或基金端点需要额外权限；没有权限或已经禁用的端点不应作为正常 workflow 暴露给 agent。
+- AkShare / EastMoney / Sina / Tencent 公开数据：适合 A 股、基金、市场结构、新闻和排名数据。它们应通过受治理 interface 和 probe 使用，不应作为匿名 fallback blob。
+- yfinance / Yahoo Finance：通过 Python sidecar 和 typed readback table 支持全球标的、期权、公司行动、新闻和跨市场上下文，通常需要全局网络访问或可用代理。
+- 搜索 provider：只配置实际使用的搜索引擎。搜索结果适合研究上下文和来源发现，不应直接等同于 canonical market-data table。
+- 雪球模拟交易：只为模拟交易验证配置 cookie/session。它应与真实券商执行分离，cookie 应在源码外刷新和保存。
+- TradingView：在网络可用时作为图表和视觉增强层使用；它不是可复用数据的 canonical storage source。
 - 当本地网络需要时，配置可选代理。
+- 对依赖海外网站的 provider，需要全局网络访问或可用代理，尤其是 yfinance / Yahoo Finance 和 TradingView。
 - 用于 session、memory、generated dashboards、local cache、provider evidence、logs 和 user-created artifacts 的运行时数据目录。
 
 数据源对比：
@@ -63,6 +70,8 @@ agent 执行真实 workflow 前，需要先配置运行时设置。请通过应�
 | TDX / gotdx 公开行情 | 不需要 API key | 本地 gotdx sidecar / runtime path | A 股 quote、K-line、指数和市场结构路径。 |
 | EastMoney 公开数据 | 不需要 API key | 公开 EastMoney route | A 股、ETF、板块、热榜、资金流、涨跌停池等公开数据。 |
 | AkShare 公开 wrapper | 不需要 API key | Python sidecar 并安装 AkShare | 兼容路径；仍需要 sidecar health 和 schema validation。 |
+| Wind / AIFinMarket | `WIND_API_KEY` | Wind AIFinMarket / Wind 账号或门户 | 专业数据、宏观、基本面、文档和高级金融数据；受额度和权限限制。 |
+| Tushare Pro | `TUSHARE_TOKEN` | Tushare 账号 -> 个人中心 -> 账号 TOKEN | A 股结构化参考数据；不同账号的 endpoint 权限不同。 |
 
 服务依赖包括：
 
