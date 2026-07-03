@@ -261,11 +261,6 @@ export const portfolioToolCopy = {
       `Trade OK: ${side} ${symbol} ${shares} @ ${price}. Remaining cash: ${cash}.`,
       `交易成功: ${side} ${symbol} ${shares} 股 @ ${price}。剩余现金: ${cash}`,
     ),
-  emptyPaperPortfolio: (cash: string) =>
-    runtimeText(
-      `The paper portfolio is empty. Initial cash: ${cash}. Use trade to buy positions.`,
-      `模拟盘为空。初始资金: ${cash}。用 trade 买入股票。`,
-    ),
   emptyPortfolio: () => runtimeText('Portfolio is empty.', '组合为空。'),
   concentrationAlert: (symbol: string, weight: number) =>
     runtimeText(
@@ -366,7 +361,8 @@ export const researchToolCopy = {
     'symbols required. Example: Research(action: "sentiment", symbols: ["AAPL"])',
     '缺少 symbols。示例: Research(action: "sentiment", symbols: ["AAPL"])',
   ),
-  sentimentSourceSummary: (gubaLabel: string) => `StockTwits/${gubaLabel}`,
+  sentimentSourceSummary: (gubaLabel: string) =>
+    `StockTwits typed sentiment and unclassified ${gubaLabel} posts`,
   missingFetchUrl: () => runtimeText(
     'url required. Example: Research(action: "fetch", url: "https://...")',
     '缺少 url。示例: Research(action: "fetch", url: "https://...")',
@@ -398,7 +394,7 @@ FINANCIAL NEWS:
 SOCIAL SENTIMENT:
   sentiment — Social media sentiment analysis
     symbols: ["AAPL", "600519"]
-    Sources: StockTwits (US), EastMoney Guba (A-share)
+    Sources: StockTwits typed labels (US); unclassified EastMoney Guba post titles (A-share)
     Returns: bullish/bearish counts and ratio
 
 WEB FETCH:
@@ -431,7 +427,7 @@ Note: agent can also use WebView to open Google/Bing directly for interactive se
 社交情绪:
   sentiment — 社交媒体情绪分析
     symbols: ["AAPL", "600519"]
-    来源: StockTwits（美股）、东方财富股吧（A股）
+    来源: StockTwits 类型化标签（美股）；东方财富股吧未分类标题（A股）
     返回: 看多/看空计数与比例
 
 网页抓取:
