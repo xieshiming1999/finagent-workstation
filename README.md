@@ -86,12 +86,14 @@ English:
 - `docs/design/agent/agent-design-guide.md`
 - `docs/design/data-provenance/data-provenance-design-guide.md`
 - `docs/design/strategy-provenance/strategy-provenance-design-guide.md`
+- `docs/design/workflow-phase/workflow-phase-design-guide.md`
 
 Chinese:
 
 - `docs/design/agent/agent-design-guide.zh.md`
 - `docs/design/data-provenance/data-provenance-design-guide.zh.md`
 - `docs/design/strategy-provenance/strategy-provenance-design-guide.zh.md`
+- `docs/design/workflow-phase/workflow-phase-design-guide.zh.md`
 
 ## Development
 
