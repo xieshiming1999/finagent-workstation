@@ -133,7 +133,7 @@ export function registerDefaultHooks(deps: RegisterDeps): void {
     const lastAssistant = [...deps.messages].reverse().find((m) => m.role === deps.assistantRole)
     const lastResponse = lastAssistant?.content ?? ''
     if (!lastResponse.trim()) return
-    const verifier = deps.goalVerifier ?? createGoalVerifier()
+    const verifier = deps.goalVerifier ?? createGoalVerifier(deps.basePath)
     const decision = await deps.goalManager.evaluateAfterTurn(lastResponse, deps.goalJudge, verifier)
     if (decision.message) deps.notifications.enqueue('goal-status', decision.message, 'now')
     if (decision.shouldContinue && decision.continuationPrompt) {
