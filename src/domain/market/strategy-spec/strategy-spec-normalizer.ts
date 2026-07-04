@@ -1,0 +1,665 @@
+import {
+  allowedIndicators,
+  fundStrategyIndicators,
+  makeRef,
+  parseIndicatorRef,
+  parseRegisteredIndicator,
+  type StrategyIndicatorRef,
+} from './strategy-spec-registry'
+
+type RuleGroup = { all?: Rule[]; any?: Rule[] }
+type Rule =
+  | { left: string; op: string; right: unknown }
+  | { type: 'stop_loss_pct' | 'take_profit_pct' | 'trailing_stop_pct' | 'max_drawdown_stop_pct' | 'atr_stop_loss' | 'time_stop_bars'; value: number; period?: number }
+
+export interface NormalizedStrategySpec {
+  id?: string
+  name: string
+  version?: number
+  market?: string
+  universe?: { type?: string; symbols?: string[] }
+  timeframe?: string
+  dataRequirements?: { minBars?: number; adjust?: string; requiredFields?: string[] }
+  indicators?: Array<{ id: string; type: string; source?: string; params?: Record<string, unknown> }>
+  entry?: RuleGroup
+  exit?: RuleGroup
+  positionSizing?: { type?: string; value?: number; riskPct?: number; stopLossPct?: number; maxPositionPct?: number; initialFraction?: number; minTrades?: number; kellyScale?: number }
+  risk?: Record<string, unknown>
+  cost?: { commissionPct?: number; slippagePct?: number }
+  notes?: string[]
+}
+
+type LooseStrategySpec = NormalizedStrategySpec & Record<string, unknown>
+
+export function normalizeStrategySpec(input: NormalizedStrategySpec): NormalizedStrategySpec {
+  const fundObservation = normalizeFundObservationSpec(input)
+  if (fundObservation) return fundObservation
+
+  const loose = input as LooseStrategySpec
+  const name = String(input.name ?? 'custom strategy').trim()
+  const version = numberOf(input.version, 1)
+  const id = input.id || `custom_${slug(name)}_v${version}`
+  const rawIndicators = normalizeRawIndicators(loose.indicators ?? loose.observation)
+  const indicators = (rawIndicators.length ? rawIndicators : indicatorsFromRules(input) ?? []).map((indicator) => {
+    const source = indicator as Record<string, unknown>
+    const ref = parseIndicatorRef(String(source.type ?? source.indicator ?? source.name ?? source.id ?? ''))
+    const idValue = String(source.id ?? source.name ?? ref.id)
+    const params: Record<string, unknown> = {
+      ...(source.params && typeof source.params === 'object' && !Array.isArray(source.params) ? source.params as Record<string, unknown> : {}),
+      ...((source.length != null || source.period != null) ? { period: numberOf(source.period ?? source.length, ref.period) } : {}),
+    }
+    if (ref.type === 'bollinger') {
+      delete params.stdDev
+      delete params.std_dev
+      delete params.standardDeviation
+    } else if (isBollingerBandComponentType(ref.type)) {
+      const stdDevMultiplier = params.stdDevMultiplier ?? params.stdDev ?? params.std_dev ?? params.standardDeviation
+      if (params.stdDevMultiplier == null && stdDevMultiplier != null) params.stdDevMultiplier = numberOf(stdDevMultiplier, 2)
+      delete params.stdDev
+      delete params.std_dev
+      delete params.standardDeviation
+    }
+    if (isSupertrendComponentType(ref.type)) {
+      const atrMultiplier = params.atrMultiplier ?? params.multiplier ?? params.factor ?? params.atr_factor
+      if (params.atrMultiplier == null && atrMultiplier != null) params.atrMultiplier = numberOf(atrMultiplier, 3)
+      delete params.multiplier
+      delete params.factor
+      delete params.atr_factor
+    }
+    if (ref.type === 'ma_distance_pct') {
+      const maPeriod = params.maPeriod ?? params.ma_period ?? params.movingAveragePeriod
+      if (params.period == null && maPeriod != null) params.period = numberOf(maPeriod, ref.period)
+      delete params.maPeriod
+      delete params.ma_period
+      delete params.movingAveragePeriod
+    }
+    return {
+      ...source,
+      id: idValue,
+      type: ref.type,
+      source: typeof source.source === 'string' ? source.source : (ref.type === 'volume_sma' ? 'volume' : 'close'),
+      params,
+    }
+  })
+  const indicatorIds = new Set(indicators.map((indicator) => String(indicator.id)))
+  return {
+    ...input,
+    id,
+    name,
+    version,
+    timeframe: input.timeframe ?? '1d',
+    dataRequirements: {
+      minBars: numberOf(input.dataRequirements?.minBars, 120),
+      adjust: input.dataRequirements?.adjust ?? 'none',
+      requiredFields: input.dataRequirements?.requiredFields ?? ['open', 'high', 'low', 'close', 'volume'],
+    },
+    indicators,
+    entry: normalizeRuleGroup(entrySource(input), [], indicatorIds),
+    exit: normalizeRuleGroup(exitSource(input), ['stop_loss_pct', 'take_profit_pct', 'trailing_stop_pct', 'max_drawdown_stop_pct', 'atr_stop_loss', 'time_stop_bars'], indicatorIds),
+    positionSizing: normalizeSizing(input.positionSizing),
+    cost: input.cost ?? { commissionPct: 0.1, slippagePct: 0.05 },
+    notes: input.notes ?? [],
+  }
+}
+
+function isBollingerBandComponentType(type: string): boolean {
+  return type === 'bollinger_bandwidth' ||
+    type === 'bollinger_percent_b' ||
+    type === 'bollinger_band_distance_pct'
+}
+
+function isSupertrendComponentType(type: string): boolean {
+  return type === 'supertrend_direction' || type === 'supertrend_distance_pct'
+}
+
+function normalizeFundObservationSpec(input: NormalizedStrategySpec): NormalizedStrategySpec | null {
+  const loose = input as LooseStrategySpec
+  const observation = loose.observation
+  const explicitAssetClass = String(loose.assetClass ?? loose.asset_class ?? '').toLowerCase()
+  const explicitMarket = String(input.market ?? '').toLowerCase()
+  const explicitStock =
+    explicitAssetClass.includes('stock') ||
+    explicitAssetClass.includes('equity') ||
+    explicitMarket === 'cn' ||
+    explicitMarket.includes('stock')
+  const isFund =
+    !explicitStock && (
+    explicitAssetClass.includes('fund') ||
+    String(loose.type ?? '').toLowerCase().includes('fund') ||
+    explicitMarket.includes('fund') ||
+    (input.universe && String(input.universe.type ?? '').toLowerCase().includes('fund')) ||
+    (observation != null && !Array.isArray(observation)))
+  if (!isFund) return null
+  const observationSource = observation && typeof observation === 'object' && !Array.isArray(observation)
+    ? observation as Record<string, unknown>
+    : {}
+  const name = String(input.name ?? 'fund observation strategy').trim()
+  const version = numberOf(input.version, 1)
+  const id = input.id || `custom_${slug(name)}_v${version}`
+  const rawIndicators = normalizeRawIndicators(input.indicators ?? observationSource.indicators)
+  const indicators = normalizeFundIndicators(rawIndicators)
+  const indicatorIds = new Set(indicators.map((indicator) => String(indicator.id)))
+  const observationRules = [
+    ...conditionRulesFromObservationList(observationSource.entries),
+    ...conditionRulesFromObservationList(observationSource.signals),
+    ...conditionRulesFromObservationList(observationSource.rules),
+  ]
+  const entrySource = input.entry ?? loose.entryRule ?? loose.entryConditions ?? fundEntrySource(observationRules)
+  const exitSource = input.exit ?? loose.exitRule ?? loose.exitConditions ?? fundExitSource(observationRules)
+  return {
+    ...input,
+    id,
+    name,
+    version,
+    assetClass: 'fund',
+    market: input.market ?? 'fund',
+    timeframe: input.timeframe ?? '1d',
+    dataRequirements: {
+      minBars: numberOf(input.dataRequirements?.minBars, 60),
+      adjust: input.dataRequirements?.adjust ?? 'none',
+      requiredFields: input.dataRequirements?.requiredFields ?? ['date', 'nav'],
+      ...(input.dataRequirements ?? {}),
+      dataClass: (input.dataRequirements as Record<string, unknown> | undefined)?.dataClass ?? 'ordinary_fund_nav',
+    },
+    indicators,
+    entry: normalizeRuleGroup(entrySource, [], indicatorIds),
+    exit: normalizeRuleGroup(exitSource, [], indicatorIds),
+    positionSizing: normalizeSizing(input.positionSizing),
+    cost: input.cost ?? { commissionPct: 0, slippagePct: 0 },
+    notes: input.notes ?? [],
+  } as NormalizedStrategySpec
+}
+
+function normalizeFundIndicators(raw: Array<Record<string, unknown>>): NonNullable<NormalizedStrategySpec['indicators']> {
+  const out: NonNullable<NormalizedStrategySpec['indicators']> = []
+  const seen = new Set<string>()
+  for (const source of raw) {
+    const mapped = fundIndicatorFromSource(source)
+    if (!mapped || seen.has(mapped.id)) continue
+    seen.add(mapped.id)
+    out.push(mapped)
+  }
+  if (out.length === 0) {
+    out.push(
+      { id: 'navTrend20', type: 'nav_trend', source: 'nav', params: { period: 20 } },
+      { id: 'fundDrawdown20', type: 'fund_drawdown', source: 'nav', params: { period: 20 } },
+    )
+  }
+  return out
+}
+
+function fundIndicatorFromSource(source: Record<string, unknown>): NonNullable<NormalizedStrategySpec['indicators']>[number] | null {
+  const rawType = String(source.type ?? source.indicator ?? source.name ?? source.id ?? '').trim()
+  const rawSource = String(source.source ?? '').trim().toLowerCase()
+  const period = numberOf(source.period ?? source.length ?? (source.params as Record<string, unknown> | undefined)?.period, 20)
+  let type = rawType
+  let remapped = false
+  if (type === 'drawdown_pct' || type === 'drawdown' || type === 'rolling_drawdown') type = 'fund_drawdown'
+  if (type !== rawType) remapped = true
+  if ((type === 'sma' || type === 'ma' || type === 'moving_average') && (!rawSource || rawSource === 'nav')) {
+    type = 'nav_trend'
+    remapped = true
+  }
+  if (type === 'nav' || type === 'nav_sma') {
+    type = 'nav_trend'
+    remapped = true
+  }
+  if (!fundStrategyIndicators.has(type)) return null
+  const defaultId = type === 'fund_drawdown'
+    ? `fundDrawdown${period}`
+    : type === 'nav_trend'
+      ? `navTrend${period}`
+      : `${type.replace(/_([a-z])/g, (_, char) => String(char).toUpperCase())}${period}`
+  return {
+    ...source,
+    id: String(remapped ? defaultId : source.id ?? defaultId),
+    type,
+    source: (source.source as string | undefined) ?? (type === 'money_yield' || type === 'seven_day_yield' ? 'yield' : 'nav'),
+    params: {
+      ...(source.params && typeof source.params === 'object' && !Array.isArray(source.params) ? source.params as Record<string, unknown> : {}),
+      period,
+    },
+  }
+}
+
+function conditionRulesFromObservationList(raw: unknown): Record<string, unknown>[] {
+  if (!Array.isArray(raw)) return []
+  return raw
+    .filter((item): item is Record<string, unknown> => !!item && typeof item === 'object' && !Array.isArray(item))
+    .map((item) => ({
+      label: item.label,
+      action: item.action,
+      weight: item.weight,
+      ...(item.condition && typeof item.condition === 'object' && !Array.isArray(item.condition)
+        ? item.condition as Record<string, unknown>
+        : item),
+    }))
+}
+
+function fundEntrySource(rules: Record<string, unknown>[]): RuleGroup {
+  const candidates = rules.filter((rule) => !isFundExitObservation(rule))
+  return { all: normalizeFundObservationRules(candidates.length ? [candidates[0]] : rules.slice(0, 1)) }
+}
+
+function fundExitSource(rules: Record<string, unknown>[]): RuleGroup {
+  const candidates = rules.filter(isFundExitObservation)
+  if (candidates.length) return { any: normalizeFundObservationRules(candidates) }
+  return { any: [{ left: 'fundDrawdown20', op: '>=', right: 15 }] }
+}
+
+function normalizeFundObservationRules(rules: Record<string, unknown>[]): Rule[] {
+  return rules.flatMap((rule) => {
+    if (Array.isArray(rule.all)) return rule.all.filter(isRecord).map(normalizeFundObservationRule)
+    if (Array.isArray(rule.any)) return rule.any.filter(isRecord).map(normalizeFundObservationRule)
+    return [normalizeFundObservationRule(rule)]
+  })
+}
+
+function normalizeFundObservationRule(rule: Record<string, unknown>): Rule {
+  const left = String(rule.left ?? '').trim()
+  const right = rule.right
+  if (left === 'nav' && String(right).toLowerCase().startsWith('sma')) {
+    return { left: 'navTrend20', op: String(rule.op ?? rule.operator ?? '>').trim() || '>', right: 0 }
+  }
+  return {
+    left: normalizeFundRuleLeft(left),
+    op: String(rule.op ?? rule.operator ?? '').trim() || '>=',
+    right: typeof right === 'string' && right.toLowerCase().startsWith('sma') ? 0 : right,
+  }
+}
+
+function normalizeFundRuleLeft(raw: string): string {
+  if (/drawdown/i.test(raw)) return 'fundDrawdown20'
+  if (/navtrend|trend|sma|ma/i.test(raw)) return 'navTrend20'
+  return raw || 'navTrend20'
+}
+
+function isFundExitObservation(rule: Record<string, unknown>): boolean {
+  const text = `${String(rule.label ?? '')} ${String(rule.action ?? '')}`.toLowerCase()
+  return /pause|stop|exit|redeem|risk|暂停|赎回|退出|风控|止损/.test(text)
+}
+
+function indicatorsFromRules(input: NormalizedStrategySpec): NormalizedStrategySpec['indicators'] {
+  const loose = input as LooseStrategySpec
+  const seen = new Set<string>()
+  const indicators: NonNullable<NormalizedStrategySpec['indicators']> = []
+  for (const group of [input.entry ?? loose.entryRule ?? loose.entryConditions, input.exit ?? loose.exitRule ?? loose.exitConditions] as unknown[]) {
+    for (const raw of looseConditionList(group)) {
+      if (!raw || typeof raw !== 'object') continue
+      const condition = raw as Record<string, unknown>
+      for (const ref of indicatorRefs(condition)) {
+        const type = ref.type
+        if (!allowedIndicators.has(type) || seen.has(ref.id)) continue
+        seen.add(ref.id)
+        indicators.push({
+          id: ref.id,
+          type,
+          source: type === 'volume_sma' ? 'volume' : 'close',
+          params: { period: ref.period },
+        })
+      }
+    }
+  }
+  return indicators
+}
+
+function normalizeRuleGroup(raw: unknown, extraStops: string[] = [], indicatorIds = new Set<string>()): RuleGroup | undefined {
+  if (Array.isArray(raw)) raw = { all: raw }
+  if (!raw || typeof raw !== 'object') return undefined
+  const source = raw as Record<string, unknown>
+  const explicit = (Array.isArray(source.all) ? source.all : undefined) ??
+    (Array.isArray(source.any) ? source.any : undefined) ??
+    (Array.isArray(source.and) ? source.and : undefined) ??
+    (Array.isArray(source.or) ? source.or : undefined) ??
+    (Array.isArray(source.rules) ? flattenNestedRules(source.rules) : undefined)
+  const rules: Rule[] = []
+  if (explicit) {
+    rules.push(
+      ...explicit
+        .filter((item): item is Record<string, unknown> => !!item && typeof item === 'object' && !Array.isArray(item))
+        .map((item) => normalizeExplicitRule(item, indicatorIds)),
+    )
+  } else {
+    for (const rawRule of looseConditionList(source)) {
+      if (!rawRule || typeof rawRule !== 'object') continue
+      const condition = rawRule as Record<string, unknown>
+      const leftRef = leftIndicatorRef(condition)
+      const indicator = leftRef.type
+      const op = operatorFromRule(condition)
+      if (!indicator || !op) continue
+      rules.push({
+        left: normalizedRuleLeft(condition, leftRef, indicatorIds),
+        op,
+        right: indicator === 'volume_sma' ? volumeComparisonRight(leftRef, condition) : rightValue(condition),
+      })
+    }
+  }
+  for (const type of extraStops) {
+    const value = numericValue(source[type])
+    if (value != null) rules.push({ type: type as 'stop_loss_pct' | 'take_profit_pct' | 'trailing_stop_pct' | 'max_drawdown_stop_pct' | 'atr_stop_loss' | 'time_stop_bars', value })
+  }
+  if (rules.length === 0) return raw as RuleGroup
+  return isAnyRuleGroup(source) ? { any: rules } : { all: rules }
+}
+
+function isAnyRuleGroup(source: Record<string, unknown>): boolean {
+  if (Array.isArray(source.any) || Array.isArray(source.or)) return true
+  if (Array.isArray(source.rules) && source.rules.some((item) =>
+    !!item && typeof item === 'object' && !Array.isArray(item) && Array.isArray((item as Record<string, unknown>).any),
+  )) return true
+  const op = String(source.operator ?? source.op ?? source.logic ?? '').trim().toLowerCase()
+  return op === 'or' || op === 'any' || op === '||' || op === '任一'
+}
+
+function normalizeExplicitRule(rule: Record<string, unknown>, indicatorIds = new Set<string>()): Rule {
+  if ('type' in rule) return rule as Rule
+  for (const key of ['stop_loss_pct', 'take_profit_pct', 'trailing_stop_pct', 'max_drawdown_stop_pct', 'atr_stop_loss', 'time_stop_bars']) {
+    const value = numericValue(rule[key])
+    if (value != null) return { type: key as 'stop_loss_pct' | 'take_profit_pct' | 'trailing_stop_pct' | 'max_drawdown_stop_pct' | 'atr_stop_loss' | 'time_stop_bars', value }
+  }
+  const leftRef = leftIndicatorRef(rule)
+  const indicator = leftRef.type
+  const op = operatorFromRule(rule)
+  return {
+    ...(rule as Record<string, unknown>),
+    left: normalizedRuleLeft(rule, leftRef, indicatorIds),
+    op,
+    right: indicator === 'volume_sma' ? volumeComparisonRight(leftRef, rule) : rightValue(rule),
+  } as Rule
+}
+
+function flattenNestedRules(raw: unknown[]): Record<string, unknown>[] {
+  const out: Record<string, unknown>[] = []
+  for (const item of raw) {
+    if (!item || typeof item !== 'object' || Array.isArray(item)) continue
+    const source = item as Record<string, unknown>
+    if (Array.isArray(source.all)) {
+      out.push(...source.all.filter(isRecord))
+      continue
+    }
+    if (Array.isArray(source.any)) {
+      out.push(...source.any.filter(isRecord))
+      continue
+    }
+    out.push(source)
+  }
+  return out
+}
+
+function normalizeOperator(raw: string): string {
+  const op = raw.trim()
+  if (op === 'crosses_up' || op === 'cross_up' || op === 'crosses over') return 'crosses_above'
+  if (op === 'crosses_down' || op === 'cross_down' || op === 'crosses under') return 'crosses_below'
+  return op
+}
+
+function operatorFromRule(rule: Record<string, unknown>): string {
+  const direct = normalizeOperator(String(rule.operator ?? rule.op ?? '').trim())
+  if (direct) return direct
+  for (const key of Object.keys(rule)) {
+    const normalized = normalizeOperatorKey(key)
+    if (normalized) return normalized
+  }
+  return ''
+}
+
+function normalizeOperatorKey(raw: string): string {
+  const compact = raw.replace(/[,\s，]/g, '')
+  if (['>', '>=', '<', '<=', '==', '!='].includes(compact)) return compact
+  const lower = raw.trim().toLowerCase().replace(/[_\s-]+/g, '_')
+  if (lower === 'crosses_up' || lower === 'cross_up' || lower === 'crosses_above') return 'crosses_above'
+  if (lower === 'crosses_down' || lower === 'cross_down' || lower === 'crosses_below') return 'crosses_below'
+  return ''
+}
+
+function normalizedRuleLeft(rule: Record<string, unknown>, leftRef: StrategyIndicatorRef, indicatorIds: Set<string>): string {
+  if (rule.left && typeof rule.left === 'object' && !Array.isArray(rule.left)) {
+    if (leftRef.type === 'volume' || leftRef.type === 'volume_sma') return 'volume'
+    return leftRef.id
+  }
+  const rawLeft = String(rule.left ?? rule.indicator ?? '').trim()
+  if (indicatorIds.has(rawLeft)) return rawLeft
+  if (leftRef.type === 'volume' || leftRef.type === 'volume_sma') return 'volume'
+  if (/^close_?\d*$/i.test(rawLeft)) return 'close'
+  if (rawLeft && rawLeft !== 'close' && !parseRegisteredIndicator(rawLeft)) return rawLeft
+  return leftRef.id
+}
+
+function looseConditionList(raw: unknown): unknown[] {
+  if (Array.isArray(raw)) return raw
+  if (!raw || typeof raw !== 'object') return []
+  const source = raw as Record<string, unknown>
+  const out: unknown[] = []
+  if ('left' in source || 'indicator' in source) out.push(source)
+  for (const key of ['conditions', 'rules', 'all', 'any', 'and', 'or']) {
+    const value = source[key]
+    if (Array.isArray(value)) out.push(...value)
+  }
+  return out
+}
+
+function normalizeRawIndicators(raw: unknown): Array<Record<string, unknown>> {
+  if (Array.isArray(raw)) return raw.filter((item): item is Record<string, unknown> => !!item && typeof item === 'object' && !Array.isArray(item))
+  if (raw && typeof raw === 'object') {
+    return Object.entries(raw as Record<string, unknown>)
+      .filter((entry): entry is [string, Record<string, unknown>] => !!entry[1] && typeof entry[1] === 'object' && !Array.isArray(entry[1]))
+      .map(([id, value]) => ({ id, ...value }))
+  }
+  return []
+}
+
+function normalizeSizing(raw: NormalizedStrategySpec['positionSizing'] | unknown): NormalizedStrategySpec['positionSizing'] {
+  if (typeof raw === 'string') return { type: normalizeSizingType(raw) }
+  if (!raw || typeof raw !== 'object') return { type: 'full_capital' }
+  const source = raw as Record<string, unknown>
+  const type = normalizeSizingType(String(source.type ?? source.method ?? 'full_capital'))
+  const value = numericValue(source.value) ?? numericValue(source.fraction)
+  const riskPct = numericValue(source.riskPct) ?? numericValue(source.risk_per_trade_pct) ?? numericValue(source.riskPerTradePct)
+  const stopLossPct = numericValue(source.stopLossPct) ?? numericValue(source.stop_loss_pct)
+  const maxPositionPct = numericValue(source.maxPositionPct) ?? numericValue(source.max_position_pct)
+  const initialFraction = numericValue(source.initialFraction) ?? numericValue(source.initial_fraction) ?? numericValue(source.fallbackFraction) ?? numericValue(source.fallback_fraction)
+  const minTrades = numericValue(source.minTrades) ?? numericValue(source.min_trades)
+  const kellyScale = numericValue(source.kellyScale) ?? numericValue(source.kelly_scale)
+  return {
+    ...(source as NormalizedStrategySpec['positionSizing']),
+    type,
+    ...(value != null ? { value } : {}),
+    ...(riskPct != null ? { riskPct } : {}),
+    ...(stopLossPct != null ? { stopLossPct } : {}),
+    ...(maxPositionPct != null ? { maxPositionPct } : {}),
+    ...(initialFraction != null ? { initialFraction } : {}),
+    ...(minTrades != null ? { minTrades } : {}),
+    ...(kellyScale != null ? { kellyScale } : {}),
+  }
+}
+
+function indicatorRefs(rule: Record<string, unknown>): StrategyIndicatorRef[] {
+  const refs = [leftIndicatorRef(rule)]
+  if (rule.reference && typeof rule.reference === 'object') refs.push(refFromObject(rule.reference as Record<string, unknown>))
+  if (rule.referenceIndicator != null || rule.referencePeriod != null) {
+    refs.push(refFromObject({
+      indicator: rule.referenceIndicator ?? rule.reference,
+      period: rule.referencePeriod ?? rule.period,
+    }))
+  }
+  if (rule.value && typeof rule.value === 'object') refs.push(...refsFromRightObject(rule.value as Record<string, unknown>))
+  if (rule.right && typeof rule.right === 'object') refs.push(...refsFromRightObject(rule.right as Record<string, unknown>))
+  if (rule.expression && typeof rule.expression === 'object') {
+    refs.push(...indicatorRefs(rule.expression as Record<string, unknown>))
+  }
+  const expression = `${String(rule.valueExpression ?? '')} ${String(rule.expression ?? '')} ${String(rule.value ?? '')}`
+  const match = expression.match(/volume_sma(?:[_ ]?|\()?(\d+)?\)?/)
+  if (match) refs.push(makeRef('volume_sma', Number(match[1]) || 20))
+  return refs
+}
+
+function leftIndicatorRef(rule: Record<string, unknown>): StrategyIndicatorRef {
+  if (rule.left && typeof rule.left === 'object') return refFromObject(rule.left as Record<string, unknown>)
+  const parsed = parseIndicatorRef(String(rule.indicator ?? rule.left ?? rule.ref ?? '').trim())
+  const period = numberOf(rule.period ?? rule.length, parsed.period)
+  return makeRef(parsed.type, period)
+}
+
+function refFromObject(raw: Record<string, unknown>): StrategyIndicatorRef {
+  const parsed = parseIndicatorRef(String(raw.indicator ?? raw.type ?? raw.left ?? raw.ref ?? raw.name ?? raw.id ?? '').trim())
+  const period = numberOf(raw.period ?? raw.length, parsed.period)
+  return makeRef(parsed.type, period)
+}
+
+function refsFromRightObject(raw: Record<string, unknown>): StrategyIndicatorRef[] {
+  if (Array.isArray(raw.mul)) {
+    const [left] = raw.mul
+    if (typeof left === 'string') return [parseIndicatorRef(left)]
+    return []
+  }
+  return [refFromObject(raw)]
+}
+
+function rightValue(condition: Record<string, unknown>): unknown {
+  if (condition.reference && typeof condition.reference === 'object') {
+    const ref = refFromObject(condition.reference as Record<string, unknown>)
+    return { mul: [ref.id, numericValue(condition.scale) ?? numericValue(condition.multiplier) ?? 1] }
+  }
+  if (condition.referenceIndicator != null || condition.referencePeriod != null) {
+    const ref = refFromObject({
+      indicator: condition.referenceIndicator ?? condition.reference,
+      period: condition.referencePeriod ?? condition.period,
+    })
+    return { mul: [ref.id, numericValue(condition.scale) ?? numericValue(condition.multiplier) ?? 1] }
+  }
+  if (condition.value && typeof condition.value === 'object') {
+    const value = condition.value as Record<string, unknown>
+    if (Array.isArray(value.mul)) return normalizeMulRight(value)
+    const ref = refFromObject(value)
+    return { mul: [ref.id, numericValue(value.scale) ?? numericValue(value.multiplier) ?? numericValue(value.factor) ?? numericValue(condition.scale) ?? numericValue(condition.multiplier) ?? numericValue(condition.factor) ?? 1] }
+  }
+  if (typeof condition.value === 'string') {
+    const ref = parseIndicatorRef(condition.value)
+    if (ref.type === 'volume_sma') {
+      return { mul: [ref.id, numericValue(condition.scale) ?? numericValue(condition.multiplier) ?? numericValue(condition.factor) ?? 1] }
+    }
+  }
+  if (condition.right && typeof condition.right === 'object' && !('mul' in condition.right)) {
+    const right = condition.right as Record<string, unknown>
+    const ref = refFromObject(right)
+    return { mul: [ref.id, numericValue(right.scale) ?? numericValue(right.multiplier) ?? numericValue(right.factor) ?? numericValue(right.value) ?? 1] }
+  }
+  if (condition.right && typeof condition.right === 'object' && 'mul' in condition.right) {
+    return normalizeMulRight(condition.right as Record<string, unknown>)
+  }
+  if (condition.expression && typeof condition.expression === 'object') {
+    return rightValue(condition.expression as Record<string, unknown>)
+  }
+  const expression = `${String(condition.valueExpression ?? '')} ${String(condition.expression ?? '')}`
+  const match = expression.match(/volume_sma(?:[_ ]?|\()?(\d+)?\)?\s*\*\s*([0-9.]+)/)
+  if (match) return { mul: [`vol${Number(match[1]) || 20}`, Number(match[2]) || 1] }
+  const valueExpression = String(condition.value ?? '')
+  const valueFirst = valueExpression.match(/([0-9.]+)\s*\*\s*volume_sma(?:[_ ]?|\()?(\d+)?\)?/)
+  if (valueFirst) return { mul: [`vol${Number(valueFirst[2]) || 20}`, Number(valueFirst[1]) || 1] }
+  const smaOnly = valueExpression.trim().match(/^volume_sma(?:[_ ]?|\()?(\d+)?\)?$/)
+  if (smaOnly) return { mul: [`vol${Number(smaOnly[1]) || 20}`, 1] }
+  return numericValue(condition.value) ?? condition.right
+}
+
+function normalizeMulRight(raw: Record<string, unknown>): unknown {
+  if (!Array.isArray(raw.mul)) return raw
+  const [left, right] = raw.mul
+  const normalizedLeft = typeof left === 'string' ? parseIndicatorRef(left).id : left
+  const normalizedRight = numericValue(right) ?? right
+  return { mul: [normalizedLeft, normalizedRight] }
+}
+
+function isRecord(raw: unknown): raw is Record<string, unknown> {
+  return !!raw && typeof raw === 'object' && !Array.isArray(raw)
+}
+
+function volumeComparisonRight(ref: { id: string }, condition: Record<string, unknown>): unknown {
+  if (
+    (condition.reference && typeof condition.reference === 'object') ||
+    condition.referenceIndicator != null ||
+    condition.referencePeriod != null ||
+    (condition.value && typeof condition.value === 'object') ||
+    (condition.right && typeof condition.right === 'object') ||
+    (condition.expression && typeof condition.expression === 'object') ||
+    `${String(condition.valueExpression ?? '')} ${String(condition.expression ?? '')}`.trim()
+  ) {
+    return rightValue(condition)
+  }
+  return { mul: [ref.id, numericValue(condition.value) ?? 1] }
+}
+
+function exitSource(input: NormalizedStrategySpec): unknown {
+  const rawInput = input as unknown as Record<string, unknown>
+  const lifecycle = rawInput.lifecycle && typeof rawInput.lifecycle === 'object' && !Array.isArray(rawInput.lifecycle)
+    ? rawInput.lifecycle as Record<string, unknown>
+    : {}
+  const rawExit = input.exit ?? rawInput.exitRule ?? rawInput.exitConditions ?? lifecycle.exit
+  const exit = Array.isArray(rawExit)
+    ? { any: rawExit } as Record<string, unknown>
+    : rawExit && typeof rawExit === 'object'
+      ? { ...(rawExit as Record<string, unknown>) }
+      : {}
+  if (rawInput.stopLossPct != null && exit.stop_loss_pct == null) exit.stop_loss_pct = rawInput.stopLossPct
+  if (rawInput.takeProfitPct != null && exit.take_profit_pct == null) exit.take_profit_pct = rawInput.takeProfitPct
+  if (rawInput.trailingStopPct != null && exit.trailing_stop_pct == null) exit.trailing_stop_pct = rawInput.trailingStopPct
+  if (rawInput.maxDrawdownStopPct != null && exit.max_drawdown_stop_pct == null) exit.max_drawdown_stop_pct = rawInput.maxDrawdownStopPct
+  if (rawInput.atrStopLoss != null && exit.atr_stop_loss == null) exit.atr_stop_loss = rawInput.atrStopLoss
+  if (rawInput.atrStopLossMultiplier != null && exit.atr_stop_loss == null) exit.atr_stop_loss = rawInput.atrStopLossMultiplier
+  if (rawInput.timeStopBars != null && exit.time_stop_bars == null) exit.time_stop_bars = rawInput.timeStopBars
+  for (const key of ['stop_loss_pct', 'take_profit_pct', 'trailing_stop_pct', 'max_drawdown_stop_pct', 'atr_stop_loss', 'time_stop_bars']) {
+    if (rawInput[key] != null && exit[key] == null) exit[key] = rawInput[key]
+  }
+  if (
+    (exit.stop_loss_pct != null || exit.take_profit_pct != null || exit.trailing_stop_pct != null || exit.max_drawdown_stop_pct != null || exit.atr_stop_loss != null || exit.time_stop_bars != null) &&
+    exit.operator == null &&
+    exit.op == null &&
+    exit.logic == null &&
+    !Array.isArray(exit.all) &&
+    !Array.isArray(exit.any) &&
+    !Array.isArray(exit.or)
+  ) {
+    exit.operator = 'or'
+  }
+  return Object.keys(exit).length ? exit : rawExit
+}
+
+function entrySource(input: NormalizedStrategySpec): unknown {
+  const rawInput = input as unknown as Record<string, unknown>
+  const lifecycle = rawInput.lifecycle && typeof rawInput.lifecycle === 'object' && !Array.isArray(rawInput.lifecycle)
+    ? rawInput.lifecycle as Record<string, unknown>
+    : {}
+  return input.entry ?? rawInput.entryRule ?? rawInput.entryConditions ?? lifecycle.entry
+}
+
+function normalizeSizingType(raw: string): string {
+  return raw
+    .replace('fullCapital', 'full_capital')
+    .replace('fixedFraction', 'fixed_fraction')
+    .replace('riskPerTrade', 'risk_per_trade')
+    .replace('kellyFraction', 'kelly_fraction')
+}
+
+function slug(value: string): string {
+  return value.toLowerCase().replace(/[^a-z0-9]+/g, '_').replace(/^_+|_+$/g, '').slice(0, 40) || 'strategy'
+}
+
+function numberOf(raw: unknown, fallback: number): number {
+  if (typeof raw === 'number' && Number.isFinite(raw)) return raw
+  if (typeof raw === 'string') {
+    const match = raw.match(/\d+(\.\d+)?/)
+    if (match) {
+      const parsed = Number(match[0])
+      if (Number.isFinite(parsed)) return parsed
+    }
+  }
+  return fallback
+}
+
+function numericValue(raw: unknown): number | null {
+  if (typeof raw === 'number' && Number.isFinite(raw)) return raw
+  if (typeof raw === 'string') {
+    const parsed = Number(raw)
+    return Number.isFinite(parsed) ? parsed : null
+  }
+  return null
+}
