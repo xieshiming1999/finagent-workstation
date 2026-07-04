@@ -13,6 +13,10 @@ FinAgent Workstation 是一个Electron / React 金融工作台，包含 TypeScri
 
 ## 快速启动
 
+### gotdx 运行环境
+
+仓库包含预编译的 macOS arm64 `sidecar/gotdx/gotdx-server`。在匹配的平台上，`pnpm dev` 会直接启动该二进制文件，普通源码启动不需要 Go。其他操作系统或 CPU 架构，以及需要重新构建 sidecar 的开发者，必须安装 `sidecar/gotdx/go.mod` 声明的 Go 版本并运行 `./scripts/build_gotdx.sh`。构建使用 `-trimpath`，避免在二进制文件中嵌入构建机器的源码路径。
+
 安装依赖：
 
 ```bash

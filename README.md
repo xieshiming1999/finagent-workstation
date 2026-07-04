@@ -13,6 +13,10 @@ FinAgent Workstation is an Electron and React finance workstation with a TypeScr
 
 ## Quick Start
 
+### gotdx Runtime
+
+The repository includes a prebuilt macOS arm64 `sidecar/gotdx/gotdx-server`. On a matching host, `pnpm dev` starts that binary directly; Go is not required for normal source startup. Other operating systems or CPU architectures, and developers rebuilding the sidecar, must install the Go version declared in `sidecar/gotdx/go.mod` and run `./scripts/build_gotdx.sh`. The build uses `-trimpath` so binaries do not embed build-machine source paths.
+
 Install dependencies:
 
 ```bash
