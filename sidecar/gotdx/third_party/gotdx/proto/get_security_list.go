@@ -1,0 +1,121 @@
+package proto
+
+import (
+	"bytes"
+	"encoding/binary"
+	"math"
+)
+
+type GetSecurityList struct {
+	reqHeader  *ReqHeader
+	respHeader *RespHeader
+	request    *GetSecurityListRequest
+	reply      *GetSecurityListReply
+
+	contentHex string
+}
+
+type GetSecurityListRequest struct {
+	Market uint16 // 市场代码。
+	Start  uint32 // 起始偏移。
+	Count  uint32 // 请求条数。
+	Zero   uint32 // 保留字段。
+}
+
+type GetSecurityListReply struct {
+	Count uint16     // 返回条数。
+	List  []Security // 证券列表。
+}
+
+type Security struct {
+	Code           string  // 证券代码。
+	Vol            uint16  // 成交量单位原值。
+	VolUnit        uint16  // 成交量单位。
+	DecimalPoint   int8    // 价格小数位数。
+	Name           string  // 证券名称。
+	PreClose       float64 // 昨收价。
+	Unknown1       float32 // 未确认字段。
+	LegacyUnknown1 uint16  // 旧版列表里的首个未知字段。
+	Unknown2       uint16  // 未确认字段。
+	Unknown3       uint16  // 未确认字段。
+}
+
+func NewGetSecurityList(req *GetSecurityListRequest) *GetSecurityList {
+	obj := new(GetSecurityList)
+	obj.reqHeader = new(ReqHeader)
+	obj.respHeader = new(RespHeader)
+	obj.request = new(GetSecurityListRequest)
+	obj.reply = new(GetSecurityListReply)
+
+	obj.reqHeader.Zip = 0x0c
+	obj.reqHeader.SeqID = seqID()
+	obj.reqHeader.PacketType = 0x01
+	obj.reqHeader.Method = KMSG_SECURITYLIST
+	if req != nil {
+		obj.applyRequest(req)
+	}
+	return obj
+}
+
+func (obj *GetSecurityList) applyRequest(req *GetSecurityListRequest) {
+	if req.Count == 0 {
+		req.Count = 1600
+	}
+	obj.request = req
+}
+
+func (obj *GetSecurityList) BuildRequest() ([]byte, error) {
+	obj.reqHeader.PkgLen1 = 2 + 2 + 4 + 4 + 4
+	obj.reqHeader.PkgLen2 = 2 + 2 + 4 + 4 + 4
+
+	buf := new(bytes.Buffer)
+	err := binary.Write(buf, binary.LittleEndian, obj.reqHeader)
+	err = binary.Write(buf, binary.LittleEndian, obj.request)
+
+	return buf.Bytes(), err
+}
+
+func (obj *GetSecurityList) ParseResponse(header *RespHeader, data []byte) error {
+	obj.respHeader = header
+
+	pos := 0
+	err := binary.Read(bytes.NewBuffer(data[pos:pos+2]), binary.LittleEndian, &obj.reply.Count)
+	pos += 2
+	for index := uint16(0); index < obj.reply.Count; index++ {
+		ele := Security{}
+		var code [6]byte
+		binary.Read(bytes.NewBuffer(data[pos:pos+6]), binary.LittleEndian, &code)
+		pos += 6
+		ele.Code = string(code[:])
+
+		binary.Read(bytes.NewBuffer(data[pos:pos+2]), binary.LittleEndian, &ele.Vol)
+		pos += 2
+		ele.VolUnit = ele.Vol
+
+		var name [16]byte
+		binary.Read(bytes.NewBuffer(data[pos:pos+16]), binary.LittleEndian, &name)
+		pos += 16
+
+		ele.Name = Utf8ToGbk(name[:])
+
+		var unknown1 uint32
+		binary.Read(bytes.NewBuffer(data[pos:pos+4]), binary.LittleEndian, &unknown1)
+		ele.Unknown1 = math.Float32frombits(unknown1)
+		pos += 4
+		binary.Read(bytes.NewBuffer(data[pos:pos+1]), binary.LittleEndian, &ele.DecimalPoint)
+		pos += 1
+		ele.PreClose = getfloat32(data, &pos)
+
+		binary.Read(bytes.NewBuffer(data[pos:pos+2]), binary.LittleEndian, &ele.Unknown2)
+		pos += 2
+		binary.Read(bytes.NewBuffer(data[pos:pos+2]), binary.LittleEndian, &ele.Unknown3)
+		pos += 2
+
+		obj.reply.List = append(obj.reply.List, ele)
+	}
+	return err
+}
+
+func (obj *GetSecurityList) Response() *GetSecurityListReply {
+	return obj.reply
+}
