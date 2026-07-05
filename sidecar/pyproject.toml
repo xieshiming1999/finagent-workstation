@@ -1,0 +1,16 @@
+[project]
+name = "findata-sidecar"
+version = "1.0.0"
+description = "FinAgent data sidecar — akshare + alpha factors"
+requires-python = ">=3.12"
+dependencies = [
+    "fastapi>=0.111",
+    "uvicorn>=0.30",
+    "akshare>=1.14",
+    "yfinance>=0.2",
+    "numpy>=1.26",
+    "pandas-ta",
+]
+
+[tool.uv]
+dev-dependencies = []
