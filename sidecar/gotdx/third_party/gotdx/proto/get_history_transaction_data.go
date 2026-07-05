@@ -1,0 +1,120 @@
+package proto
+
+import (
+	"bytes"
+	"encoding/binary"
+	"encoding/hex"
+	"fmt"
+	"time"
+)
+
+type GetHistoryTransactionData struct {
+	reqHeader  *ReqHeader
+	respHeader *RespHeader
+	request    *GetHistoryTransactionDataRequest
+	reply      *GetHistoryTransactionDataReply
+
+	contentHex string
+}
+
+type GetHistoryTransactionDataRequest struct {
+	Date   uint32  // 交易日期。
+	Market uint16  // 市场代码。
+	Code   [6]byte // 证券代码。
+	Start  uint16  // 起始偏移。
+	Count  uint16  // 请求条数。
+}
+
+type GetHistoryTransactionDataReply struct {
+	Count uint16                   // 返回条数。
+	List  []HistoryTransactionData // 历史逐笔成交。
+}
+
+type HistoryTransactionData struct {
+	Time      time.Time // 成交时间。
+	Price     float64   // 成交价。
+	Vol       int       // 成交量。
+	Num       int       // 笔数或委托笔数。
+	BuyOrSell int       // 买卖方向标记。
+	Action    string    // 买卖方向，如 BUY/SELL/NEUTRAL。
+	Unknown   int       //  unknown 字段。
+}
+
+func NewGetHistoryTransactionData(req *GetHistoryTransactionDataRequest) *GetHistoryTransactionData {
+	obj := new(GetHistoryTransactionData)
+	obj.reqHeader = new(ReqHeader)
+	obj.respHeader = new(RespHeader)
+	obj.request = new(GetHistoryTransactionDataRequest)
+	obj.reply = new(GetHistoryTransactionDataReply)
+
+	obj.reqHeader.Zip = 0x0c
+	obj.reqHeader.SeqID = seqID()
+	obj.reqHeader.PacketType = 0x00
+	//obj.reqHeader.PkgLen1  =
+	//obj.reqHeader.PkgLen2  =
+	obj.reqHeader.Method = KMSG_HISTORYTRANSACTIONDATA
+	//obj.reqHeader.Method = KMSG_MINUTETIMEDATA
+	obj.contentHex = ""
+	if req != nil {
+		obj.applyRequest(req)
+	}
+	return obj
+}
+
+func (obj *GetHistoryTransactionData) applyRequest(req *GetHistoryTransactionDataRequest) {
+	obj.request = req
+}
+
+func (obj *GetHistoryTransactionData) BuildRequest() ([]byte, error) {
+	obj.reqHeader.PkgLen1 = 0x12
+	obj.reqHeader.PkgLen2 = 0x12
+
+	buf := new(bytes.Buffer)
+	err := binary.Write(buf, binary.LittleEndian, obj.reqHeader)
+	err = binary.Write(buf, binary.LittleEndian, obj.request)
+	b, err := hex.DecodeString(obj.contentHex)
+	buf.Write(b)
+
+	//b, err := hex.DecodeString(obj.contentHex)
+	//buf.Write(b)
+
+	//err = binary.Write(buf, binary.LittleEndian, uint16(len(obj.stocks)))
+
+	return buf.Bytes(), err
+}
+
+func (obj *GetHistoryTransactionData) ParseResponse(header *RespHeader, data []byte) error {
+	obj.respHeader = header
+
+	pos := 0
+	err := binary.Read(bytes.NewBuffer(data[pos:pos+2]), binary.LittleEndian, &obj.reply.Count)
+	// 跳过4个字节
+	pos += 6
+
+	lastprice := 0
+	for index := uint16(0); index < obj.reply.Count; index++ {
+		ele := HistoryTransactionData{}
+		hour, minute := gettime(data, &pos)
+		nowDate := fmt.Sprintf("%d", obj.request.Date)
+		hourMinute := fmt.Sprintf("%02d:%02d", hour, minute)
+		nowTime, err := time.ParseInLocation("2006010215:04", nowDate+hourMinute, time.Local)
+		if err != nil {
+			return err
+		}
+		ele.Time = nowTime
+		priceraw := getprice(data, &pos)
+		ele.Vol = getprice(data, &pos)
+		ele.BuyOrSell = getprice(data, &pos)
+		ele.Action = actionFromCode(ele.BuyOrSell)
+		ele.Unknown = getprice(data, &pos)
+
+		lastprice = lastprice + priceraw
+		ele.Price = float64(lastprice) / baseUnit(string(obj.request.Code[:]))
+		obj.reply.List = append(obj.reply.List, ele)
+	}
+	return err
+}
+
+func (obj *GetHistoryTransactionData) Response() *GetHistoryTransactionDataReply {
+	return obj.reply
+}
