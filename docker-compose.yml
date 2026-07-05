@@ -1,0 +1,21 @@
+version: '3.8'
+
+services:
+  findata:
+    build: ./sidecar
+    ports:
+      - "19800:19800"
+    restart: unless-stopped
+    environment:
+      - TZ=Asia/Shanghai
+
+  gotdx:
+    build:
+      context: ./sidecar/gotdx
+      dockerfile: Dockerfile
+    ports:
+      - "19801:19801"
+    restart: unless-stopped
+    environment:
+      - TDX_HOST=119.147.212.81:7709
+      - TZ=Asia/Shanghai

@@ -1,0 +1,265 @@
+<!doctype html>
+<html lang="zh-CN">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>TradingView Desktop Widget Test</title>
+  <style>
+    :root {
+      color-scheme: dark;
+      font-family: Inter, -apple-system, BlinkMacSystemFont, "Segoe UI", sans-serif;
+      background: #0f1419;
+      color: #e5e7eb;
+    }
+
+    * {
+      box-sizing: border-box;
+    }
+
+    body {
+      margin: 0;
+      min-height: 100vh;
+      background: #0f1419;
+    }
+
+    header {
+      padding: 18px 20px 10px;
+      border-bottom: 1px solid #24303b;
+      background: #111820;
+    }
+
+    h1 {
+      margin: 0 0 8px;
+      font-size: 20px;
+      font-weight: 650;
+    }
+
+    .note {
+      margin: 0;
+      max-width: 920px;
+      color: #a7b0bc;
+      font-size: 13px;
+      line-height: 1.5;
+    }
+
+    .grid {
+      display: grid;
+      grid-template-columns: repeat(2, minmax(0, 1fr));
+      gap: 12px;
+      padding: 12px;
+    }
+
+    .chart {
+      min-height: 520px;
+      border: 1px solid #263442;
+      background: #0b1117;
+    }
+
+    .chart-title {
+      display: flex;
+      align-items: center;
+      justify-content: space-between;
+      min-height: 38px;
+      padding: 0 12px;
+      border-bottom: 1px solid #263442;
+      font-size: 13px;
+      color: #d7dde4;
+      background: #111820;
+    }
+
+    .chart-title a {
+      color: #93c5fd;
+      text-decoration: none;
+    }
+
+    .tradingview-widget-container {
+      height: calc(100% - 38px);
+      width: 100%;
+    }
+
+    .tradingview-widget-container__widget {
+      height: calc(100% - 32px);
+      width: 100%;
+    }
+
+    .tradingview-widget-copyright {
+      height: 32px;
+      padding: 6px 10px;
+      font-size: 12px;
+      color: #87919f;
+    }
+
+    .tradingview-widget-copyright a {
+      color: #93c5fd;
+      text-decoration: none;
+    }
+
+    @media (max-width: 980px) {
+      .grid {
+        grid-template-columns: 1fr;
+      }
+
+      .chart {
+        min-height: 480px;
+      }
+    }
+  </style>
+</head>
+<body>
+  <header>
+    <h1>TradingView Widget Desktop Test</h1>
+    <p class="note">
+      Serve this file from local HTTP, not file://. Example:
+      <code>cd finagent_workstation/examples && python3 -m http.server 18080</code>,
+      then open <code>http://127.0.0.1:18080/tradingview-widget-desktop.html</code>.
+      Generated FinAgent Workstation dashboards should use TradingView intervals <code>D</code>, <code>W</code>, or <code>M</code>.
+    </p>
+  </header>
+
+  <main class="grid">
+    <section class="chart">
+      <div class="chart-title">
+        <span>贵州茅台 SSE:600519</span>
+        <a href="https://www.tradingview.com/chart/?symbol=SSE%3A600519" target="_blank" rel="noopener noreferrer">Open TradingView</a>
+      </div>
+      <div class="tradingview-widget-container">
+        <div class="tradingview-widget-container__widget"></div>
+        <div class="tradingview-widget-copyright">
+          <a href="https://www.tradingview.com/symbols/SSE-600519/" rel="noopener nofollow" target="_blank">SSE:600519 chart</a>
+          by TradingView
+        </div>
+        <script type="text/javascript" src="https://s3.tradingview.com/external-embedding/embed-widget-advanced-chart.js" async>
+        {
+          "autosize": true,
+          "symbol": "SSE:600519",
+          "interval": "D",
+          "timezone": "Asia/Shanghai",
+          "theme": "dark",
+          "style": "1",
+          "locale": "zh_CN",
+          "hide_side_toolbar": false,
+          "hide_top_toolbar": false,
+          "hide_legend": false,
+          "hide_volume": false,
+          "allow_symbol_change": true,
+          "calendar": false,
+          "details": true,
+          "hotlist": false,
+          "save_image": false,
+          "backgroundColor": "#0b1117",
+          "gridColor": "rgba(148, 163, 184, 0.12)"
+        }
+        </script>
+      </div>
+    </section>
+
+    <section class="chart">
+      <div class="chart-title">
+        <span>平安银行 SZSE:000001 Weekly</span>
+        <a href="https://www.tradingview.com/chart/?symbol=SZSE%3A000001" target="_blank" rel="noopener noreferrer">Open TradingView</a>
+      </div>
+      <div class="tradingview-widget-container">
+        <div class="tradingview-widget-container__widget"></div>
+        <div class="tradingview-widget-copyright">
+          <a href="https://www.tradingview.com/symbols/SZSE-000001/" rel="noopener nofollow" target="_blank">SZSE:000001 chart</a>
+          by TradingView
+        </div>
+        <script type="text/javascript" src="https://s3.tradingview.com/external-embedding/embed-widget-advanced-chart.js" async>
+        {
+          "autosize": true,
+          "symbol": "SZSE:000001",
+          "interval": "W",
+          "timezone": "Asia/Shanghai",
+          "theme": "dark",
+          "style": "1",
+          "locale": "zh_CN",
+          "hide_side_toolbar": false,
+          "hide_top_toolbar": false,
+          "hide_legend": false,
+          "hide_volume": false,
+          "allow_symbol_change": true,
+          "calendar": false,
+          "details": true,
+          "hotlist": false,
+          "save_image": false,
+          "backgroundColor": "#0b1117",
+          "gridColor": "rgba(148, 163, 184, 0.12)"
+        }
+        </script>
+      </div>
+    </section>
+
+    <section class="chart">
+      <div class="chart-title">
+        <span>Apple NASDAQ:AAPL Monthly</span>
+        <a href="https://www.tradingview.com/chart/?symbol=NASDAQ%3AAAPL" target="_blank" rel="noopener noreferrer">Open TradingView</a>
+      </div>
+      <div class="tradingview-widget-container">
+        <div class="tradingview-widget-container__widget"></div>
+        <div class="tradingview-widget-copyright">
+          <a href="https://www.tradingview.com/symbols/NASDAQ-AAPL/" rel="noopener nofollow" target="_blank">AAPL chart</a>
+          by TradingView
+        </div>
+        <script type="text/javascript" src="https://s3.tradingview.com/external-embedding/embed-widget-advanced-chart.js" async>
+        {
+          "autosize": true,
+          "symbol": "NASDAQ:AAPL",
+          "interval": "M",
+          "timezone": "Etc/UTC",
+          "theme": "dark",
+          "style": "1",
+          "locale": "zh_CN",
+          "hide_side_toolbar": false,
+          "hide_top_toolbar": false,
+          "hide_legend": false,
+          "hide_volume": false,
+          "allow_symbol_change": true,
+          "calendar": false,
+          "details": true,
+          "hotlist": false,
+          "save_image": false,
+          "backgroundColor": "#0b1117",
+          "gridColor": "rgba(148, 163, 184, 0.12)"
+        }
+        </script>
+      </div>
+    </section>
+
+    <section class="chart">
+      <div class="chart-title">
+        <span>SPDR S&amp;P 500 ETF AMEX:SPY</span>
+        <a href="https://www.tradingview.com/chart/?symbol=AMEX%3ASPY" target="_blank" rel="noopener noreferrer">Open TradingView</a>
+      </div>
+      <div class="tradingview-widget-container">
+        <div class="tradingview-widget-container__widget"></div>
+        <div class="tradingview-widget-copyright">
+          <a href="https://www.tradingview.com/symbols/AMEX-SPY/" rel="noopener nofollow" target="_blank">SPY chart</a>
+          by TradingView
+        </div>
+        <script type="text/javascript" src="https://s3.tradingview.com/external-embedding/embed-widget-advanced-chart.js" async>
+        {
+          "autosize": true,
+          "symbol": "AMEX:SPY",
+          "interval": "D",
+          "timezone": "Etc/UTC",
+          "theme": "dark",
+          "style": "1",
+          "locale": "zh_CN",
+          "hide_side_toolbar": false,
+          "hide_top_toolbar": false,
+          "hide_legend": false,
+          "hide_volume": false,
+          "allow_symbol_change": true,
+          "calendar": false,
+          "details": true,
+          "hotlist": false,
+          "save_image": false,
+          "backgroundColor": "#0b1117",
+          "gridColor": "rgba(148, 163, 184, 0.12)"
+        }
+        </script>
+      </div>
+    </section>
+  </main>
+</body>
+</html>
