@@ -54,6 +54,63 @@ describe("custom strategy preflight", () => {
     ]);
   });
 
+  it("answers saved strategy comparison from structured custom_strategy_run evidence", () => {
+    const messages = [
+      userMessage(
+        'strategy rerun\n' +
+        'data: {"workflowState":{"contract":"finance-workflow-state-v1","workflowKind":"strategy_design","assetClass":"stock","intentMode":"rerun","executionMode":"readback","safetyBoundary":"read-only strategy rerun","subjects":["300059","600519"],"confirmationState":"none","source":"agent-structured-intent"}}',
+      ),
+      assistantMessage("", [
+        { id: "list", name: "MarketData", input: { action: "custom_strategy_list" } },
+      ]),
+      toolMessage("list", JSON.stringify({ action: "custom_strategy_list", count: 1 })),
+      assistantMessage("", [
+        {
+          id: "run-300059",
+          name: "MarketData",
+          input: { action: "custom_strategy_run", strategyId: "saved_strategy_v1", code: "300059" },
+        },
+        {
+          id: "run-600519",
+          name: "MarketData",
+          input: { action: "custom_strategy_run", strategyId: "saved_strategy_v1", code: "600519" },
+        },
+      ]),
+      toolMessage("run-300059", JSON.stringify({
+        action: "custom_strategy_run",
+        strategyId: "saved_strategy_v1",
+        code: "300059",
+        status: "backtested",
+        bars: 121,
+        actualStartDate: "2025-12-25",
+        actualEndDate: "2026-06-30",
+        metrics: { tradeCount: 0, totalReturnPct: 0, maxDrawdownPct: 0, winRatePct: 0 },
+        benchmarkEvidence: { benchmarkReturnPct: -12.68 },
+        dataCoverage: { rows: 121, actualStartDate: "2025-12-25", actualEndDate: "2026-06-30", source: "local", cacheStatus: "local-hit" },
+      })),
+      toolMessage("run-600519", JSON.stringify({
+        action: "custom_strategy_run",
+        strategyId: "saved_strategy_v1",
+        code: "600519",
+        status: "backtested",
+        bars: 126,
+        actualStartDate: "2025-12-24",
+        actualEndDate: "2026-07-06",
+        metrics: { tradeCount: 2, totalReturnPct: 3.4, maxDrawdownPct: 2.1, winRatePct: 50 },
+        benchmarkEvidence: { benchmarkReturnPct: 1.2 },
+        dataCoverage: { rows: 126, actualStartDate: "2025-12-24", actualEndDate: "2026-07-06", source: "local", cacheStatus: "local-hit" },
+      })),
+    ];
+
+    const answer = maybeBuildFinanceBoundedAnswer(messages);
+
+    expect(answer).toContain("已保存策略重跑比较");
+    expect(answer).toContain("saved_strategy_v1");
+    expect(answer).toContain("300059");
+    expect(answer).toContain("600519");
+    expect(answer).toContain("系统已停止追加保存");
+  });
+
   it("does not infer unsupported custom strategy state from tool-call text", () => {
     const state = financeWorkflowStateFromToolCall({
       id: "validation",

@@ -217,6 +217,84 @@ export function maybeBuildCustomStrategyComparisonAnswer(messages: Message[]): s
   ].join('\n')
 }
 
+export function maybeBuildCustomStrategyRunComparisonAnswer(messages: Message[]): string | null {
+  const lastUserIndex = findLastIndex(messages, (message) => message.role === Role.User)
+  if (lastUserIndex < 0) return null
+  const turnMessages = messages.slice(lastUserIndex + 1)
+  const toolCalls = collectToolCalls(turnMessages)
+  const resultByToolUseId = successfulToolResults(turnMessages)
+  const listCall = toolCalls.find((call) =>
+    call.name === 'MarketData' && call.input.action === 'custom_strategy_list'
+  )
+  if (!listCall || !resultByToolUseId.has(listCall.id)) return null
+  const rows = toolCalls
+    .filter((call) =>
+      call.name === 'MarketData' &&
+      call.input.action === 'custom_strategy_run' &&
+      resultByToolUseId.has(call.id)
+    )
+    .map((call) => {
+      const payload = parseJsonObject(resultByToolUseId.get(call.id) ?? '')
+      if (!payload || payload.action !== 'custom_strategy_run') return null
+      const metrics = objectOrEmpty(payload.metrics)
+      const symbol = stringOrNull(payload.code) ??
+        stringOrNull(payload.symbol) ??
+        stringOrNull(call.input.code) ??
+        stringOrNull(call.input.symbol) ??
+        '-'
+      return {
+        symbol,
+        strategyId: stringOrNull(payload.strategyId) ?? stringOrNull(call.input.strategyId) ?? '-',
+        status: stringOrNull(payload.status) ?? '-',
+        bars: payload.bars ?? '-',
+        start: payload.actualStartDate ?? '-',
+        end: payload.actualEndDate ?? '-',
+        trades: metrics.tradeCount ?? payload.tradeCount ?? 0,
+        totalReturn: metrics.totalReturnPct ?? metrics.totalReturn ?? payload.totalReturn ?? 0,
+        maxDrawdown: metrics.maxDrawdownPct ?? metrics.maxDrawdown ?? payload.maxDrawdown ?? 0,
+        winRate: metrics.winRatePct ?? metrics.winRate ?? payload.winRate ?? 0,
+        benchmark: objectOrEmpty(payload.benchmarkEvidence).benchmarkReturnPct ?? '-',
+        dataCoverage: strategyDataCoverageSummary(payload),
+        lifecycle: objectOrEmpty(payload.lifecycleAdvice),
+      }
+    })
+    .filter((row): row is NonNullable<typeof row> => row !== null)
+
+  const latestBySymbol = new Map<string, typeof rows[number]>()
+  for (const row of rows) latestBySymbol.set(row.symbol, row)
+  const comparableRows = [...latestBySymbol.values()]
+  if (comparableRows.length < 2) return null
+  const strategyIds = [...new Set(comparableRows.map((row) => row.strategyId))]
+  const sameStrategy = strategyIds.length === 1
+  const selected = [...comparableRows].sort((left, right) =>
+    Number(right.trades) - Number(left.trades) ||
+    Number(right.totalReturn) - Number(left.totalReturn) ||
+    Number(left.maxDrawdown) - Number(right.maxDrawdown)
+  )[0]
+
+  return [
+    '## 已保存策略重跑比较',
+    '',
+    '已读取 Strategy Library，并通过 `custom_strategy_run` 按保存的 strategyId 重跑。系统已停止追加保存、Read、脚本、provider 或交易工具调用。',
+    '',
+    `- 策略一致性：${sameStrategy ? `同一 strategyId（${strategyIds[0]}）` : `多个 strategyId（${strategyIds.join(', ')}），比较时需注意策略并非完全一致`}。`,
+    '',
+    '| 标的 | strategyId | 状态 | K线 | 区间 | 交易数 | 总收益 | 最大回撤 | 胜率 | 基准收益 |',
+    '|---|---|---|---:|---|---:|---:|---:|---:|---:|',
+    ...comparableRows.map((row) =>
+      `| ${row.symbol} | ${row.strategyId} | ${row.status} | ${row.bars} | ${row.start} ~ ${row.end} | ${row.trades} | ${row.totalReturn}% | ${row.maxDrawdown}% | ${row.winRate}% | ${row.benchmark}% |`
+    ),
+    '',
+    `结论：当前结构化结果中，优先候选为 ${selected.symbol}。排序依据是交易数、总收益和最大回撤；如果交易数为 0，则只能说明该保存策略在该窗口没有形成可验证交易样本。`,
+    '',
+    '## 数据与边界',
+    '',
+    ...comparableRows.map((row) => `- ${row.symbol}：${row.dataCoverage}。`),
+    '- 本轮没有保存新策略、没有读取策略 JSON 文件、没有创建监控、没有交易或模拟盘操作。',
+    '- 若某个保存策略返回 readback_only 或 validation error，应把它列为不可执行记录，而不是改写后再次保存。',
+  ].join('\n')
+}
+
 export function maybeBuildCustomStrategySaveRunBoundaryAnswer(messages: Message[]): string | null {
   const lastUserIndex = findLastIndex(messages, (message) => message.role === Role.User)
   if (lastUserIndex < 0) return null

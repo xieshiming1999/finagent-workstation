@@ -6,6 +6,7 @@ import {
   maybeBuildCustomStrategyBacktestAnswer,
   maybeBuildCustomStrategyComparisonAnswer,
   maybeBuildCustomStrategyRejectedValidationAnswer,
+  maybeBuildCustomStrategyRunComparisonAnswer,
   maybeBuildCustomStrategySaveRunBoundaryAnswer,
   maybeBuildCustomStrategySaveAnswer,
   maybeBuildCustomStrategyUnsupportedProxyAnswer,
@@ -492,6 +493,8 @@ export function maybeBuildFinanceBoundedAnswer(messages: Message[]): string | nu
   if (investmentEvidenceReviewAnswer) return investmentEvidenceReviewAnswer
   const customStrategySaveRunBoundaryAnswer = maybeBuildCustomStrategySaveRunBoundaryAnswer(messages.slice(lastUserIndex))
   if (customStrategySaveRunBoundaryAnswer) return customStrategySaveRunBoundaryAnswer
+  const customStrategyRunComparisonAnswer = maybeBuildCustomStrategyRunComparisonAnswer(messages.slice(lastUserIndex))
+  if (customStrategyRunComparisonAnswer) return customStrategyRunComparisonAnswer
   const customStrategyComparisonAnswer = maybeBuildCustomStrategyComparisonAnswer(messages.slice(lastUserIndex))
   if (customStrategyComparisonAnswer) return customStrategyComparisonAnswer
   if (isLocalStrategyComparisonState(workflowState)) {
