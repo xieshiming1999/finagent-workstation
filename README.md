@@ -11,6 +11,12 @@ FinAgent Workstation is an Electron and React finance workstation with a TypeScr
 - Strategy and backtest: built-in strategy library, custom StrategySpec validation, backtest execution, saved strategy lifecycle, rerun evidence, portfolio-style comparison, and monitor/watchlist handoff.
 - Workflow surfaces: Data Manager, API Health, Macro Research, Strategy Library, watchlists, dashboards, simulated trading, generated WebView reports, and evidence-first workflow tests.
 
+## What You Can Ask
+
+- Using available local or configured provider data, what is driving today’s A-share market, and which risks should I watch?
+- Analyze 600519 using the latest available price and fundamentals, and state the data sources and freshness.
+- Screen A-share stocks for profitable, reasonably valued candidates, and explain the data coverage and main risks.
+
 ## Quick Start
 
 ### gotdx Runtime

@@ -11,6 +11,12 @@ FinAgent Workstation 是一个Electron / React 金融工作台，包含 TypeScri
 - 策略与回测：内置策略库、custom StrategySpec validation、backtest execution、saved strategy lifecycle、rerun evidence、portfolio-style comparison，以及 monitor/watchlist handoff。
 - Workflow surface：Data Manager、API Health、Macro Research、Strategy Library、watchlist、dashboard、模拟交易、生成式 WebView report 和 evidence-first workflow test。
 
+## 可以询问什么
+
+- 根据可用的本地数据或已配置的数据源，今天 A 股市场的主要驱动因素是什么，我需要关注哪些风险？
+- 请使用最新可用的价格和基本面分析 600519，并说明数据来源和新鲜度。
+- 请筛选盈利能力较好且估值合理的 A 股候选，并说明数据覆盖和主要风险。
+
 ## 快速启动
 
 ### gotdx 运行环境
