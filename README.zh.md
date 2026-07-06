@@ -35,6 +35,13 @@ pnpm install --frozen-lockfile
 pnpm dev
 ```
 
+## 演示
+
+工作站把 chat-driven 金融 workflow、dashboard panel、本地数据读回、provider
+provenance 和策略界面组织在同一个桌面应用中。
+
+![FinAgent Workstation 演示](docs/assets/finagent-workstation.png)
+
 ## 运行时设置
 
 agent 执行真实 workflow 前，需要先配置运行时设置。请通过应用设置界面或应用创建的运行时配置目录完成配置，不要把本地凭证提交进仓库。

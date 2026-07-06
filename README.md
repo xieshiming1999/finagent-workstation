@@ -35,6 +35,13 @@ Run the app:
 pnpm dev
 ```
 
+## Demonstration
+
+The workstation combines chat-driven finance workflows, dashboard panels, local
+data readback, provider provenance, and strategy surfaces in one desktop app.
+
+![FinAgent Workstation demonstration](docs/assets/finagent-workstation.png)
+
 ## Runtime Settings
 
 The app needs runtime settings before the agent can run real workflows. Configure them in the app settings UI or in the runtime configuration directory created by the app. Do not commit local credentials.
