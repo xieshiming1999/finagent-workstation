@@ -110,6 +110,18 @@ class NamedTool implements Tool {
   }
 }
 
+class DelayedNamedTool extends NamedTool {
+  async call(
+    _id: string,
+    input: Record<string, unknown>,
+    _ctx: ToolContext,
+  ): Promise<string> {
+    const delayMs = Number(input.delayMs ?? 0);
+    if (delayMs > 0) await new Promise((resolve) => setTimeout(resolve, delayMs));
+    return `${this.name} result ${String(input.label ?? "")}`;
+  }
+}
+
 function makeControl(
   basePath: string,
   llm = new MockLLM([{ text: "hello" }]),
@@ -571,6 +583,61 @@ describe("WorkflowAutomationControl", () => {
         entry.content?.includes("scenario data"),
       ),
     ).toBe(true);
+  });
+
+  it("pairs workflow report tool results by tool-use id instead of array order", async () => {
+    process.env.FINAGENT_WORKSTATION_WORKFLOW_AUTOMATION = "1";
+    const { control } = makeControl(
+      basePath,
+      new MockLLM([
+        {
+          toolCalls: [
+            {
+              id: "slow-call",
+              name: "DelayedTool",
+              arguments: { label: "slow", delayMs: 20 },
+            },
+            {
+              id: "fast-call",
+              name: "DelayedTool",
+              arguments: { label: "fast", delayMs: 0 },
+            },
+          ],
+        },
+        { text: "paired complete" },
+      ]),
+      [new DelayedNamedTool("DelayedTool")],
+    );
+
+    const result = await control.runScenario({
+      id: "tool-interaction-pairing-smoke",
+      prompt: "run two delayed tool calls",
+      expectTools: ["DelayedTool"],
+      expectFinalContains: ["paired complete"],
+    });
+
+    expect(result.ok).toBe(true);
+    const report = JSON.parse(
+      readFileSync(result.scenarioReportPath!, "utf-8"),
+    );
+    expect(report.toolCalls.map((call: { id?: string }) => call.id)).toEqual([
+      "slow-call",
+      "fast-call",
+    ]);
+    expect(
+      report.toolResults.map((item: { toolUseId?: string }) => item.toolUseId),
+    ).toEqual(expect.arrayContaining(["slow-call", "fast-call"]));
+    const interactions = report.toolInteractions as Array<{
+      id: string;
+      result?: { content?: string } | null;
+    }>;
+    expect(interactions.find((item) => item.id === "slow-call")?.result?.content).toContain(
+      "slow",
+    );
+    expect(interactions.find((item) => item.id === "fast-call")?.result?.content).toContain(
+      "fast",
+    );
+    expect(report.agentReview.toolInteractions.length).toBe(2);
   });
 
   it("counts UI evidence tools separately from data workflow tools", async () => {

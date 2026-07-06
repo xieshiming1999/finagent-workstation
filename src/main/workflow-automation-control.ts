@@ -773,6 +773,8 @@ export class WorkflowAutomationControl {
   private writeReport(result: WorkflowAutomationRunResult): string {
     const dir = this.reportDir();
     mkdirSync(dir, { recursive: true });
+    const toolCalls = reportToolCalls(result);
+    const toolResults = reportToolResults(result);
     const report = {
       runId: result.runId,
       createdAt: new Date().toISOString(),
@@ -784,20 +786,9 @@ export class WorkflowAutomationControl {
       ok: result.ok,
       queued: result.queued,
       eventTypes: result.events.map((event) => event.type),
-      toolCalls: result.messages.flatMap(
-        (message) =>
-          message.toolUses?.map((tool) => ({
-            name: tool.name,
-            input: tool.input,
-          })) ?? [],
-      ),
-      toolResults: result.messages
-        .filter((message) => message.toolResult)
-        .map((message) => ({
-          toolUseId: message.toolResult?.toolUseId,
-          content: message.toolResult?.content,
-          isError: message.toolResult?.isError,
-        })),
+      toolCalls,
+      toolResults,
+      toolInteractions: reportToolInteractions(toolCalls, toolResults),
       toolErrors: result.messages
         .filter((message) => message.toolResult?.isError)
         .map((message) => ({
@@ -822,6 +813,8 @@ export class WorkflowAutomationControl {
   ): string {
     const dir = this.reportDir();
     mkdirSync(dir, { recursive: true });
+    const toolCalls = reportToolCalls(result.run);
+    const toolResults = reportToolResults(result.run);
     const path = join(
       dir,
       `${result.run.runId}-${safeFilePart(result.scenarioId)}-scenario.json`,
@@ -841,20 +834,9 @@ export class WorkflowAutomationControl {
           prompt: result.run.prompt,
           assertions: result.assertions,
           eventTypes: result.run.events.map((event) => event.type),
-          toolCalls: result.run.messages.flatMap(
-            (message) =>
-              message.toolUses?.map((tool) => ({
-                name: tool.name,
-                input: tool.input,
-              })) ?? [],
-          ),
-          toolResults: result.run.messages
-            .filter((message) => message.toolResult)
-            .map((message) => ({
-              toolUseId: message.toolResult?.toolUseId,
-              content: message.toolResult?.content,
-              isError: message.toolResult?.isError,
-            })),
+          toolCalls,
+          toolResults,
+          toolInteractions: reportToolInteractions(toolCalls, toolResults),
           toolErrors: result.run.messages
             .filter((message) => message.toolResult?.isError)
             .map((message) => ({
@@ -902,39 +884,39 @@ export class WorkflowAutomationControl {
             result.turns[result.turns.length - 1]?.run.rawSessionAvailable,
           rawLineCount: result.turns[result.turns.length - 1]?.run.rawLineCount,
           assertions: result.assertions,
-          turns: result.turns.map((turn) => ({
-            turnId: turn.turnId,
-            turnIndex: turn.turnIndex,
-            scenarioId: turn.scenarioId,
-            ok: turn.ok,
-            prompt: turn.run.prompt,
-            runId: turn.run.runId,
-            runReportPath: turn.run.reportPath,
-            scenarioReportPath: turn.scenarioReportPath,
-            assertions: turn.assertions,
-            toolCalls: turn.run.messages.flatMap(
-              (message) =>
-                message.toolUses?.map((tool) => ({
-                  name: tool.name,
-                  input: tool.input,
-                })) ?? [],
-            ),
-            toolErrors: turn.run.messages
-              .filter((message) => message.toolResult?.isError)
-              .map((message) => ({
-                toolUseId: message.toolResult?.toolUseId,
-                content: message.toolResult?.content,
-              })),
-            agentReview: buildAgentReview(turn.run),
-            finalAssistant:
-              [...turn.run.messages]
-                .reverse()
-                .find((message) => message.role === "assistant")?.content ??
-              null,
-            panelState: turn.run.panelState,
-            uiEvidence: turn.run.uiEvidence,
-            uiArtifacts: turn.run.uiArtifacts ?? [],
-          })),
+          turns: result.turns.map((turn) => {
+            const turnToolCalls = reportToolCalls(turn.run);
+            const turnToolResults = reportToolResults(turn.run);
+            return {
+              turnId: turn.turnId,
+              turnIndex: turn.turnIndex,
+              scenarioId: turn.scenarioId,
+              ok: turn.ok,
+              prompt: turn.run.prompt,
+              runId: turn.run.runId,
+              runReportPath: turn.run.reportPath,
+              scenarioReportPath: turn.scenarioReportPath,
+              assertions: turn.assertions,
+              toolCalls: turnToolCalls,
+              toolResults: turnToolResults,
+              toolInteractions: reportToolInteractions(turnToolCalls, turnToolResults),
+              toolErrors: turn.run.messages
+                .filter((message) => message.toolResult?.isError)
+                .map((message) => ({
+                  toolUseId: message.toolResult?.toolUseId,
+                  content: message.toolResult?.content,
+                })),
+              agentReview: buildAgentReview(turn.run),
+              finalAssistant:
+                [...turn.run.messages]
+                  .reverse()
+                  .find((message) => message.role === "assistant")?.content ??
+                null,
+              panelState: turn.run.panelState,
+              uiEvidence: turn.run.uiEvidence,
+              uiArtifacts: turn.run.uiArtifacts ?? [],
+            };
+          }),
         },
         null,
         2,
@@ -1506,18 +1488,61 @@ function serializeMessages(messages: Message[]): WorkflowAutomationMessage[] {
     }));
 }
 
+type WorkflowReportToolCall = {
+  id?: string;
+  name: string;
+  input: Record<string, unknown>;
+};
+
+type WorkflowReportToolResult = {
+  toolUseId?: string;
+  content?: string;
+  isError?: boolean;
+};
+
+function reportToolCalls(result: WorkflowAutomationRunResult): WorkflowReportToolCall[] {
+  return result.messages.flatMap(
+    (message) =>
+      message.toolUses?.map((tool) => ({
+        id: tool.id,
+        name: tool.name,
+        input: tool.input,
+      })) ?? [],
+  );
+}
+
+function reportToolResults(result: WorkflowAutomationRunResult): WorkflowReportToolResult[] {
+  return result.messages
+    .filter((message) => message.toolResult)
+    .map((message) => ({
+      toolUseId: message.toolResult?.toolUseId,
+      content: message.toolResult?.content,
+      isError: message.toolResult?.isError,
+    }));
+}
+
+function reportToolInteractions(
+  toolCalls: WorkflowReportToolCall[],
+  toolResults: WorkflowReportToolResult[],
+): Array<WorkflowReportToolCall & { result: WorkflowReportToolResult | null }> {
+  const resultById = new Map(
+    toolResults
+      .filter((result) => result.toolUseId)
+      .map((result) => [result.toolUseId, result] as const),
+  );
+  return toolCalls.map((call) => ({
+    ...call,
+    result: call.id ? resultById.get(call.id) ?? null : null,
+  }));
+}
+
 function buildAgentReview(
   result: WorkflowAutomationRunResult,
 ): Record<string, unknown> {
   const finalAssistant =
     assistantReviewText(result);
-  const toolCalls = result.messages.flatMap(
-    (message) =>
-      message.toolUses?.map((tool) => ({
-        name: tool.name,
-        input: tool.input,
-      })) ?? [],
-  );
+  const toolCalls = reportToolCalls(result);
+  const toolResults = reportToolResults(result);
   const toolErrors = result.messages
     .filter((message) => message.toolResult?.isError)
     .map((message) => ({
@@ -1537,6 +1562,7 @@ function buildAgentReview(
     toolCallCount: toolCalls.length,
     toolNames: [...new Set(toolCalls.map((tool) => tool.name))],
     toolCalls,
+    toolInteractions: reportToolInteractions(toolCalls, toolResults),
     toolErrorCount: toolErrors.length,
     toolErrors,
     panelEvidenceAvailable: result.panelState != null,
