@@ -174,7 +174,7 @@ export class WindMcpTool implements Tool {
 
     const server = String(input.server);
     const tool = String(input.tool);
-    const args = isRecord(input.arguments) ? input.arguments : {};
+    const args = normalizeWindArguments(isRecord(input.arguments) ? input.arguments : {});
     const requestHash = stableHash({ server, tool, args });
     const cacheTtlMs = windCacheTtlMs(tool);
     const cached = this.readResultCache(ctx, tool, requestHash);
@@ -476,6 +476,20 @@ export class WindMcpTool implements Tool {
       lines.push(`- ${server}: ${tools.join(", ")}`);
     return lines.join("\n");
   }
+}
+
+function normalizeWindArguments(args: Record<string, unknown>): Record<string, unknown> {
+  if (args.windcode !== undefined) return args;
+  const codes = args.codes ?? args.code ?? args.symbols ?? args.symbol;
+  if (codes === undefined) return args;
+  return { ...args, windcode: normalizeWindCodeList(codes) };
+}
+
+function normalizeWindCodeList(value: unknown): string {
+  if (Array.isArray(value)) {
+    return value.map((item) => String(item).trim()).filter(Boolean).join(",");
+  }
+  return String(value).trim();
 }
 
 function isRecord(value: unknown): value is Record<string, unknown> {

@@ -982,4 +982,50 @@ describe("WindMcp known-schema persistence", () => {
       ),
     ).resolves.toContain("000300 index momentum");
   });
+
+  it("normalizes common code aliases to Wind windcode before calling the provider", async () => {
+    const calls: Record<string, unknown>[] = [];
+    vi.stubGlobal(
+      "fetch",
+      vi.fn(async (_input: string | URL, init?: RequestInit) => {
+        const body = JSON.parse(String(init?.body ?? "{}")) as Record<string, unknown>;
+        if (body.method === "initialize") {
+          return {
+            ok: true,
+            status: 200,
+            text: async () => JSON.stringify({ jsonrpc: "2.0", id: body.id, result: { protocolVersion: "2025-03-26" } }),
+          } as Response;
+        }
+        const params = body.params as Record<string, unknown>;
+        calls.push(params.arguments as Record<string, unknown>);
+        return {
+          ok: true,
+          status: 200,
+          text: async () =>
+            JSON.stringify({
+              jsonrpc: "2.0",
+              id: body.id,
+              result: {
+                content: [{ type: "text", text: '{"data":{"columns":["Wind代码","证券简称","最新价"],"rows":[["000300.SH","沪深300",4100.5]]}}' }],
+              },
+            }),
+        } as Response;
+      }),
+    );
+
+    const tool = new WindMcpTool((key) => (key === "WIND_API_KEY" ? "test-key" : undefined));
+    const ctx = makeCtx(basePath);
+
+    await tool.call("quote-alias", {
+      action: "call",
+      server: "index_data",
+      tool: "get_index_price_indicators",
+      arguments: { codes: ["000300.SH", "000905.SH"], indexes: "证券简称,最新价" },
+    }, ctx);
+
+    expect(calls[0]).toMatchObject({
+      windcode: "000300.SH,000905.SH",
+      indexes: "证券简称,最新价",
+    });
+  });
 });
