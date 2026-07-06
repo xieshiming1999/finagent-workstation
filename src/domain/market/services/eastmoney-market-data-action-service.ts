@@ -67,14 +67,14 @@ export class EastmoneyMarketDataActionService {
       const header = `${sectorName} constituents (${items.length})\nCode\tName\tPrice\tPct\tPE\tTurnover`
       const rows = items.slice(0, limit).map((i) =>
         `${i.code}\t${i.name}\t${i.price}\t${i.changePct}%\t${i.pe == null ? '-' : i.pe}\t${i.turnoverRate == null ? '-' : i.turnoverRate}%`)
-      return `${header}\n${rows.join('\n')}`
+      return appendProvenance(`${header}\n${rows.join('\n')}`, 'Sector provenance', result)
     }
 
     const { sectorType: type, sectors } = result
     if (sectors.length === 0) return this.cachedSectorText(input, ctx, limit) ?? 'No sector data'
     const header = `${type} sectors (${sectors.length})\nCode\tName\tChangePct\tUp\tDown\tLeading`
     const rows = sectors.slice(0, limit).map((s) => `${s.code}\t${s.name}\t${s.changePct.toFixed(2)}%\t${s.upCount}\t${s.downCount}\t${s.leadingStock ?? '-'}`)
-    return `${header}\n${rows.join('\n')}`
+    return appendProvenance(`${header}\n${rows.join('\n')}`, 'Sector provenance', result)
   }
 
   private async handleLimitUp(input: Record<string, unknown>, ctx: ToolContext, limit: number): Promise<string> {
@@ -161,7 +161,8 @@ export class EastmoneyMarketDataActionService {
       this.persistProviderHit(ctx, result)
       const items = result.items
       if (items.length === 0) return this.cachedFlowRankText(input, ctx) ?? 'No flow ranking data'
-      return items.map((i) => `${i.code} ${i.name} flow:${fmtAmt(i.mainNetInflow)} pct:${i.changePct.toFixed(2)}%`).join('\n')
+      const rows = items.map((i) => `${i.code} ${i.name} flow:${fmtAmt(i.mainNetInflow)} pct:${i.changePct.toFixed(2)}%`).join('\n')
+      return appendProvenance(rows, 'Flow-rank provenance', result)
     } catch (e) {
       recordDirectApiFailure(ctx, { source: 'eastmoney', action: 'flow_rank', endpoint: 'market.flow_rank', startedAt, error: e })
       const cached = this.cachedFlowRankText(input, ctx)
@@ -327,6 +328,24 @@ export class EastmoneyMarketDataActionService {
     this.persistence.persist(ctx, result)
   }
 
+}
+
+function appendProvenance(text: string, label: string, result: EastmoneyResult): string {
+  const provenance = result.provenance
+  if (!provenance) return text
+  const parts = [
+    provenance.interfaceId ? `interface=${provenance.interfaceId}` : '',
+    provenance.provider ?? provenance.source ? `provider/source=${provenance.provider ?? provenance.source}` : '',
+    provenance.capabilityId ? `capability=${provenance.capabilityId}` : '',
+    provenance.cacheStatus ? `cache=${provenance.cacheStatus}` : '',
+    provenance.asOf ? `asOf=${provenance.asOf}` : 'asOf=unavailable',
+    provenance.fetchedAt ? `fetchedAt=${provenance.fetchedAt}` : 'fetchedAt=unavailable',
+    provenance.canonicalSchema ? `schema=${provenance.canonicalSchema}` : '',
+    provenance.canonicalTable ? `table=${provenance.canonicalTable}` : '',
+    provenance.endpoint ? `endpoint=${provenance.endpoint}` : '',
+  ].filter(Boolean)
+  if (parts.length === 0) return text
+  return `${text}\n\n${label}:\n- ${parts.join('; ')}`
 }
 
 function sectorInterfaceId(input: Record<string, unknown>): string {

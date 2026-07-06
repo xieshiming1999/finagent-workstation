@@ -1,6 +1,7 @@
 import type { ToolContext } from '../../../agent/tool'
 import { toolError } from '../../../agent/tool'
 import type { CachePolicyMode } from '../../../agent/data/cache-policy'
+import type { FetchProvenance } from '../../../agent/data/fetchers/base-fetcher'
 import { formatQuote } from '../../../agent/tools/market-data-utils'
 import { MarketDataResolveService } from './market-data-resolve-service'
 
@@ -37,7 +38,15 @@ export class MarketDataReadActionService {
     const header = result.cachedCount > 0 || result.freshCount > 0
       ? `Quote data (${result.cachedCount} from local quote_snapshot cache, ${result.freshCount} fresh; fresh source: ${freshSources})\n`
       : ''
-    return header + result.quotes.map(formatQuote).join('\n---\n')
+    const provenance = formatProvenanceBlock({
+      label: 'Quote provenance',
+      status: result.status,
+      reason: result.reason,
+      provenance: result.provenance,
+    })
+    return [header + result.quotes.map(formatQuote).join('\n---\n'), provenance]
+      .filter(Boolean)
+      .join('\n\n')
   }
 
   private async readKline(
@@ -68,6 +77,36 @@ export class MarketDataReadActionService {
       provenance: result.provenance ?? null,
     }, null, 2)
   }
+}
+
+function formatProvenanceBlock(input: {
+  label: string
+  status?: string
+  reason?: string
+  provenance?: FetchProvenance[]
+}): string {
+  const rows = input.provenance ?? []
+  const lines = [
+    `${input.label}:`,
+    input.status ? `- read status: ${input.status}` : '',
+    input.reason ? `- read reason: ${input.reason}` : '',
+    ...rows.map((row, index) => {
+      const parts = [
+        `#${index + 1}`,
+        row.interfaceId ? `interface=${row.interfaceId}` : '',
+        row.provider ?? row.source ? `provider/source=${row.provider ?? row.source}` : '',
+        row.capabilityId ? `capability=${row.capabilityId}` : '',
+        row.cacheStatus ? `cache=${row.cacheStatus}` : '',
+        row.asOf ? `asOf=${row.asOf}` : 'asOf=unavailable',
+        row.fetchedAt ? `fetchedAt=${row.fetchedAt}` : 'fetchedAt=unavailable',
+        row.canonicalSchema ? `schema=${row.canonicalSchema}` : '',
+        row.canonicalTable ? `table=${row.canonicalTable}` : '',
+        row.endpoint ? `endpoint=${row.endpoint}` : '',
+      ].filter(Boolean)
+      return `- ${parts.join('; ')}`
+    }),
+  ].filter(Boolean)
+  return lines.length > 1 ? lines.join('\n') : ''
 }
 
 function cachePolicyFromInput(input: Record<string, unknown>): { mode?: CachePolicyMode } {

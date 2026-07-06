@@ -10,7 +10,13 @@ describe('MarketDataReadActionService', () => {
   it('routes quote actions through the market data read service boundary', async () => {
     const service = new MarketDataReadActionService(new FakeReadService())
 
-    await expect(service.readAction('quote', { code: '600519' }, ctx, '600519', 20)).resolves.toContain('Fake Quote')
+    const output = await service.readAction('quote', { code: '600519' }, ctx, '600519', 20)
+
+    expect(output).toContain('Fake Quote')
+    expect(output).toContain('Quote provenance:')
+    expect(output).toContain('interface=stock.quote')
+    expect(output).toContain('asOf=2026-07-06T09:30:00+08:00')
+    expect(output).toContain('fetchedAt=2026-07-06T09:31:00+08:00')
   })
 
   it('routes kline actions through the market data read service boundary', async () => {
@@ -63,6 +69,24 @@ class FakeReadService extends MarketDataResolveService {
       cachedCount: 0,
       freshCount: 1,
       freshSources: ['fake'],
+      status: 'hit',
+      reason: 'fixture quote evidence',
+      missingCodes: [],
+      staleCodes: [],
+      provenance: [
+        {
+          interfaceId: 'stock.quote',
+          provider: 'fake',
+          source: 'fake',
+          capabilityId: 'fake.stock.quote',
+          cacheStatus: 'provider-hit',
+          asOf: '2026-07-06T09:30:00+08:00',
+          fetchedAt: '2026-07-06T09:31:00+08:00',
+          canonicalSchema: 'quote_snapshot',
+          canonicalTable: 'quote_snapshot',
+          endpoint: 'fixture:quote',
+        },
+      ],
     }
   }
 
@@ -84,9 +108,20 @@ class FakeReadService extends MarketDataResolveService {
       source: 'fake',
       period: 'daily',
       adjust: 'qfq',
+      status: 'hit',
+      reason: 'fixture kline evidence',
+      coverage: { rowCount: 1, requiredRows: 1 },
       provenance: {
         interfaceId: 'stock.daily_kline',
+        provider: 'fake',
+        source: 'fake',
+        capabilityId: 'fake.stock.daily_kline',
+        cacheStatus: 'provider-hit',
         asOf: '2024-01-02',
+        fetchedAt: '2026-07-06T09:31:00+08:00',
+        canonicalSchema: 'kline_daily',
+        canonicalTable: 'kline_daily',
+        endpoint: 'fixture:kline',
       },
     }
   }
