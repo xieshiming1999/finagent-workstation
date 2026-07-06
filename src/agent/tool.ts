@@ -47,45 +47,6 @@ export function requiresUserInteraction(tool: Tool): boolean {
   return tool.requiresUserInteraction === true
 }
 
-export function looksLikeToolError(content: string): boolean {
-  const text = content.trimStart()
-  if (!text) return false
-
-  const prefixes = [
-    'Error:',
-    'Validation error:',
-    'Tool use was rejected',
-    'BLOCKED:',
-    'HTTP ',
-    'Fetch error:',
-    'Render error:',
-    'Crop error:',
-    'Parse error:',
-    'Download failed',
-    'Search failed.',
-    'Sub-agent failed:',
-    'WEBVIEW_ELEMENT_MISSING:',
-    'WIND_TOOL_ERROR:',
-    'RATE_LIMIT_DAILY:',
-    'BALANCE_INSUFFICIENT:',
-    'KEY_MISSING:',
-    'INVALID_',
-    'MISSING_',
-  ]
-  if (prefixes.some((prefix) => text.startsWith(prefix))) return true
-
-  if (text.startsWith('{')) {
-    try {
-      const parsed = JSON.parse(text)
-      return parsed && typeof parsed === 'object' && typeof parsed.error === 'string'
-    } catch {
-      return false
-    }
-  }
-
-  return false
-}
-
 export function toolError(message: string): never {
   throw new Error(message)
 }

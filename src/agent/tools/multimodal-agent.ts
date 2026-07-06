@@ -1,6 +1,6 @@
 import { readFileSync, existsSync } from 'fs'
 import type { Tool, ToolContext } from '../tool'
-import { looksLikeToolError, toolError } from '../tool'
+import { toolError } from '../tool'
 import type { LLMProvider } from '../llm-provider'
 import type { Message, ImageContent, AudioContent, ContentPart } from '../message'
 import { Role } from '../message'
@@ -130,7 +130,7 @@ export class MultimodalAgentTool implements Tool {
           messages.push({
             role: Role.Tool,
             content: '',
-            toolResult: { toolUseId: tc.id, content: result, isError: looksLikeToolError(result) },
+            toolResult: { toolUseId: tc.id, content: result, isError: false },
             timestamp: new Date().toISOString(),
           })
         } catch (err) {

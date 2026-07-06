@@ -519,7 +519,7 @@ function initAgent() {
     ),
     executeTool: async (name, input, ctx) => {
       const tool = registry.get(name)
-      if (!tool) return `Error: unknown tool '${name}'`
+      if (!tool) throw new Error(`Unknown tool '${name}'`)
       return await tool.call(`mm-${Date.now()}`, input, ctx)
     },
   })
