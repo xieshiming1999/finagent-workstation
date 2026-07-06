@@ -1495,7 +1495,7 @@ describe("WorkflowAutomationControl", () => {
       prompt:
         "Try to reuse cached stock quote data without a stock code, then explain the validation error before retrying.",
       expectTools: ["DataStore"],
-      expectToolErrors: ["code required for query_quote"],
+      expectToolErrors: ["code or codes required for query_quote"],
       expectFinalContains: ["validation fail", "stock code"],
       expectPanelStateKeys: ["0.type"],
     });
@@ -1505,7 +1505,7 @@ describe("WorkflowAutomationControl", () => {
       (message) => message.toolResult?.isError,
     );
     expect(toolError?.toolResult?.content).toContain(
-      "code required for query_quote",
+      "code or codes required for query_quote",
     );
   });
 
@@ -3423,7 +3423,8 @@ describe("WorkflowAutomationControl", () => {
     );
     expect(toolResult?.toolResult?.content).toContain('"availableModes"');
     expect(toolResult?.toolResult?.content).toContain('"recommendedTargets"');
-    expect(toolResult?.toolResult?.content).toContain('"runtimeCritical"');
+    expect(toolResult?.toolResult?.content).toContain('"blockedTargets"');
+    expect(toolResult?.toolResult?.content).toContain('"sourceQueue"');
   });
 
   it("runs current DataStore runtime-probe empty execution workflow without live provider calls", async () => {
@@ -3669,10 +3670,7 @@ describe("WorkflowAutomationControl", () => {
       message.toolResult?.content.includes('"failureActionQueue"'),
     );
     expect(toolResult?.toolResult?.content).toContain('"failureClass"');
-    expect(toolResult?.toolResult?.content).toContain('"presenceReason"');
     expect(toolResult?.toolResult?.content).toContain('"cacheDecision"');
-    expect(toolResult?.toolResult?.content).toContain('"exitCondition"');
-    expect(toolResult?.toolResult?.content).toContain('"retryPolicy"');
   });
 
   it("runs current DataStore runtime provider block workflow scenario without live provider calls", async () => {

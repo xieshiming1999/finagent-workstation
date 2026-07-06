@@ -3,24 +3,18 @@ import { join, resolve } from "node:path";
 import { describe, expect, it } from "vitest";
 import { financeOutputStandardPromptGuidance } from "../../src/agent/finance-output-standard";
 
-const repoRoot = resolve(__dirname, "../../..");
+const repoRoot = resolve(__dirname, "../..");
 
 const skillPaths = [
-  "finagent_workstation/assets/skills/data-management/skill.md",
-  "finagent_workstation/assets/skills/data-sources/skill.md",
-  "finagent/assets/finance/skills/data-sources/skill.md",
-  "app/assets/finance/skills/data-sources/skill.md",
+  "assets/skills/data-management/skill.md",
+  "assets/skills/data-sources/skill.md",
 ];
 
 const financeOutputSkillPaths = [
-  "finagent_workstation/assets/skills/analysis-standards/skill.md",
-  "finagent_workstation/assets/skills/stock-picking/skill.md",
-  "finagent_workstation/assets/skills/fund-screening/skill.md",
-  "finagent_workstation/assets/skills/report-analysis/skill.md",
-  "finagent/assets/finance/skills/analysis-standards/skill.md",
-  "finagent/assets/finance/skills/stock-picking/skill.md",
-  "finagent/assets/finance/skills/fund-screening/skill.md",
-  "finagent/assets/finance/skills/report-analysis/skill.md",
+  "assets/skills/analysis-standards/skill.md",
+  "assets/skills/stock-picking/skill.md",
+  "assets/skills/fund-screening/skill.md",
+  "assets/skills/report-analysis/skill.md",
 ];
 
 describe("finance bundled skill contracts", () => {
@@ -41,7 +35,7 @@ describe("finance bundled skill contracts", () => {
 
   it("documents Data Manager source priority for queue-backed fetches", () => {
     const text = readFileSync(
-      resolve(repoRoot, "finagent_workstation/assets/skills/data-management/skill.md"),
+      resolve(repoRoot, "assets/skills/data-management/skill.md"),
       "utf-8",
     );
 
@@ -53,7 +47,7 @@ describe("finance bundled skill contracts", () => {
 
   it("documents fetch queue provenance and shared configured-feed execution", () => {
     const text = readFileSync(
-      resolve(repoRoot, "finagent_workstation/assets/skills/data-management/skill.md"),
+      resolve(repoRoot, "assets/skills/data-management/skill.md"),
       "utf-8",
     );
 
@@ -74,9 +68,8 @@ describe("finance bundled skill contracts", () => {
   });
 
   it.each([
-    "finagent_workstation/assets/skills/data-management/skill.md",
-    "app/assets/finance/skills/data-sources/skill.md",
-    "finagent/assets/finance/skills/data-sources/skill.md",
+    "assets/skills/data-management/skill.md",
+    "assets/skills/data-sources/skill.md",
   ])("%s documents raw payload readback as diagnostic-only provenance", (relativePath) => {
     const text = readFileSync(resolve(repoRoot, relativePath), "utf-8");
 
@@ -115,9 +108,7 @@ describe("finance bundled skill contracts", () => {
   );
 
   it.each([
-    "finagent_workstation/assets/skills/data-sources/skill.md",
-    "finagent/assets/finance/skills/data-sources/skill.md",
-    "app/assets/finance/skills/data-sources/skill.md",
+    "assets/skills/data-sources/skill.md",
   ])("%s documents split credential health queues", (relativePath) => {
     const text = readFileSync(resolve(repoRoot, relativePath), "utf-8");
 
@@ -127,9 +118,7 @@ describe("finance bundled skill contracts", () => {
   });
 
   it.each([
-    "finagent_workstation/assets/skills/data-sources/skill.md",
-    "finagent/assets/finance/skills/data-sources/skill.md",
-    "app/assets/finance/skills/data-sources/skill.md",
+    "assets/skills/data-sources/skill.md",
   ])(
     "%s documents Finance Doctor as local readiness evidence",
     (relativePath) => {
@@ -212,8 +201,7 @@ describe("finance bundled skill contracts", () => {
   );
 
   it.each([
-    "finagent_workstation/assets/skills/stock-picking/skill.md",
-    "finagent/assets/finance/skills/stock-picking/skill.md",
+    "assets/skills/stock-picking/skill.md",
   ])(
     "%s documents interface-first stock-picking provenance gates",
     (relativePath) => {
@@ -237,10 +225,8 @@ describe("finance bundled skill contracts", () => {
   );
 
   it.each([
-    "finagent_workstation/assets/skills/stock/skill.md",
-    "finagent_workstation/assets/skills/stock-picking/skill.md",
-    "finagent/assets/finance/skills/stock/skill.md",
-    "finagent/assets/finance/skills/stock-picking/skill.md",
+    "assets/skills/stock/skill.md",
+    "assets/skills/stock-picking/skill.md",
   ])("%s requires the canonical PE/PB missing valuation sentence", (relativePath) => {
     const text = readFileSync(resolve(repoRoot, relativePath), "utf-8");
 
@@ -258,9 +244,9 @@ describe("finance bundled skill contracts", () => {
 
   it("documents TradingView/local fallback source-time separation for dashboards", () => {
     const files = [
-      "finagent_workstation/assets/skills/tradingview/skill.md",
-      "finagent_workstation/assets/skills/tradingview/references/dynamic-digits.md",
-      "finagent_workstation/assets/skills/tradingview/references/finagent-workstation-bridge.md",
+      "assets/skills/tradingview/skill.md",
+      "assets/skills/tradingview/references/dynamic-digits.md",
+      "assets/skills/tradingview/references/finagent-workstation-bridge.md",
     ].map((relativePath) => readFileSync(resolve(repoRoot, relativePath), "utf-8"));
     const text = files.join("\n");
 
@@ -272,12 +258,9 @@ describe("finance bundled skill contracts", () => {
   });
 
   it.each([
-    "finagent_workstation/assets/skills/strategy-system/skill.md",
-    "finagent/assets/finance/skills/strategy-system/skill.md",
-    "finagent_workstation/assets/skills/stock/skill.md",
-    "finagent/assets/finance/skills/stock/skill.md",
-    "finagent_workstation/assets/skills/stock-picking/skill.md",
-    "finagent/assets/finance/skills/stock-picking/skill.md",
+    "assets/skills/strategy-system/skill.md",
+    "assets/skills/stock/skill.md",
+    "assets/skills/stock-picking/skill.md",
   ])("%s keeps strategy ranking on the governed MarketData contract", (relativePath) => {
     const text = readFileSync(resolve(repoRoot, relativePath), "utf-8");
 
@@ -290,15 +273,15 @@ describe("finance bundled skill contracts", () => {
 
   it("documents bounded finance dashboard generation with supported Bridge routes", () => {
     const files = [
-      "finagent_workstation/assets/skills/stock/skill.md",
-      "finagent_workstation/assets/skills/tradingview/skill.md",
-      "finagent_workstation/assets/skills/html-artifact/skill.md",
+      "assets/skills/stock/skill.md",
+      "assets/skills/tradingview/skill.md",
+      "assets/skills/html-artifact/skill.md",
     ].map((relativePath) => readFileSync(resolve(repoRoot, relativePath), "utf-8"));
     const text = files.join("\n");
 
     expect(text).toMatch(/Dashboard\(template:/);
     expect(text).toMatch(/Do not use `Read`, `Glob`,\s+`Grep`, `Bash`/);
-    expect(text).toContain("finagent_workstation/dashboards/report.html");
+    expect(text).toContain("dashboards/report.html");
     expect(text).toContain("generated dashboard HTML");
     expect(text).toMatch(/WebView\(action:"get_info"\)|WebView\(action:"screenshot"\)/);
     expect(text).toMatch(/12k|12000/i);
@@ -313,11 +296,11 @@ describe("finance bundled skill contracts", () => {
 
   it("documents executable EastMoney K-line source priority for desktop feeds", () => {
     const dataManagement = readFileSync(
-      resolve(repoRoot, "finagent_workstation/assets/skills/data-management/skill.md"),
+      resolve(repoRoot, "assets/skills/data-management/skill.md"),
       "utf-8",
     );
     const dataSources = readFileSync(
-      resolve(repoRoot, "finagent_workstation/assets/skills/data-sources/skill.md"),
+      resolve(repoRoot, "assets/skills/data-sources/skill.md"),
       "utf-8",
     );
 
@@ -330,7 +313,7 @@ describe("finance bundled skill contracts", () => {
 
   it("does not advertise stale desktop finance tool call shapes", () => {
     const skillFiles = markdownFiles(
-      resolve(repoRoot, "finagent_workstation/assets/skills"),
+      resolve(repoRoot, "assets/skills"),
     );
 
     for (const file of skillFiles) {

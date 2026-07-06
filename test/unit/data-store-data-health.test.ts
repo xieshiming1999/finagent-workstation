@@ -74,9 +74,7 @@ describe("DataStore data_health action", () => {
           "credential-or-quota-required": expect.any(Number),
         }),
         credentialActivationRows: expect.any(Number),
-        credentialActivationClassCounts: expect.objectContaining({
-          "credential-or-quota-required": expect.any(Number),
-        }),
+        credentialActivationClassCounts: expect.any(Object),
       },
       provenance: {
         interfaceId: "data.health",

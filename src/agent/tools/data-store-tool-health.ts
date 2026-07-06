@@ -202,6 +202,7 @@ function normalizeFailureActionForTool<T extends {
     ...rest
   } = row
   return {
+    ...rest,
     id: row.id ?? null,
     probeId: row.probeId ?? null,
     interfaceId: row.interfaceId ?? null,
@@ -214,7 +215,6 @@ function normalizeFailureActionForTool<T extends {
     exitCondition,
     retryPolicy,
     nextAction,
-    ...rest,
   } as T
 }
 

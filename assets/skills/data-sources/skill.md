@@ -78,6 +78,13 @@ reused; `cacheStatus:local-miss` means the cache was checked and no reusable row
 matched the request. A miss is a routing signal, not proof that the instrument
 or dataset does not exist.
 
+`DataStore(action:"query_raw_payload")` is diagnostic-only readback for
+`provider.raw_payload_audit`. It is useful when auditing legacy or bounded
+provider discovery evidence, but it is not a normal workflow data source. Treat
+that surface as `normalWorkflowAllowed:false`; do not promote raw payload rows
+into analysis, strategy, or reusable dashboards without a registered interface,
+normalizer, canonical table, and query/readback contract.
+
 Runtime panels are part of the same provenance workflow. Data Manager feed runs
 and Fund Pulse refreshes should be understood as queue-backed governed fetches:
 they prepare local canonical rows, then prove reuse through table/readback
