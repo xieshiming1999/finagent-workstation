@@ -132,6 +132,16 @@ Dashboard(template: "report", id: "...", title: "...", config: "{...}")
 WebView(action: "get_info", id: "...")
 ```
 
+This normal stock-analysis dashboard route is closed after the app dashboard
+tool reports an observed panel/render and the chat answer summarizes the
+evidence. Do not switch to `Skill(skill:"dashboard")`, `Skill(skill:"html-artifact")`,
+`Skill(skill:"tradingview")`, `Write`, `Edit`, or custom
+`memory/pages/*.html` generation for this route unless the user explicitly asks
+for custom HTML, a TradingView widget, or a hand-built page. Do not keep
+iterating visual polish after the dashboard is already inspectable; state the
+dashboard path/panel, data source time, fetched time, cache/provider status, and
+any missing evidence boundary in the final answer.
+
 Use `query_stock_daily_valuation`, `northbound`, sector constituents, Wind, or
 TradingView only when the current answer needs that specific evidence and the
 bounded local pass did not already satisfy the user request. Do not repeat
