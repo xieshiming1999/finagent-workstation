@@ -11,6 +11,7 @@ import { GitSnapshot } from './git-snapshot'
 import type { ToolContext, ToolRegistry, BridgeRequestHandler } from './tool'
 import type { LLMProvider } from './llm-provider'
 import { resolveAgentModePolicy, type AgentModePolicy } from './agent-mode-policy'
+import { ensureRuntimeMemoryScaffold } from './runtime-memory-scaffold'
 
 export function createAgentCoreSetup(config: {
   llm: LLMProvider
@@ -29,6 +30,7 @@ export function createAgentCoreSetup(config: {
   bridgeRequest?: BridgeRequestHandler
   getConfigValue?: (key: string) => unknown
 }) {
+  ensureRuntimeMemoryScaffold(config.basePath, config.agentRole ?? 'chat')
   const workDir = config.workDir ?? process.cwd()
   const assetsPath = config.assetsPath ?? config.basePath
   const capabilities = {

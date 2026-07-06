@@ -1,8 +1,9 @@
 import { describe, expect, it } from 'vitest'
-import { mkdirSync, mkdtempSync, writeFileSync } from 'fs'
+import { existsSync, mkdirSync, mkdtempSync, writeFileSync } from 'fs'
 import { join } from 'path'
 import { tmpdir } from 'os'
 import { PromptBuilder } from '../../src/agent/prompt-builder'
+import { ensureRuntimeMemoryScaffold } from '../../src/agent/runtime-memory-scaffold'
 
 describe('PromptBuilder runtime template substitution', () => {
   it('renders concrete data and work directories in bundled AGENTS.md', () => {
@@ -44,5 +45,17 @@ describe('PromptBuilder runtime template substitution', () => {
     expect(prompt).toContain('Assumption')
     expect(prompt).toContain('Unverified item')
     expect(prompt).toContain('same-runtime readback status')
+  })
+
+  it('creates advertised editable memory files before agents read them', () => {
+    const basePath = mkdtempSync(join(tmpdir(), 'fin-prompt-base-'))
+
+    ensureRuntimeMemoryScaffold(basePath, 'event')
+
+    expect(existsSync(join(basePath, 'memory', 'MEMORY.md'))).toBe(true)
+    expect(existsSync(join(basePath, 'memory', 'ai_reflections.md'))).toBe(true)
+    expect(existsSync(join(basePath, 'memory', 'event', 'soul.md'))).toBe(true)
+    expect(existsSync(join(basePath, 'memory', 'skills'))).toBe(true)
+    expect(existsSync(join(basePath, 'memory', 'pages'))).toBe(true)
   })
 })
