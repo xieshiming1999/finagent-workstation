@@ -39,6 +39,7 @@ import {
   startWorkflowAutomationServer,
   type WorkflowAutomationServer,
 } from "../../src/main/workflow-automation-control";
+import { financeWorkflowHooks } from "../../src/domain/finance/workflows/finance-workflow-hooks";
 
 class HangingLLM implements LLMProvider {
   readonly model = "hanging-mock";
@@ -155,6 +156,30 @@ function makeControl(
     captureUiArtifact,
     triggerMonitor,
     answerUserQuestion,
+  });
+  return { agent, control, llm };
+}
+
+function makeFinanceControl(
+  basePath: string,
+  llm = new MockLLM([{ text: "hello" }]),
+  extraTools: Tool[] = [],
+) {
+  const registry = new ToolRegistry();
+  for (const tool of extraTools) registry.register(tool);
+  const agent = new Agent({
+    llm,
+    tools: registry,
+    basePath,
+    skipPermissions: true,
+    domainWorkflowHooks: financeWorkflowHooks,
+  });
+  const control = new WorkflowAutomationControl({
+    getAgent: () => agent,
+    getBasePath: () => basePath,
+    getPanelState: async () => [
+      { id: "api-health", type: "api-health", isActive: true },
+    ],
   });
   return { agent, control, llm };
 }
@@ -585,6 +610,41 @@ describe("WorkflowAutomationControl", () => {
     ).toBe(true);
   });
 
+  it("accepts unqualified expected tool actions", async () => {
+    process.env.FINAGENT_WORKSTATION_WORKFLOW_AUTOMATION = "1";
+    const { control } = makeControl(
+      basePath,
+      new MockLLM([
+        {
+          toolCalls: [
+            {
+              id: "market-help",
+              name: "MarketData",
+              arguments: { action: "custom_strategy_help" },
+            },
+          ],
+        },
+        { text: "strategy help loaded" },
+      ]),
+      [new NamedTool("MarketData")],
+    );
+
+    const result = await control.runScenario({
+      id: "unqualified-tool-action-smoke",
+      prompt: "load strategy help",
+      expectTools: ["MarketData"],
+      expectToolActions: ["custom_strategy_help"],
+    });
+
+    expect(result.ok).toBe(true);
+    expect(result.assertions).toContainEqual(
+      expect.objectContaining({
+        name: "toolAction.custom_strategy_help",
+        ok: true,
+      }),
+    );
+  });
+
   it("pairs workflow report tool results by tool-use id instead of array order", async () => {
     process.env.FINAGENT_WORKSTATION_WORKFLOW_AUTOMATION = "1";
     const { control } = makeControl(
@@ -640,6 +700,50 @@ describe("WorkflowAutomationControl", () => {
     expect(report.agentReview.toolInteractions.length).toBe(2);
   });
 
+  it("does not classify the current proposed finance call as a duplicate of itself", async () => {
+    process.env.FINAGENT_WORKSTATION_WORKFLOW_AUTOMATION = "1";
+    const { control } = makeFinanceControl(
+      basePath,
+      new MockLLM([
+        {
+          toolCalls: [
+            {
+              id: "first-kline",
+              name: "MarketData",
+              arguments: { action: "kline", code: "300059", period: "daily" },
+            },
+          ],
+        },
+        { text: "kline evidence collected" },
+      ]),
+      [new NamedTool("MarketData")],
+    );
+
+    const result = await control.runScenario({
+      id: "finance-dedup-self-comparison",
+      prompt: "Collect one kline evidence item for 300059.",
+      expectTools: ["MarketData"],
+      maxDataToolCalls: 1,
+      expectFinalContains: ["kline evidence collected"],
+    });
+
+    expect(result.ok).toBe(true);
+    const report = JSON.parse(
+      readFileSync(result.scenarioReportPath!, "utf-8"),
+    );
+    expect(report.agentReview.executedToolCallCount).toBe(1);
+    expect(report.agentReview.skippedToolCallCount).toBe(0);
+    expect(report.agentReview.toolInteractions).toContainEqual(
+      expect.objectContaining({
+        id: "first-kline",
+        skipped: false,
+      }),
+    );
+    expect(JSON.stringify(report.agentReview.toolInteractions)).not.toContain(
+      "Skipped: duplicate finance evidence call",
+    );
+  });
+
   it("counts UI evidence tools separately from data workflow tools", async () => {
     process.env.FINAGENT_WORKSTATION_WORKFLOW_AUTOMATION = "1";
     const { control } = makeControl(
@@ -669,6 +773,34 @@ describe("WorkflowAutomationControl", () => {
     expect(
       result.assertions.find((assertion) => assertion.name === "maxDataToolCalls.1"),
     ).toMatchObject({ ok: true, actual: 1 });
+  });
+
+  it("fails scenario assertions when a tool action exceeds its configured count", async () => {
+    process.env.FINAGENT_WORKSTATION_WORKFLOW_AUTOMATION = "1";
+    const { control } = makeControl(
+      basePath,
+      new MockLLM([
+        {
+          toolCalls: [
+            { id: "validate-1", name: "MarketData", arguments: { action: "custom_strategy_validate" } },
+            { id: "validate-2", name: "MarketData", arguments: { action: "custom_strategy_validate" } },
+          ],
+        },
+        { text: "validated twice" },
+      ]),
+      [new NamedTool("MarketData")],
+    );
+
+    const result = await control.runScenario({
+      id: "strategy-action-budget-smoke",
+      prompt: "validate strategy",
+      maxToolActionCounts: { custom_strategy_validate: 1 },
+    });
+
+    expect(result.ok).toBe(false);
+    expect(
+      result.assertions.find((assertion) => assertion.name === "maxToolAction.custom_strategy_validate.1"),
+    ).toMatchObject({ ok: false, actual: 2 });
   });
 
   it("fails scenario assertions when a disallowed tool is used", async () => {

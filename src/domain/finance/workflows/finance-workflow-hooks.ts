@@ -622,8 +622,9 @@ function maybeBuildDeduplicatedFinanceToolCalls(
   messages: Message[],
   proposedToolCalls: ToolUse[],
 ): ToolUse[] | null {
+  const priorMessages = messagesWithoutCurrentProposedAssistant(messages, proposedToolCalls)
   const existingKeys = new Set(
-    collectToolCalls(messages)
+    collectToolCalls(priorMessages)
       .filter((call) => isFinanceEvidenceTool(call.name))
       .map(financeToolKey),
   )
@@ -643,6 +644,23 @@ function maybeBuildDeduplicatedFinanceToolCalls(
     ...call,
     id: `auto-dedup-${index}-${call.id}`,
   }))
+}
+
+function messagesWithoutCurrentProposedAssistant(
+  messages: Message[],
+  proposedToolCalls: ToolUse[],
+): Message[] {
+  const last = messages[messages.length - 1]
+  if (
+    last?.role !== Role.Assistant ||
+    !last.toolUses?.length ||
+    last.toolUses.length !== proposedToolCalls.length
+  ) {
+    return messages
+  }
+  const proposedIds = new Set(proposedToolCalls.map((call) => call.id))
+  const sameToolSet = last.toolUses.every((call) => proposedIds.has(call.id))
+  return sameToolSet ? messages.slice(0, -1) : messages
 }
 
 function financeToolKey(call: ToolUse): string {

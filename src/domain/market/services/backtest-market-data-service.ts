@@ -52,7 +52,7 @@ export class BacktestMarketDataService {
       case 'optimize_params':
         return this.readOptimizeParams(ctx, code, input, limit)
       case 'custom_strategy_help':
-        return customStrategyHelp()
+        return customStrategyHelp(input)
       case 'custom_strategy_validate':
         return JSON.stringify(validateStrategySpec(input.strategySpec), null, 2)
       case 'custom_strategy_backtest':

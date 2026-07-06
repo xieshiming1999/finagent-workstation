@@ -69,6 +69,7 @@ export interface WorkflowAutomationScenario {
   expectUiEvidencePaths?: string[];
   expectUiArtifactKinds?: string[];
   disallowTools?: string[];
+  maxToolActionCounts?: Record<string, number>;
   maxToolCalls?: number;
   maxDataToolCalls?: number;
   timeoutMs?: number;
@@ -91,6 +92,7 @@ export interface WorkflowAutomationScenarioTurn {
   expectUiEvidencePaths?: string[];
   expectUiArtifactKinds?: string[];
   disallowTools?: string[];
+  maxToolActionCounts?: Record<string, number>;
   maxToolCalls?: number;
   maxDataToolCalls?: number;
   timeoutMs?: number;
@@ -122,6 +124,7 @@ export interface WorkflowAutomationMultiTurnScenario {
   expectUiEvidencePaths?: string[];
   expectUiArtifactKinds?: string[];
   disallowTools?: string[];
+  maxToolActionCounts?: Record<string, number>;
   maxToolCalls?: number;
   maxDataToolCalls?: number;
   disallowRawHtml?: boolean;
@@ -220,6 +223,7 @@ export class WorkflowAutomationControl {
       timeoutReason?: string;
       maxToolCalls?: number;
       maxDataToolCalls?: number;
+      maxToolActionCounts?: Record<string, number>;
       expectTools?: string[];
       disallowTools?: string[];
       allowPendingUserQuestion?: boolean;
@@ -406,6 +410,7 @@ export class WorkflowAutomationControl {
       timeoutReason: `scenario ${id}`,
       maxToolCalls: scenario.maxToolCalls,
       maxDataToolCalls: scenario.maxDataToolCalls,
+      maxToolActionCounts: scenario.maxToolActionCounts,
       expectTools: scenario.expectTools,
       disallowTools: scenario.disallowTools,
       allowPendingUserQuestion: scenario.allowPendingUserQuestion,
@@ -440,6 +445,7 @@ export class WorkflowAutomationControl {
         timeoutReason: `scenario ${id}:${turnId}`,
         maxToolCalls: turn.maxToolCalls,
         maxDataToolCalls: turn.maxDataToolCalls,
+        maxToolActionCounts: turn.maxToolActionCounts,
         expectTools: turn.expectTools,
         disallowTools: turn.disallowTools,
         allowPendingUserQuestion: turn.allowPendingUserQuestion,
@@ -459,6 +465,7 @@ export class WorkflowAutomationControl {
           expectUiEvidencePaths: turn.expectUiEvidencePaths,
           expectUiArtifactKinds: turn.expectUiArtifactKinds,
           disallowTools: turn.disallowTools,
+          maxToolActionCounts: turn.maxToolActionCounts,
           maxToolCalls: turn.maxToolCalls,
           maxDataToolCalls: turn.maxDataToolCalls,
           disallowRawHtml: turn.disallowRawHtml,
@@ -634,6 +641,7 @@ export class WorkflowAutomationControl {
     timeoutMs?: number;
     maxToolCalls?: number;
     maxDataToolCalls?: number;
+    maxToolActionCounts?: Record<string, number>;
     expectTools?: string[];
     disallowTools?: string[];
     allowPendingUserQuestion?: boolean;
@@ -1112,6 +1120,7 @@ async function handleRequest(
           expectUiEvidencePaths: asStringArray(body.expectUiEvidencePaths),
           expectUiArtifactKinds: asStringArray(body.expectUiArtifactKinds),
           disallowTools: asStringArray(body.disallowTools),
+          maxToolActionCounts: asNumberMap(body.maxToolActionCounts),
           maxToolCalls: asOptionalNumber(body.maxToolCalls),
           maxDataToolCalls: asOptionalNumber(body.maxDataToolCalls),
           timeoutMs: asOptionalNumber(body.timeoutMs),
@@ -1150,6 +1159,7 @@ async function handleRequest(
             expectUiEvidencePaths: asStringArray(turn.expectUiEvidencePaths),
             expectUiArtifactKinds: asStringArray(turn.expectUiArtifactKinds),
             disallowTools: asStringArray(turn.disallowTools),
+            maxToolActionCounts: asNumberMap(turn.maxToolActionCounts),
             maxToolCalls: asOptionalNumber(turn.maxToolCalls),
             maxDataToolCalls: asOptionalNumber(turn.maxDataToolCalls),
             timeoutMs: asOptionalNumber(turn.timeoutMs),
@@ -1166,6 +1176,7 @@ async function handleRequest(
           expectUiEvidencePaths: asStringArray(body.expectUiEvidencePaths),
           expectUiArtifactKinds: asStringArray(body.expectUiArtifactKinds),
           disallowTools: asStringArray(body.disallowTools),
+          maxToolActionCounts: asNumberMap(body.maxToolActionCounts),
         }),
         "workflow-scenario-sequence-client-disconnected",
       ),
@@ -1223,7 +1234,7 @@ function evaluateScenario(
         ?.filter((tool) => !skippedToolUseIds.has(tool.id))
         .map((tool) => tool.name) ?? [],
   );
-  const dataToolNames = toolNames.filter(isDataWorkflowTool);
+  const dataToolNames = executedToolNames.filter(isDataWorkflowTool);
   const toolErrors = run.messages
     .filter((message) => message.toolResult?.isError)
     .map((message) => message.toolResult?.content ?? "");
@@ -1272,11 +1283,23 @@ function evaluateScenario(
         }) ?? [],
   );
   for (const expected of scenario.expectToolActions ?? []) {
+    const matched = toolActions.includes(expected) ||
+      toolActions.some((actual) => actual.endsWith(`.${expected}`));
     assertions.push({
       name: `toolAction.${expected}`,
-      ok: toolActions.includes(expected),
+      ok: matched,
       expected,
       actual: toolActions,
+    });
+  }
+  for (const [action, maxCount] of Object.entries(scenario.maxToolActionCounts ?? {})) {
+    if (!Number.isFinite(maxCount)) continue;
+    const count = toolActions.filter((actual) => actual === action || actual.endsWith(`.${action}`)).length;
+    assertions.push({
+      name: `maxToolAction.${action}.${maxCount}`,
+      ok: count <= maxCount,
+      expected: `<= ${maxCount}`,
+      actual: count,
     });
   }
   for (const tool of scenario.disallowTools ?? []) {
@@ -1524,16 +1547,25 @@ function reportToolResults(result: WorkflowAutomationRunResult): WorkflowReportT
 function reportToolInteractions(
   toolCalls: WorkflowReportToolCall[],
   toolResults: WorkflowReportToolResult[],
-): Array<WorkflowReportToolCall & { result: WorkflowReportToolResult | null }> {
+): Array<WorkflowReportToolCall & { result: WorkflowReportToolResult | null; skipped: boolean }> {
   const resultById = new Map(
     toolResults
       .filter((result) => result.toolUseId)
       .map((result) => [result.toolUseId, result] as const),
   );
-  return toolCalls.map((call) => ({
-    ...call,
-    result: call.id ? resultById.get(call.id) ?? null : null,
-  }));
+  return toolCalls.map((call) => {
+    const result = call.id ? resultById.get(call.id) ?? null : null;
+    return {
+      ...call,
+      result,
+      skipped: isSkippedToolResult(result),
+    };
+  });
+}
+
+function isSkippedToolResult(result: WorkflowReportToolResult | null | undefined): boolean {
+  return typeof result?.content === "string" &&
+    result.content.trim().startsWith("Skipped:");
 }
 
 function buildAgentReview(
@@ -1543,6 +1575,8 @@ function buildAgentReview(
     assistantReviewText(result);
   const toolCalls = reportToolCalls(result);
   const toolResults = reportToolResults(result);
+  const toolInteractions = reportToolInteractions(toolCalls, toolResults);
+  const skippedToolCallCount = toolInteractions.filter((interaction) => interaction.skipped).length;
   const toolErrors = result.messages
     .filter((message) => message.toolResult?.isError)
     .map((message) => ({
@@ -1560,9 +1594,11 @@ function buildAgentReview(
     finalAssistant,
     finalAssistantPresent: finalAssistant.trim().length > 0,
     toolCallCount: toolCalls.length,
+    executedToolCallCount: toolCalls.length - skippedToolCallCount,
+    skippedToolCallCount,
     toolNames: [...new Set(toolCalls.map((tool) => tool.name))],
     toolCalls,
-    toolInteractions: reportToolInteractions(toolCalls, toolResults),
+    toolInteractions,
     toolErrorCount: toolErrors.length,
     toolErrors,
     panelEvidenceAvailable: result.panelState != null,
@@ -1781,6 +1817,14 @@ function asOptionalNumber(value: unknown): number | undefined {
   return Number.isFinite(number) ? number : undefined;
 }
 
+function asNumberMap(value: unknown): Record<string, number> | undefined {
+  if (!value || typeof value !== "object" || Array.isArray(value)) return undefined;
+  const entries = Object.entries(value as Record<string, unknown>)
+    .map(([key, raw]) => [String(key).trim(), Number(raw)] as const)
+    .filter(([key, number]) => key.length > 0 && Number.isFinite(number));
+  return entries.length > 0 ? Object.fromEntries(entries) : undefined;
+}
+
 function normalizeWorkflowTimeoutMs(value: unknown): number {
   if (value == null) return 0;
   const number = Number(value);
@@ -1815,6 +1859,7 @@ function buildWorkflowPrompt(
   options: {
     maxToolCalls?: number;
     maxDataToolCalls?: number;
+    maxToolActionCounts?: Record<string, number>;
     expectTools?: string[];
     disallowTools?: string[];
     allowPendingUserQuestion?: boolean;
@@ -1832,6 +1877,7 @@ function buildWorkflowPrompt(
     disallowed.length > 0 ||
     options.maxToolCalls != null ||
     options.maxDataToolCalls != null ||
+    Object.keys(options.maxToolActionCounts ?? {}).length > 0 ||
     options.allowPendingUserQuestion;
   if (hasControls) {
     lines.push("This workflow-test-control block applies only to the current user request and supersedes earlier workflow-test-control blocks.");
@@ -1847,6 +1893,12 @@ function buildWorkflowPrompt(
   }
   if (options.maxDataToolCalls != null) {
     lines.push(`Keep the workflow within ${options.maxDataToolCalls} finance/data workflow tool calls.`);
+  }
+  const actionLimits = Object.entries(options.maxToolActionCounts ?? {})
+    .filter(([, limit]) => Number.isFinite(limit))
+    .map(([action, limit]) => `${action}<=${limit}`);
+  if (actionLimits.length > 0) {
+    lines.push(`Keep these tool-action counts within limits: ${actionLimits.join(", ")}.`);
   }
   if (disallowed.includes("Write") || disallowed.includes("FileWrite")) {
     lines.push(

@@ -26,6 +26,34 @@ describe('BacktestMarketDataService', () => {
     }
   })
 
+  it('preserves explicitly declared StrategySpec indicator ids in right-hand references', async () => {
+    const { validateStrategySpec } = await import('../../src/domain/market/strategy-spec/strategy-spec-engine')
+
+    const validation = validateStrategySpec({
+      name: 'volume pullback',
+      market: 'cn',
+      universe: { type: 'single', symbols: ['300059'] },
+      indicators: [
+        { id: 'ema20', type: 'ema', source: 'close', params: { period: 20 } },
+        { id: 'volSma20', type: 'volume_sma', source: 'volume', params: { period: 20 } },
+      ],
+      entry: {
+        all: [
+          { left: 'ema20', op: '>', right: 0 },
+          { left: 'volume', op: '<=', right: { mul: ['volSma20', 0.85] } },
+        ],
+      },
+      exit: { any: [{ type: 'stop_loss_pct', value: 6 }] },
+    })
+
+    expect(validation.status).toBe('validated')
+    expect(validation.errors).not.toContain(expect.stringContaining('volSma2014'))
+    expect(validation.spec.entry?.all?.at(-1)).toMatchObject({
+      left: 'volume',
+      right: { mul: ['volSma20', 0.85] },
+    })
+  })
+
   it('uses local kline rows before sidecar fetch for backtest', async () => {
     const queryKline = vi.fn(() =>
       Array.from({ length: 120 }, (_, index) => ({
@@ -692,14 +720,39 @@ describe('BacktestMarketDataService', () => {
     const help = JSON.parse(await service.readAction('custom_strategy_help', {}, { basePath: '/tmp' } as any, '', 120))
     expect(help).toMatchObject({
       action: 'custom_strategy_help',
+      detail: 'summary',
       supportedActions: expect.arrayContaining(['custom_strategy_validate', 'custom_strategy_fund_backtest']),
       fundObservationV1: expect.objectContaining({
         requires: expect.arrayContaining(['assetClass:fund']),
-        indicators: expect.arrayContaining(['fund_drawdown', 'money_yield']),
+        indicatorCount: expect.any(Number),
+        indicatorsPreview: expect.arrayContaining(['fund_drawdown']),
         indicatorCategories: expect.arrayContaining(['fund_risk_adjusted', 'fund_return_quality', 'money_fund_yield']),
       }),
     })
-    expect(help.fundObservationV1.indicatorCatalog).toEqual(expect.arrayContaining([
+    expect(help.executableV1.indicatorCount).toBeGreaterThan(20)
+    expect(help.executableV1.indicatorsPreview).toEqual(expect.arrayContaining(['rsi']))
+    expect(help.executableV1.indicatorPreviewCatalog).toEqual(expect.arrayContaining([
+      expect.objectContaining({
+        type: 'volume_breakout',
+        parameterSchema: expect.arrayContaining([
+          expect.objectContaining({ name: 'period' }),
+        ]),
+      }),
+    ]))
+    const volumeBreakoutPreview = help.executableV1.indicatorPreviewCatalog.find((indicator: any) => indicator.type === 'volume_breakout')
+    expect(volumeBreakoutPreview.parameterSchema.some((field: any) => field.name === 'multiplier')).toBe(false)
+    expect(help.executableV1.catalogRequest).toMatchObject({ detail: 'catalog' })
+    expect(help.executableV1.indicatorCatalog).toBeUndefined()
+    expect(help.fundObservationV1.indicatorCatalog).toBeUndefined()
+    const detailedHelp = JSON.parse(await service.readAction('custom_strategy_help', { detail: 'catalog' }, { basePath: '/tmp' } as any, '', 120))
+    expect(detailedHelp).toMatchObject({
+      action: 'custom_strategy_help',
+      detail: 'catalog',
+      fundObservationV1: expect.objectContaining({
+        indicators: expect.arrayContaining(['fund_drawdown', 'money_yield']),
+      }),
+    })
+    expect(detailedHelp.fundObservationV1.indicatorCatalog).toEqual(expect.arrayContaining([
       expect.objectContaining({
         type: 'fund_sharpe',
         source: 'nav',
@@ -741,7 +794,7 @@ describe('BacktestMarketDataService', () => {
         scoreDirection: -1,
       }),
     ]))
-    expect(help.fundObservationV1.indicatorCatalog).toEqual(expect.arrayContaining([
+    expect(detailedHelp.fundObservationV1.indicatorCatalog).toEqual(expect.arrayContaining([
       expect.objectContaining({
         type: 'fund_gain_to_pain',
         category: 'fund_return_quality',
@@ -765,7 +818,7 @@ describe('BacktestMarketDataService', () => {
         scoreDirection: 0,
       }),
     ]))
-    expect(help.fundObservationV1.indicatorCatalogByCategory.fund_return_quality).toEqual(expect.arrayContaining([
+    expect(detailedHelp.fundObservationV1.indicatorCatalogByCategory.fund_return_quality).toEqual(expect.arrayContaining([
       expect.objectContaining({ type: 'fund_omega' }),
       expect.objectContaining({
         type: 'fund_momentum_acceleration',
@@ -773,7 +826,7 @@ describe('BacktestMarketDataService', () => {
         scoreDirection: 1,
       }),
     ]))
-    expect(help.fundObservationV1.indicatorCatalog).toEqual(expect.arrayContaining([
+    expect(detailedHelp.fundObservationV1.indicatorCatalog).toEqual(expect.arrayContaining([
       expect.objectContaining({
         type: 'fund_positive_period_ratio',
         category: 'fund_return_consistency',
@@ -811,27 +864,27 @@ describe('BacktestMarketDataService', () => {
         scoreDirection: -1,
       }),
     ]))
-    expect(help.fundObservationV1.indicatorCatalogByCategory.fund_return_consistency).toEqual(expect.arrayContaining([
+    expect(detailedHelp.fundObservationV1.indicatorCatalogByCategory.fund_return_consistency).toEqual(expect.arrayContaining([
       expect.objectContaining({ type: 'fund_positive_period_ratio' }),
       expect.objectContaining({ type: 'fund_negative_period_ratio' }),
       expect.objectContaining({ type: 'fund_max_consecutive_down_periods' }),
       expect.objectContaining({ type: 'fund_max_consecutive_up_periods' }),
     ]))
-    expect(help.fundObservationV1.indicatorCatalogByCategory.fund_return_distribution).toEqual(expect.arrayContaining([
+    expect(detailedHelp.fundObservationV1.indicatorCatalogByCategory.fund_return_distribution).toEqual(expect.arrayContaining([
       expect.objectContaining({ type: 'fund_return_skewness' }),
       expect.objectContaining({ type: 'fund_return_kurtosis' }),
     ]))
-    expect(help.fundObservationV1.indicatorCatalogByCategory.money_fund_yield).toEqual(expect.arrayContaining([
+    expect(detailedHelp.fundObservationV1.indicatorCatalogByCategory.money_fund_yield).toEqual(expect.arrayContaining([
       expect.objectContaining({ type: 'seven_day_yield' }),
     ]))
     expect(help.executableV1.exits).toContain('max_drawdown_stop_pct')
     expect(help.executableV1.exits).toContain('atr_stop_loss')
     expect(help.executableV1.indicatorCategories).toEqual(expect.arrayContaining(['trend', 'momentum', 'volume', 'risk', 'price_action']))
-    expect(help.executableV1.indicatorCatalogByCategory.momentum).toEqual(expect.arrayContaining([
+    expect(detailedHelp.executableV1.indicatorCatalogByCategory.momentum).toEqual(expect.arrayContaining([
       expect.objectContaining({ type: 'rsi' }),
       expect.objectContaining({ type: 'stochastic_d' }),
     ]))
-    expect(help.executableV1.indicatorCatalogByCategory.volume).toEqual(expect.arrayContaining([
+    expect(detailedHelp.executableV1.indicatorCatalogByCategory.volume).toEqual(expect.arrayContaining([
       expect.objectContaining({ type: 'money_flow_index' }),
     ]))
     expect(help.executableV1.stockExample).toMatchObject({
@@ -839,40 +892,40 @@ describe('BacktestMarketDataService', () => {
       entry: expect.objectContaining({ all: expect.any(Array) }),
       exit: expect.objectContaining({ any: expect.any(Array) }),
     })
-    expect(help.outputContracts.custom_strategy_backtest.coreFields).toContain('dataCoverage')
-    expect(help.outputContracts.custom_strategy_backtest.coreFields).toContain('benchmarkEvidence')
-    expect(help.outputContracts.custom_strategy_backtest.coreFields).toContain('riskRewardEvidence')
-    expect(help.outputContracts.custom_strategy_backtest.coreFields).toContain('lifecycleAdvice')
-    expect(help.outputContracts.custom_strategy_backtest.lifecycleAdvice).toContain('Zero completed trades')
-    expect(help.inputContracts.custom_strategy_validate.requiredFields).toContain('strategySpec')
-    expect(help.inputContracts.custom_strategy_validate.boundary).toContain('Validation is read-only')
-    expect(help.inputContracts.custom_strategy_backtest.requiredFields).toContain('strategySpec')
-    expect(help.inputContracts.custom_strategy_backtest.symbolFields).toContain('strategySpec.universe.symbols[0]')
-    const backtestInputField = (name: string) => help.inputContracts.custom_strategy_backtest.optionalFields.find((field: any) => field.name === name)
+    expect(detailedHelp.outputContracts.custom_strategy_backtest.coreFields).toContain('dataCoverage')
+    expect(detailedHelp.outputContracts.custom_strategy_backtest.coreFields).toContain('benchmarkEvidence')
+    expect(detailedHelp.outputContracts.custom_strategy_backtest.coreFields).toContain('riskRewardEvidence')
+    expect(detailedHelp.outputContracts.custom_strategy_backtest.coreFields).toContain('lifecycleAdvice')
+    expect(detailedHelp.outputContracts.custom_strategy_backtest.lifecycleAdvice).toContain('Zero completed trades')
+    expect(detailedHelp.inputContracts.custom_strategy_validate.requiredFields).toContain('strategySpec')
+    expect(detailedHelp.inputContracts.custom_strategy_validate.boundary).toContain('Validation is read-only')
+    expect(detailedHelp.inputContracts.custom_strategy_backtest.requiredFields).toContain('strategySpec')
+    expect(detailedHelp.inputContracts.custom_strategy_backtest.symbolFields).toContain('strategySpec.universe.symbols[0]')
+    const backtestInputField = (name: string) => detailedHelp.inputContracts.custom_strategy_backtest.optionalFields.find((field: any) => field.name === name)
     expect(backtestInputField('outOfSampleRatio')).toMatchObject({ max: 0.8 })
     expect(backtestInputField('walkForwardFolds')).toMatchObject({ min: 2 })
-    expect(help.inputContracts.custom_strategy_backtest.boundary).toContain('stock StrategySpec only')
-    expect(help.inputContracts.custom_strategy_observe.requiredFields).toEqual(expect.arrayContaining(['strategySpec', 'fundRows']))
-    expect(help.inputContracts.custom_strategy_fund_backtest.boundary).toContain('NAV/yield rows')
-    expect(help.inputContracts.custom_strategy_rank.requiredFields).toEqual(expect.arrayContaining(['strategySpec', 'symbols']))
-    const rankInputField = (name: string) => help.inputContracts.custom_strategy_rank.optionalFields.find((field: any) => field.name === name)
+    expect(detailedHelp.inputContracts.custom_strategy_backtest.boundary).toContain('stock StrategySpec only')
+    expect(detailedHelp.inputContracts.custom_strategy_observe.requiredFields).toEqual(expect.arrayContaining(['strategySpec', 'fundRows']))
+    expect(detailedHelp.inputContracts.custom_strategy_fund_backtest.boundary).toContain('NAV/yield rows')
+    expect(detailedHelp.inputContracts.custom_strategy_rank.requiredFields).toEqual(expect.arrayContaining(['strategySpec', 'symbols']))
+    const rankInputField = (name: string) => detailedHelp.inputContracts.custom_strategy_rank.optionalFields.find((field: any) => field.name === name)
     expect(rankInputField('topN')).toMatchObject({ max: 10 })
     expect(rankInputField('rankingMetric').values).toContain('relative_strength_pct')
     expect(rankInputField('rebalanceInterval').values).toContain('monthly')
     expect(rankInputField('maxPositionWeight')).toMatchObject({ max: 1 })
     expect(rankInputField('minScore')).toMatchObject({ default: null })
     expect(rankInputField('maxPairwiseCorrelation')).toMatchObject({ max: 1 })
-    expect(help.inputContracts.custom_strategy_rank.selectionEvidenceFields).toEqual(expect.arrayContaining([
+    expect(detailedHelp.inputContracts.custom_strategy_rank.selectionEvidenceFields).toEqual(expect.arrayContaining([
       'exclusionReason',
       'maxPairwiseCorrelation',
       'correlationConstraintEvidence',
     ]))
-    expect(help.inputContracts.custom_strategy_save.requiredFields).toContain('strategySpec')
-    expect(help.inputContracts.custom_strategy_save.boundary).toContain('strategy artifact only')
-    expect(help.inputContracts.custom_strategy_run.requiredFields).toContain('strategyId')
-    expect(help.inputContracts.custom_strategy_run.boundary).toContain('readback_only')
-    expect(help.outputContracts.custom_strategy_rank.coreFields).toContain('candidateFailureEvidence')
-    expect(help.outputContracts.custom_strategy_rank.coreFields).toEqual(expect.arrayContaining([
+    expect(detailedHelp.inputContracts.custom_strategy_save.requiredFields).toContain('strategySpec')
+    expect(detailedHelp.inputContracts.custom_strategy_save.boundary).toContain('strategy artifact only')
+    expect(detailedHelp.inputContracts.custom_strategy_run.requiredFields).toContain('strategyId')
+    expect(detailedHelp.inputContracts.custom_strategy_run.boundary).toContain('readback_only')
+    expect(detailedHelp.outputContracts.custom_strategy_rank.coreFields).toContain('candidateFailureEvidence')
+    expect(detailedHelp.outputContracts.custom_strategy_rank.coreFields).toEqual(expect.arrayContaining([
       'validationSummary',
       'validationIssues',
       'unsupportedDetails',
@@ -884,24 +937,24 @@ describe('BacktestMarketDataService', () => {
       'portfolioReturnQualityEvidence',
       'transactionCostEvidence',
     ]))
-    expect(help.outputContracts.custom_strategy_rank.portfolioRebalanceSimulationFields).toEqual(expect.arrayContaining([
+    expect(detailedHelp.outputContracts.custom_strategy_rank.portfolioRebalanceSimulationFields).toEqual(expect.arrayContaining([
       'grossSimulatedReturnPct',
       'estimatedTransactionCostPct',
       'simulatedReturnPct',
       'transactionCostEvidence',
     ]))
-    expect(help.outputContracts.custom_strategy_rank.portfolioBacktestEvidenceFields).toContain('transactionCostEvidence')
-    expect(help.outputContracts.custom_strategy_rank.rankedRowFields).toEqual(expect.arrayContaining([
+    expect(detailedHelp.outputContracts.custom_strategy_rank.portfolioBacktestEvidenceFields).toContain('transactionCostEvidence')
+    expect(detailedHelp.outputContracts.custom_strategy_rank.rankedRowFields).toEqual(expect.arrayContaining([
       'benchmarkEvidence',
       'riskEvidence',
       'selectionEvidence',
       'weightEvidence',
       'dataCoverage',
     ]))
-    expect(help.outputContracts.custom_strategy_validate.coreFields).toContain('validationIssues')
-    expect(help.outputContracts.custom_strategy_validate.coreFields).toContain('repairPlan')
-    expect(help.outputContracts.custom_strategy_validate.repairPlanFields).toEqual(expect.arrayContaining(['target', 'patchHint']))
-    expect(help.outputContracts.custom_strategy_save.coreFields).toEqual(expect.arrayContaining([
+    expect(detailedHelp.outputContracts.custom_strategy_validate.coreFields).toContain('validationIssues')
+    expect(detailedHelp.outputContracts.custom_strategy_validate.coreFields).toContain('repairPlan')
+    expect(detailedHelp.outputContracts.custom_strategy_validate.repairPlanFields).toEqual(expect.arrayContaining(['target', 'patchHint']))
+    expect(detailedHelp.outputContracts.custom_strategy_save.coreFields).toEqual(expect.arrayContaining([
       'validationSummary',
       'validationIssues',
       'repairPlan',
@@ -910,7 +963,7 @@ describe('BacktestMarketDataService', () => {
       'dataAndAssumptionSummary',
       'lifecycle',
     ]))
-    expect(help.outputContracts.custom_strategy_save.dataAndAssumptionSummaryFields).toEqual(expect.arrayContaining([
+    expect(detailedHelp.outputContracts.custom_strategy_save.dataAndAssumptionSummaryFields).toEqual(expect.arrayContaining([
       'portfolioEvidence',
       'rebalanceDraft',
       'portfolioValidation',
@@ -920,7 +973,7 @@ describe('BacktestMarketDataService', () => {
       'periodEvidence',
       'ruleEvidence',
     ]))
-    expect(help.outputContracts.custom_strategy_list.rowFields).toEqual(expect.arrayContaining([
+    expect(detailedHelp.outputContracts.custom_strategy_list.rowFields).toEqual(expect.arrayContaining([
       'validationSummary',
       'validationIssues',
       'unsupportedDetails',
@@ -928,7 +981,7 @@ describe('BacktestMarketDataService', () => {
       'dataAndAssumptionSummary',
       'lifecycle',
     ]))
-    expect(help.outputContracts.custom_strategy_list.dataAndAssumptionSummaryFields).toEqual(expect.arrayContaining([
+    expect(detailedHelp.outputContracts.custom_strategy_list.dataAndAssumptionSummaryFields).toEqual(expect.arrayContaining([
       'portfolioEvidence',
       'rebalanceDraft',
       'portfolioValidation',
@@ -937,7 +990,7 @@ describe('BacktestMarketDataService', () => {
       'periodEvidence',
       'ruleEvidence',
     ]))
-    expect(help.outputContracts.custom_strategy_compare.rowFields).toEqual(expect.arrayContaining([
+    expect(detailedHelp.outputContracts.custom_strategy_compare.rowFields).toEqual(expect.arrayContaining([
       'strategyId',
       'strategyType',
       'runnable',
@@ -947,7 +1000,7 @@ describe('BacktestMarketDataService', () => {
       'score',
       'tradeBoundary',
     ]))
-    expect(help.outputContracts.custom_strategy_run.runnableBacktestedFields).toEqual(expect.arrayContaining([
+    expect(detailedHelp.outputContracts.custom_strategy_run.runnableBacktestedFields).toEqual(expect.arrayContaining([
       'validationSummary',
       'validationIssues',
       'unsupportedDetails',
@@ -955,10 +1008,10 @@ describe('BacktestMarketDataService', () => {
       'benchmarkEvidence',
       'dataCoverage',
     ]))
-    expect(help.outputContracts.custom_strategy_run.readbackOnlyFields).toContain('lifecycleIssue')
-    expect(help.outputContracts.custom_strategy_run.readbackOnlyFields).toContain('validationIssues')
-    expect(help.outputContracts.custom_strategy_run.readbackOnlyFields).toContain('concentrationEvidence')
-    expect(help.text).toContain('readback_only')
+    expect(detailedHelp.outputContracts.custom_strategy_run.readbackOnlyFields).toContain('lifecycleIssue')
+    expect(detailedHelp.outputContracts.custom_strategy_run.readbackOnlyFields).toContain('validationIssues')
+    expect(detailedHelp.outputContracts.custom_strategy_run.readbackOnlyFields).toContain('concentrationEvidence')
+    expect(detailedHelp.text).toContain('readback_only')
 
     const strategySpec = fundStrategySpec()
 

@@ -330,7 +330,7 @@ function normalizeRuleGroup(raw: unknown, extraStops: string[] = [], indicatorId
       rules.push({
         left: normalizedRuleLeft(condition, leftRef, indicatorIds),
         op,
-        right: indicator === 'volume_sma' ? volumeComparisonRight(leftRef, condition) : rightValue(condition),
+        right: indicator === 'volume_sma' ? volumeComparisonRight(leftRef, condition, indicatorIds) : rightValue(condition, indicatorIds),
       })
     }
   }
@@ -364,7 +364,7 @@ function normalizeExplicitRule(rule: Record<string, unknown>, indicatorIds = new
     ...(rule as Record<string, unknown>),
     left: normalizedRuleLeft(rule, leftRef, indicatorIds),
     op,
-    right: indicator === 'volume_sma' ? volumeComparisonRight(leftRef, rule) : rightValue(rule),
+    right: indicator === 'volume_sma' ? volumeComparisonRight(leftRef, rule, indicatorIds) : rightValue(rule, indicatorIds),
   } as Rule
 }
 
@@ -515,7 +515,7 @@ function refsFromRightObject(raw: Record<string, unknown>): StrategyIndicatorRef
   return [refFromObject(raw)]
 }
 
-function rightValue(condition: Record<string, unknown>): unknown {
+function rightValue(condition: Record<string, unknown>, indicatorIds = new Set<string>()): unknown {
   if (condition.reference && typeof condition.reference === 'object') {
     const ref = refFromObject(condition.reference as Record<string, unknown>)
     return { mul: [ref.id, numericValue(condition.scale) ?? numericValue(condition.multiplier) ?? 1] }
@@ -529,7 +529,7 @@ function rightValue(condition: Record<string, unknown>): unknown {
   }
   if (condition.value && typeof condition.value === 'object') {
     const value = condition.value as Record<string, unknown>
-    if (Array.isArray(value.mul)) return normalizeMulRight(value)
+    if (Array.isArray(value.mul)) return normalizeMulRight(value, indicatorIds)
     const ref = refFromObject(value)
     return { mul: [ref.id, numericValue(value.scale) ?? numericValue(value.multiplier) ?? numericValue(value.factor) ?? numericValue(condition.scale) ?? numericValue(condition.multiplier) ?? numericValue(condition.factor) ?? 1] }
   }
@@ -545,10 +545,10 @@ function rightValue(condition: Record<string, unknown>): unknown {
     return { mul: [ref.id, numericValue(right.scale) ?? numericValue(right.multiplier) ?? numericValue(right.factor) ?? numericValue(right.value) ?? 1] }
   }
   if (condition.right && typeof condition.right === 'object' && 'mul' in condition.right) {
-    return normalizeMulRight(condition.right as Record<string, unknown>)
+    return normalizeMulRight(condition.right as Record<string, unknown>, indicatorIds)
   }
   if (condition.expression && typeof condition.expression === 'object') {
-    return rightValue(condition.expression as Record<string, unknown>)
+    return rightValue(condition.expression as Record<string, unknown>, indicatorIds)
   }
   const expression = `${String(condition.valueExpression ?? '')} ${String(condition.expression ?? '')}`
   const match = expression.match(/volume_sma(?:[_ ]?|\()?(\d+)?\)?\s*\*\s*([0-9.]+)/)
@@ -561,10 +561,12 @@ function rightValue(condition: Record<string, unknown>): unknown {
   return numericValue(condition.value) ?? condition.right
 }
 
-function normalizeMulRight(raw: Record<string, unknown>): unknown {
+function normalizeMulRight(raw: Record<string, unknown>, indicatorIds = new Set<string>()): unknown {
   if (!Array.isArray(raw.mul)) return raw
   const [left, right] = raw.mul
-  const normalizedLeft = typeof left === 'string' ? parseIndicatorRef(left).id : left
+  const normalizedLeft = typeof left === 'string'
+    ? (indicatorIds.has(left) ? left : parseIndicatorRef(left).id)
+    : left
   const normalizedRight = numericValue(right) ?? right
   return { mul: [normalizedLeft, normalizedRight] }
 }
@@ -573,7 +575,7 @@ function isRecord(raw: unknown): raw is Record<string, unknown> {
   return !!raw && typeof raw === 'object' && !Array.isArray(raw)
 }
 
-function volumeComparisonRight(ref: { id: string }, condition: Record<string, unknown>): unknown {
+function volumeComparisonRight(ref: { id: string }, condition: Record<string, unknown>, indicatorIds = new Set<string>()): unknown {
   if (
     (condition.reference && typeof condition.reference === 'object') ||
     condition.referenceIndicator != null ||
@@ -583,7 +585,7 @@ function volumeComparisonRight(ref: { id: string }, condition: Record<string, un
     (condition.expression && typeof condition.expression === 'object') ||
     `${String(condition.valueExpression ?? '')} ${String(condition.expression ?? '')}`.trim()
   ) {
-    return rightValue(condition)
+    return rightValue(condition, indicatorIds)
   }
   return { mul: [ref.id, numericValue(condition.value) ?? 1] }
 }
