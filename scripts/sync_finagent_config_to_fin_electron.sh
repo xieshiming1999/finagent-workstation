@@ -69,9 +69,6 @@ function toElectronModel(provider, index) {
       extraHeaders[key.slice('header:'.length)] = String(value)
     }
   }
-  if (schema === 'anthropic' && !extraHeaders['User-Agent']) {
-  }
-
   const out = {
     id: String(provider.id || `mobile-${index + 1}`),
     name,
