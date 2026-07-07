@@ -744,6 +744,21 @@ describe('BacktestMarketDataService', () => {
     expect(help.executableV1.catalogRequest).toMatchObject({ detail: 'catalog' })
     expect(help.executableV1.indicatorCatalog).toBeUndefined()
     expect(help.fundObservationV1.indicatorCatalog).toBeUndefined()
+    expect(Object.keys(help.inputContracts)).toEqual(expect.arrayContaining([
+      'custom_strategy_validate',
+      'custom_strategy_backtest',
+      'custom_strategy_observe',
+      'custom_strategy_fund_backtest',
+      'custom_strategy_rank',
+      'custom_strategy_save',
+      'custom_strategy_list',
+      'custom_strategy_compare',
+      'custom_strategy_run',
+    ]))
+    expect(help.inputContracts.custom_strategy_run.requiredFields).toContain('strategyId')
+    expect(help.inputContracts.custom_strategy_rank.requiredFields).toEqual(expect.arrayContaining(['strategySpec', 'symbols']))
+    expect(help.outputContracts.custom_strategy_run.coreFields).toContain('lifecycle')
+    expect(help.outputContracts.custom_strategy_compare.coreFields).toContain('strategies')
     const detailedHelp = JSON.parse(await service.readAction('custom_strategy_help', { detail: 'catalog' }, { basePath: '/tmp' } as any, '', 120))
     expect(detailedHelp).toMatchObject({
       action: 'custom_strategy_help',

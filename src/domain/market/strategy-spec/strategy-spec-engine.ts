@@ -660,10 +660,41 @@ export function customStrategyHelp(input: Record<string, unknown> = {}): string 
         optionalFields: ['period', 'outOfSampleRatio', 'walkForwardFolds'],
         boundary: 'Stock StrategySpec only. Fund specs use custom_strategy_observe or custom_strategy_fund_backtest.',
       },
+      custom_strategy_observe: {
+        requiredFields: ['strategySpec', 'fundRows'],
+        optionalFields: ['code'],
+        boundary: 'Fund observation is evidence-only and cannot execute subscription, redemption, stock backtest, or trade actions.',
+      },
+      custom_strategy_fund_backtest: {
+        requiredFields: ['strategySpec', 'fundRows'],
+        optionalFields: ['code'],
+        boundary: 'Fund period evidence uses NAV/yield rows and does not become stock K-line backtest evidence.',
+      },
+      custom_strategy_rank: {
+        requiredFields: ['strategySpec', 'symbols'],
+        optionalFields: ['topN', 'rankingMetric', 'rebalanceInterval', 'maxPositionWeight', 'minScore', 'maxPairwiseCorrelation'],
+        boundary: 'Ranking and rebalance evidence are evidence-only; they do not place orders.',
+      },
       custom_strategy_save: {
         requiredFields: ['strategySpec'],
         optionalFields: ['evidence'],
         boundary: 'Save stores a strategy artifact only; it does not trade or create monitors.',
+      },
+      custom_strategy_list: {
+        requiredFields: [],
+        optionalFields: ['limit'],
+        boundary: 'List reads saved strategy artifacts only; it does not rerun, fetch provider data, or authorize trades.',
+      },
+      custom_strategy_compare: {
+        requiredFields: ['strategyIds'],
+        optionalFields: ['metric'],
+        boundary: 'Comparison reads saved artifacts only; it does not rerun, fetch data, or authorize trades.',
+      },
+      custom_strategy_run: {
+        requiredFields: ['strategyId'],
+        symbolFields: ['code', 'symbol', 'symbols[0]', 'saved strategy symbol'],
+        optionalFields: ['period'],
+        boundary: 'Run only reuses a saved runnable stock strategy artifact. Non-runnable artifacts return readback_only lifecycle evidence.',
       },
     }
     payload.outputContracts = {
@@ -674,8 +705,26 @@ export function customStrategyHelp(input: Record<string, unknown> = {}): string 
         coreFields: ['status', 'metrics', 'signals', 'trades', 'lifecycleAdvice', 'dataCoverage', 'assumptions', 'outOfSample', 'walkForward'],
         lifecycleAdvice: 'saveable=true means the result can be saved; zero trades is an evidence boundary, not validation failure.',
       },
+      custom_strategy_observe: {
+        coreFields: ['observation', 'dcaObservation', 'monitorDraft', 'comparisonEvidence', 'fundRiskEvidence', 'fundCoverageEvidence'],
+      },
+      custom_strategy_fund_backtest: {
+        coreFields: ['periodEvidence', 'fundRiskEvidence', 'fundCoverageEvidence', 'ruleEvidence', 'tradeBoundary'],
+      },
+      custom_strategy_rank: {
+        coreFields: ['ranked', 'portfolioEvidence', 'rebalanceDraft', 'portfolioBacktestEvidence', 'portfolioScoringEvidence', 'candidateFailureEvidence'],
+      },
       custom_strategy_save: {
         coreFields: ['strategyId', 'status', 'strategySpec', 'validationReport', 'backtestEvidence', 'dataAndAssumptionSummary', 'lifecycle'],
+      },
+      custom_strategy_list: {
+        coreFields: ['artifactContract', 'paths', 'count', 'strategies'],
+      },
+      custom_strategy_compare: {
+        coreFields: ['count', 'requestedStrategyIds', 'missingStrategyIds', 'strategies', 'bestBy', 'comparisonNotes'],
+      },
+      custom_strategy_run: {
+        coreFields: ['metrics', 'signals', 'validationSummary', 'validationIssues', 'repairPlan', 'unsupportedDetails', 'dataRequirements', 'dataCoverage', 'lifecycle', 'readback_only', 'lifecycleIssue'],
       },
     }
   }
