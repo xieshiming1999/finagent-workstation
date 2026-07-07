@@ -723,7 +723,7 @@ export function customStrategyHelp(input: Record<string, unknown> = {}): string 
         coreFields: ['strategyId', 'status', 'strategySpec', 'validationReport', 'backtestEvidence', 'dataAndAssumptionSummary', 'lifecycle'],
       },
       custom_strategy_list: {
-        coreFields: ['artifactContract', 'paths', 'count', 'strategies'],
+        coreFields: ['artifactContract', 'count', 'strategies', 'requestedStrategyIds', 'missingStrategyIds'],
       },
       custom_strategy_compare: {
         coreFields: ['count', 'requestedStrategyIds', 'missingStrategyIds', 'strategies', 'bestBy', 'comparisonNotes'],
@@ -750,7 +750,7 @@ export function customStrategyHelp(input: Record<string, unknown> = {}): string 
         custom_strategy_rank: ['ranked', 'portfolioEvidence', 'rebalanceDraft', 'dataCoverage'],
         custom_strategy_observe: ['observation', 'dcaObservation', 'monitorDraft', 'fundRiskEvidence'],
         custom_strategy_fund_backtest: ['periodEvidence', 'fundRiskEvidence', 'fundCoverageEvidence'],
-        custom_strategy_save: ['strategyId', 'status', 'paths', 'lifecycle', 'dataAndAssumptionSummary'],
+        custom_strategy_save: ['strategyId', 'status', 'lifecycle', 'dataAndAssumptionSummary'],
         custom_strategy_list: ['count', 'strategies'],
         custom_strategy_compare: ['count', 'strategies', 'bestBy', 'comparisonNotes'],
         custom_strategy_run: ['metrics', 'readback_only', 'lifecycleIssue'],

@@ -525,13 +525,9 @@ describe('BacktestMarketDataService', () => {
     expect(listed).toMatchObject({ action: 'custom_strategy_list', detail: 'summary', count: 1, returned: 1 })
     expect(listed).toMatchObject({
       artifactContract: 'strategy-library-v1',
-      paths: expect.objectContaining({
-        libraryPath: path.join(basePath, 'strategies', 'custom-strategies.json'),
-        itemDir: path.join(basePath, 'strategies', 'items'),
-      }),
     })
+    expect(listed.paths).toBeUndefined()
     expect(listed.strategies[0]).toMatchObject({
-      itemPath: path.join(basePath, 'strategies', 'items', 'custom_rsi_volume_rebound_v1.json'),
       evidenceAction: 'custom_strategy_backtest',
       assetClass: 'stock',
       runnable: true,
@@ -545,11 +541,17 @@ describe('BacktestMarketDataService', () => {
         dataCoverage: expect.objectContaining({ sufficient: true }),
       }),
     })
+    expect(listed.strategies[0].itemPath).toBeUndefined()
     expect(listed.strategies[0].validationIssues).toBeUndefined()
     const fullListed = JSON.parse(await service.readAction('custom_strategy_list', { detail: 'full', strategyIds: ['custom_rsi_volume_rebound_v1'] }, { basePath } as any, '', 120))
     expect(fullListed).toMatchObject({ action: 'custom_strategy_list', detail: 'full', count: 1, returned: 1 })
+    expect(fullListed.paths).toMatchObject({
+      libraryPath: path.join(basePath, 'strategies', 'custom-strategies.json'),
+      itemDir: path.join(basePath, 'strategies', 'items'),
+    })
     expect(fullListed.strategies[0]).toMatchObject({
       strategyId: 'custom_rsi_volume_rebound_v1',
+      itemPath: path.join(basePath, 'strategies', 'items', 'custom_rsi_volume_rebound_v1.json'),
       validationIssues: [],
       repairPlan: [],
       unsupportedDetails: [],

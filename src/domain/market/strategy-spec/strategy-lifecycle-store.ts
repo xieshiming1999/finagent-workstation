@@ -217,7 +217,7 @@ export function listCustomStrategyRecords(ctx: ToolContext, options: StrategyLis
     runnableCount: allStrategies.filter((row) => isRecord(row.lifecycle) && row.lifecycle.runnable === true).length,
     invalidCount: allStrategies.filter((row) => row.status === 'invalid').length,
     artifactContract: 'strategy-library-v1',
-    paths: strategyArtifactPaths(String(ctx.basePath ?? process.cwd())),
+    ...(detail === 'full' ? { paths: strategyArtifactPaths(String(ctx.basePath ?? process.cwd())) } : {}),
     runnableStrategies: runnableRows,
     strategies,
     nextActions: [
@@ -615,7 +615,6 @@ function compactStrategyListRow(row: Record<string, unknown>): Record<string, un
     unsupportedCount: unsupportedDetails.length,
     dataRequirements: row.dataRequirements ?? null,
     dataAndAssumptionSummary: dataSummary,
-    itemPath: row.itemPath,
   }
 }
 
