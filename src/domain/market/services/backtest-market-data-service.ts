@@ -326,7 +326,8 @@ export class BacktestMarketDataService {
     if (symbols.length < 2) {
       throw new Error('symbols required. Example: MarketData(action:"custom_strategy_rank", symbols:["600519","000858","300750"], strategySpec:{...}, topN:2)')
     }
-    if (!input.strategySpec) throw new Error('strategySpec required for custom_strategy_rank')
+    const strategySpec = input.strategySpec ?? savedStrategySpecForInput(ctx, input)
+    if (!strategySpec) throw new Error('strategySpec or strategyId required for custom_strategy_rank')
     const candidates = []
     for (const symbol of symbols.slice(0, 20)) {
       const loaded = await this.loadBarsPreferLocal(ctx, symbol, Math.max(limit, 300))
@@ -337,7 +338,7 @@ export class BacktestMarketDataService {
       })
     }
     const ranked = rankCustomStrategyPortfolio({
-      strategySpec: input.strategySpec,
+      strategySpec,
       candidates,
       topN: Number(input.topN ?? 3),
       rankingMetric: String(input.rankingMetric ?? 'score'),
@@ -740,6 +741,14 @@ function strategyIdsOf(input: Record<string, unknown>): string[] {
   return Array.isArray(value) ? value.map((item) => String(item).trim()).filter(Boolean) : []
 }
 
+function savedStrategySpecForInput(ctx: ToolContext, input: Record<string, unknown>): unknown {
+  const params = asRecord(input.params) ?? {}
+  const strategyId = String(input.strategyId ?? input.strategy_id ?? params.strategyId ?? params.strategy_id ?? '').trim()
+  if (!strategyId) return null
+  const record = readCustomStrategy(ctx, strategyId)
+  return record.strategySpec ?? record.spec ?? null
+}
+
 function readSavedCustomStrategySummary(ctx: ToolContext, input: Record<string, unknown>): Record<string, unknown> {
   const strategyId = String(
     input.strategyId ?? input.strategy_id ?? asRecord(input.params)?.strategyId ?? asRecord(input.params)?.strategy_id ?? '',
@@ -783,6 +792,7 @@ function readSavedCustomStrategySummary(ctx: ToolContext, input: Record<string, 
     nextActions: isRunnableBacktestedStrategyRecord(record)
       ? [{ action: 'custom_strategy_run', strategyId: record.strategyId ?? strategyId }]
       : [{ action: 'custom_strategy_list', strategyIds: [record.strategyId ?? strategyId] }],
+    ...portfolioRankReadbackFields(dataAndAssumptionSummary, String(record.strategyId ?? strategyId)),
   }
 }
 
@@ -841,11 +851,11 @@ function savedStrategyReadback(ctx: ToolContext, strategyId: string, reason: str
           suggestion: 'Repair the saved StrategySpec, validate it, attach backtest evidence, then save a new runnable version.',
         }],
     workflowAdvice: 'This saved strategy is not a runnable stock backtest artifact. Use this readback evidence directly, or create/save a backtested stock StrategySpec before requesting executable rerun.',
-    ...portfolioRankReadbackFields(dataAndAssumptionSummary),
+    ...portfolioRankReadbackFields(dataAndAssumptionSummary, strategyId),
   }
 }
 
-function portfolioRankReadbackFields(summary: Record<string, unknown>): Record<string, unknown> {
+function portfolioRankReadbackFields(summary: Record<string, unknown>, strategyId: string): Record<string, unknown> {
   const portfolioEvidence = asRecord(summary.portfolioEvidence)
   const rebalanceDraft = asRecord(summary.rebalanceDraft)
   if (!portfolioEvidence && !rebalanceDraft) return {}
@@ -895,6 +905,15 @@ function portfolioRankReadbackFields(summary: Record<string, unknown>): Record<s
       'create_monitor',
       'request_trade_preparation_after_confirmation',
     ],
+    monitorAction: {
+      tool: 'MonitorCreate',
+      template: 'portfolio_rebalance_monitor',
+      strategyId,
+      requiredFields: ['strategyId', 'portfolioEvidence', 'rebalanceDraft'],
+      evidenceFields: ['portfolioEvidence', 'rebalanceDraft', 'portfolioDrawdownBudgetEvidence', 'concentrationEvidence'],
+      boundary: 'Review-only portfolio rebalance monitor. It must not create per-symbol strategy_signal monitors, Portfolio orders, XueqiuTrade actions, broker orders, or automatic rebalances.',
+      readbackAction: { tool: 'MonitorList', strategyId },
+    },
     tradeBoundary: 'Portfolio rank readback only; no simulated or real orders without explicit confirmation, separate sizing, and non-writing preview.',
   }
 }
@@ -949,6 +968,17 @@ function compactCustomStrategyRankResult(full: Record<string, unknown>): Record<
       tradeBoundary: rebalanceDraft.tradeBoundary,
       evidenceSource: 'See portfolioEvidence for aggregate metrics, concentration, drawdown budget, validation, and rebalance simulation.',
     } : undefined,
+    ...(portfolioEvidence && rebalanceDraft ? {
+      monitorAction: {
+        tool: 'MonitorCreate',
+        template: 'portfolio_rebalance_monitor',
+        strategyId: String(full.strategyId ?? ''),
+        requiredFields: ['strategyId', 'portfolioEvidence', 'rebalanceDraft'],
+        evidenceFields: ['portfolioEvidence', 'rebalanceDraft', 'portfolioDrawdownBudgetEvidence', 'concentrationEvidence'],
+        boundary: 'Review-only portfolio rebalance monitor. Use MonitorCreate(template:"portfolio_rebalance_monitor") with the returned portfolioEvidence and rebalanceDraft. Do not write raw monitor script, per-symbol strategy_signal monitors, Portfolio orders, XueqiuTrade actions, broker orders, or automatic rebalances.',
+        readbackAction: { tool: 'MonitorList', strategyId: String(full.strategyId ?? '') },
+      },
+    } : {}),
     allCandidates: compactArray(full.allCandidates, 8, compactCandidateRow),
     workflowAdvice: full.workflowAdvice,
     fullResultAdvice: 'Default custom_strategy_rank output is compact to avoid tool-output spill. Use detail:"full" only for explicit diagnostics; do not open memory/.tool_outputs files for normal workflow answers.',

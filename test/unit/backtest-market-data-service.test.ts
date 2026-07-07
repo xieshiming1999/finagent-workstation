@@ -3480,6 +3480,7 @@ describe('BacktestMarketDataService', () => {
     })
     expect(typeof output.ranked[0].relativeStrength.returnPct).toBe('number')
     expect(output.portfolioEvidence).toMatchObject({ mode: 'equal_weight_selected_metrics', selectedCount: 2 })
+
     expect(output.portfolioEvidence.assumptions.rankingMetric).toBe('relative_strength_pct')
     expect(output.portfolioEvidence.assumptions.rebalanceInterval).toBe('monthly')
     expect(output.portfolioEvidence.assumptions.maxPositionWeight).toBe(0.4)
@@ -3669,6 +3670,29 @@ describe('BacktestMarketDataService', () => {
     expect(queryKline).toHaveBeenCalledTimes(3)
     expect(getKline).not.toHaveBeenCalled()
 
+    const compactRank = JSON.parse(await service.readAction(
+      'custom_strategy_rank',
+      {
+        strategySpec: customStrategySpec(),
+        symbols: ['600519', '000858', '300750'],
+        topN: 2,
+        rankingMetric: 'relative_strength_pct',
+        rebalanceInterval: 'monthly',
+        maxPositionWeight: 0.4,
+      },
+      { basePath: '/tmp' } as any,
+      '',
+      120,
+    ))
+    expect(compactRank.monitorAction).toMatchObject({
+      tool: 'MonitorCreate',
+      template: 'portfolio_rebalance_monitor',
+      strategyId: compactRank.strategyId,
+      readbackAction: { tool: 'MonitorList', strategyId: compactRank.strategyId },
+    })
+    expect(compactRank.monitorAction.boundary).toContain('Use MonitorCreate(template:"portfolio_rebalance_monitor")')
+    expect(compactRank.monitorAction.boundary).toContain('Do not write raw monitor script')
+
     const basePath = fs.mkdtempSync(path.join(os.tmpdir(), 'fin-ranked-strategy-'))
     const saved = JSON.parse(await service.readAction(
       'custom_strategy_save',
@@ -3692,6 +3716,29 @@ describe('BacktestMarketDataService', () => {
     expect(saved.dataAndAssumptionSummary.rankedRowsEvidence[0].weightEvidence).toEqual(expect.any(Object))
     expect(saved.dataAndAssumptionSummary.rankedRowsEvidence[0].dataCoverage).toEqual(expect.any(Object))
 
+    const rerankedByStrategyId = JSON.parse(await service.readAction(
+      'custom_strategy_rank',
+      {
+        strategyId: saved.strategyId,
+        symbols: ['600519', '000858', '300750'],
+        topN: 2,
+        rankingMetric: 'relative_strength_pct',
+        rebalanceInterval: 'monthly',
+        detail: 'full',
+      },
+      { basePath } as any,
+      '',
+      120,
+    ))
+    expect(rerankedByStrategyId).toMatchObject({
+      action: 'custom_strategy_rank',
+      status: 'ranked',
+      rankedCount: 3,
+    })
+    expect(rerankedByStrategyId.portfolioEvidence).toMatchObject({
+      mode: 'equal_weight_selected_metrics',
+    })
+
     const listed = JSON.parse(await service.readAction(
       'custom_strategy_list',
       { detail: 'full', strategyIds: [saved.strategyId] },
@@ -3707,6 +3754,31 @@ describe('BacktestMarketDataService', () => {
       .toEqual(output.portfolioEvidence.portfolioDrawdownBudgetEvidence)
     expect(listed.strategies[0].dataAndAssumptionSummary.concentrationEvidence)
       .toEqual(output.portfolioEvidence.concentrationEvidence)
+
+    const savedRead = JSON.parse(await service.readAction(
+      'custom_strategy_read',
+      { strategyId: saved.strategyId },
+      { basePath } as any,
+      '',
+      120,
+    ))
+    expect(savedRead).toMatchObject({
+      action: 'custom_strategy_read',
+      strategyId: saved.strategyId,
+      runnable: false,
+      readbackMode: 'portfolio_rank_readback',
+      evidenceMode: 'portfolio_rank_evidence',
+      monitorAction: {
+        tool: 'MonitorCreate',
+        template: 'portfolio_rebalance_monitor',
+        strategyId: saved.strategyId,
+        readbackAction: { tool: 'MonitorList', strategyId: saved.strategyId },
+      },
+    })
+    expect(savedRead.monitorAction.boundary).toContain('Review-only portfolio rebalance monitor')
+    expect(savedRead.monitorAction.boundary).toContain('must not create per-symbol strategy_signal monitors')
+    expect(savedRead.portfolioEvidence).toEqual(expect.any(Object))
+    expect(savedRead.rebalanceDraft).toEqual(expect.any(Object))
 
     const compared = JSON.parse(await service.readAction(
       'custom_strategy_compare',
@@ -3762,6 +3834,12 @@ describe('BacktestMarketDataService', () => {
     expect(readback.selectedSymbols).toHaveLength(2)
     expect(readback.portfolioNextActions).toContain('create_monitor')
     expect(readback.portfolioNextActions).toContain('request_trade_preparation_after_confirmation')
+    expect(readback.monitorAction).toMatchObject({
+      tool: 'MonitorCreate',
+      template: 'portfolio_rebalance_monitor',
+      strategyId: saved.strategyId,
+      readbackAction: { tool: 'MonitorList', strategyId: saved.strategyId },
+    })
     expect(readback.tradeBoundary).toContain('no simulated or real orders')
   })
 

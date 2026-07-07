@@ -68,6 +68,11 @@ function compileMonitorTemplate(template: unknown, paramsInput: unknown): { scri
     const reviewInterval = String(params.review_interval ?? params.reviewInterval ?? rebalanceDraft.rebalanceInterval ?? 'manual').trim()
     if (!strategyId) return { error: 'portfolio_rebalance_monitor requires strategyId.' }
     if (positions.length === 0) return { error: 'portfolio_rebalance_monitor requires rebalanceDraft.positions.' }
+    if (!portfolioEvidence.mode || !rebalanceDraft.mode) {
+      return {
+        error: 'portfolio_rebalance_monitor requires structured portfolioEvidence.mode and rebalanceDraft.mode from MarketData(action:"custom_strategy_rank") or MarketData(action:"custom_strategy_read"). Use custom_strategy_list/read to retrieve the saved ranked strategy artifact before creating the monitor; do not invent portfolio evidence from quotes or monitor history.',
+      }
+    }
     return {
       displayType: 'status_row',
       condition: "result.signal === 'review_rebalance'",

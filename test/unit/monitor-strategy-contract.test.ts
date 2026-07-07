@@ -146,6 +146,7 @@ describe('monitor strategy contract', () => {
         },
       },
       rebalanceDraft: {
+        mode: 'equal_weight_top_n',
         rebalanceInterval: 'monthly',
         maxPositionWeight: 0.4,
         positions: [
@@ -170,5 +171,30 @@ describe('monitor strategy contract', () => {
       portfolioEvidence: { selectedCount: 2 },
       rebalanceDraft: { rebalanceInterval: 'monthly' },
     })
+  })
+
+  it('rejects portfolio_rebalance_monitor without ranked portfolio evidence modes', async () => {
+    const memoryDir = mkdtempSync(join(tmpdir(), 'fin-monitor-portfolio-rebalance-weak-'))
+    const store = new MonitorStore(memoryDir)
+    const create = new MonitorCreateTool(store)
+
+    await expect(create.call('create-weak-portfolio-rebalance', {
+      name: 'weak portfolio review',
+      template: 'portfolio_rebalance_monitor',
+      interval: '1d',
+      strategyId: 'ranked_portfolio_v1',
+      portfolioEvidence: {
+        selectedCount: 2,
+        tradeBoundary: 'review_only',
+      },
+      rebalanceDraft: {
+        rebalanceInterval: 'monthly',
+        positions: [
+          { symbol: '300059', targetWeight: 0.4 },
+          { symbol: '600519', targetWeight: 0.4 },
+        ],
+      },
+    })).rejects.toThrow(/custom_strategy_list\/read|custom_strategy_rank/)
+    expect(store.list).toHaveLength(0)
   })
 })

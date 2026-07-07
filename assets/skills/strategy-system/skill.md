@@ -128,6 +128,13 @@ MarketData(action: "custom_strategy_run", strategyId: "<id>")
 Do not use `Read` on `custom-strategies.json`, `strategies/items/*.json`, or
 `.tool_outputs/*` to inspect saved strategy state.
 
+Ambiguous saved-strategy rule: if a monitor, watch, rerun, or compare request
+depends on a saved strategy but does not provide an explicit `strategyId`, call
+`MarketData(action:"custom_strategy_list")` first. If the list does not contain
+one unambiguous matching artifact, use `AskUserQuestion` with structured
+options from the list, or ask for the missing `strategyId`. Do not answer from
+prose memory alone, and do not create a monitor from a guessed strategy.
+
 Lifecycle rule: `custom_strategy_backtest` with `status:"backtested"` and
 `lifecycleAdvice.saveable:true` is valid evidence for
 `custom_strategy_save`. If the user requested save/rerun verification, call
@@ -491,7 +498,17 @@ Custom-strategy workflow is contract-driven:
 - For portfolio ranking monitors, use
   `MonitorCreate(template:"portfolio_rebalance_monitor")` and pass
   `portfolioEvidence` / `rebalanceDraft` from `custom_strategy_rank`; the
-  monitor remains review-only and must not rebalance or place orders.
+  monitor remains review-only and must not rebalance or place orders. Do not
+  write a raw `script` for portfolio rebalance monitoring when this template is
+  available.
+- If `custom_strategy_rank`, `custom_strategy_read`, or a non-runnable
+  `custom_strategy_run` readback returns `monitorAction`, follow that structured
+  action contract. For `monitorAction.template:"portfolio_rebalance_monitor"`,
+  create exactly that review-only portfolio monitor with
+  `template:"portfolio_rebalance_monitor"` plus the returned
+  `portfolioEvidence` and `rebalanceDraft`, then use its `readbackAction`; do
+  not write raw JavaScript and do not convert the artifact into per-symbol
+  `strategy_signal` monitors.
 - When review output contains `strategyReview:` with
   `contract:"strategy-review-v1"`, consume that structured review boundary
   instead of treating the monitor result as analysis evidence or execution.
