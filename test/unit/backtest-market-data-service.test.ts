@@ -762,41 +762,18 @@ describe('BacktestMarketDataService', () => {
     })
     expect(help.executableV1.indicatorCount).toBeGreaterThan(20)
     expect(help.executableV1.indicatorsPreview).toEqual(expect.arrayContaining(['rsi']))
-    expect(help.executableV1.indicatorPreviewCatalog).toEqual(expect.arrayContaining([
-      expect.objectContaining({
-        type: 'volume_breakout',
-        parameterSchema: expect.arrayContaining([
-          expect.objectContaining({ name: 'period' }),
-        ]),
-      }),
-    ]))
-    const volumeBreakoutPreview = help.executableV1.indicatorPreviewCatalog.find((indicator: any) => indicator.type === 'volume_breakout')
-    expect(volumeBreakoutPreview.parameterSchema.some((field: any) => field.name === 'multiplier')).toBe(false)
     expect(help.executableV1.catalogRequest).toMatchObject({ detail: 'catalog' })
+    expect(help.executableV1.indicatorPreviewCatalog).toBeUndefined()
     expect(help.executableV1.indicatorCatalog).toBeUndefined()
+    expect(help.fundObservationV1.indicatorPreviewCatalog).toBeUndefined()
     expect(help.fundObservationV1.indicatorCatalog).toBeUndefined()
     expect(help.executableV1.stockExample).toBeUndefined()
     expect(help.fundObservationV1.ordinaryFundExample).toBeUndefined()
     expect(help.proxyContract).toBeUndefined()
     expect(help.unsupportedV1).toBeUndefined()
-    expect(help.executableV1.indicatorPreviewCatalog.length).toBeLessThanOrEqual(8)
-    expect(help.fundObservationV1.indicatorPreviewCatalog.length).toBeLessThanOrEqual(8)
-    expect(Object.keys(help.inputContracts)).toEqual(expect.arrayContaining([
-      'custom_strategy_validate',
-      'custom_strategy_backtest',
-      'custom_strategy_observe',
-      'custom_strategy_fund_backtest',
-      'custom_strategy_rank',
-      'custom_strategy_save',
-      'custom_strategy_list',
-      'custom_strategy_compare',
-      'custom_strategy_run',
-    ]))
-    expect(help.inputContracts.custom_strategy_run.requiredFields).toContain('strategyId')
-    expect(help.inputContracts.custom_strategy_rank.requiredFields).toEqual(expect.arrayContaining(['strategySpec', 'symbols']))
-    expect(help.outputContracts.custom_strategy_run).toContain('lifecycleIssue')
-    expect(help.outputContracts.custom_strategy_rank).toEqual(expect.arrayContaining(['ranked', 'portfolioEvidence', 'rebalanceDraft']))
-    expect(JSON.stringify(help).length).toBeLessThan(22000)
+    expect(help.inputContracts).toBeUndefined()
+    expect(help.outputContracts).toBeUndefined()
+    expect(JSON.stringify(help).length).toBeLessThan(7000)
     const contractHelp = JSON.parse(await service.readAction('custom_strategy_help', { detail: 'contracts' }, { basePath: '/tmp' } as any, '', 120))
     expect(contractHelp.outputContracts.custom_strategy_run.coreFields).toContain('lifecycle')
     expect(contractHelp.outputContracts.custom_strategy_compare.coreFields).toContain('strategies')
@@ -1532,6 +1509,55 @@ describe('BacktestMarketDataService', () => {
       action: 'custom_strategy_fund_backtest',
       status: 'fund_backtested',
     })
+  })
+
+  it('normalizes structured top-level fund signals into executable observation rules', async () => {
+    const { BacktestMarketDataService } = await import('../../src/domain/market/services/backtest-market-data-service')
+    const service = new BacktestMarketDataService()
+    const validation = JSON.parse(await service.readAction(
+      'custom_strategy_validate',
+      { strategySpec: fundTopLevelSignalSpec() },
+      { basePath: '/tmp' } as any,
+      '',
+      120,
+    ))
+
+    expect(validation).toMatchObject({
+      action: 'custom_strategy_validate',
+      status: 'validated',
+      assetClass: 'fund',
+    })
+    expect(validation.spec.entry.all).toEqual(expect.arrayContaining([
+      expect.objectContaining({ left: 'fundDrawdown60', op: '>=', right: 10 }),
+      expect.objectContaining({ left: 'navTrend20', op: '>', right: 0 }),
+    ]))
+    expect(validation.accepted).toEqual(expect.arrayContaining([
+      'entry:fundDrawdown60:>=',
+      'entry:navTrend20:>',
+    ]))
+  })
+
+  it('normalizes fund output aliases and object-form rule sides', async () => {
+    const { BacktestMarketDataService } = await import('../../src/domain/market/services/backtest-market-data-service')
+    const service = new BacktestMarketDataService()
+    const validation = JSON.parse(await service.readAction(
+      'custom_strategy_validate',
+      { strategySpec: fundOutputAliasSignalSpec() },
+      { basePath: '/tmp' } as any,
+      '',
+      120,
+    ))
+
+    expect(validation).toMatchObject({
+      action: 'custom_strategy_validate',
+      status: 'validated',
+      assetClass: 'fund',
+    })
+    expect(validation.spec.indicators.map((item: any) => item.id)).toEqual(expect.arrayContaining(['dd_120', 'nav_trend_20']))
+    expect(validation.spec.entry.all).toEqual(expect.arrayContaining([
+      expect.objectContaining({ left: 'dd_120', op: '>', right: 10 }),
+      expect.objectContaining({ left: 'nav_trend_20', op: '>', right: 0 }),
+    ]))
   })
 
   it('rejects money fund StrategySpec without money-yield indicators', async () => {
@@ -4070,6 +4096,77 @@ function fundObservationAliasSpec() {
         },
       ],
     },
+  }
+}
+
+function fundTopLevelSignalSpec() {
+  return {
+    name: '基金回撤趋势定投观察策略',
+    description: 'Fund DCA observation with top-level structured signals.',
+    assetClass: 'fund',
+    market: 'fund',
+    dataRequirements: {
+      dataClass: 'ordinary_fund_nav',
+      requiredFields: ['date', 'nav'],
+      minBars: 60,
+    },
+    signals: [
+      {
+        type: 'fund_drawdown',
+        period: 60,
+        operator: '<',
+        threshold: -0.1,
+        name: '中期回撤超10%',
+      },
+      {
+        type: 'nav_trend',
+        period: 20,
+        operator: '>',
+        threshold: 0,
+        name: '短期净值趋势向上',
+      },
+    ],
+    observation: {
+      name: '定投观察窗口',
+      type: 'dca_window',
+    },
+  }
+}
+
+function fundOutputAliasSignalSpec() {
+  return {
+    name: 'fund_dca_drawdown_trend',
+    description: 'Fund DCA observation using output aliases and object-form rule sides.',
+    assetClass: 'fund',
+    market: 'fund',
+    dataRequirements: {
+      fields: ['date', 'nav'],
+      minimumBars: 120,
+    },
+    indicators: [
+      { type: 'nav_trend', params: { period: 20 }, output: 'nav_trend_20' },
+      { type: 'fund_drawdown', params: { period: 120 }, output: 'dd_120' },
+    ],
+    signals: [
+      {
+        name: 'deep_drawdown_add',
+        category: 'dca_observation',
+        condition: {
+          left: { indicator: 'dd_120', field: 'value' },
+          op: '>',
+          right: { value: 0.1 },
+        },
+      },
+      {
+        name: 'trend_recovery',
+        category: 'dca_observation',
+        condition: {
+          left: { indicator: 'nav_trend_20', field: 'value' },
+          op: '>',
+          right: { value: 0 },
+        },
+      },
+    ],
   }
 }
 

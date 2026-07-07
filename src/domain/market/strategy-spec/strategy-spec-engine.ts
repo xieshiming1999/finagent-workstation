@@ -645,8 +645,10 @@ export function customStrategyHelp(input: Record<string, unknown> = {}): string 
     fundObservationV1.indicatorCatalogByCategory = fundIndicatorCatalogByCategory()
   } else {
     delete (payload.executableV1 as Record<string, unknown>).stockExample
+    delete (payload.executableV1 as Record<string, unknown>).indicatorPreviewCatalog
     delete (payload.fundObservationV1 as Record<string, unknown>).ordinaryFundExample
     delete (payload.fundObservationV1 as Record<string, unknown>).moneyFundExample
+    delete (payload.fundObservationV1 as Record<string, unknown>).indicatorPreviewCatalog
     delete payload.proxyContract
     delete payload.unsupportedV1
     payload.text = [
@@ -743,30 +745,8 @@ export function customStrategyHelp(input: Record<string, unknown> = {}): string 
       },
     }
     if (String(input.detail ?? '').toLowerCase() !== 'contracts') {
-      payload.inputContracts = {
-        custom_strategy_validate: { requiredFields: ['strategySpec'] },
-        custom_strategy_backtest: { requiredFields: ['strategySpec'], boundary: 'stock only' },
-        custom_strategy_observe: { requiredFields: ['strategySpec', 'fundRows'], boundary: 'fund evidence only' },
-        custom_strategy_fund_backtest: { requiredFields: ['strategySpec', 'fundRows'], boundary: 'fund NAV/yield evidence only' },
-        custom_strategy_rank: { requiredFields: ['strategySpec', 'symbols'], boundary: 'portfolio/ranking evidence only' },
-        custom_strategy_save: { requiredFields: ['strategySpec', 'evidence'] },
-        custom_strategy_list: { requiredFields: [] },
-        custom_strategy_read: { requiredFields: ['strategyId'] },
-        custom_strategy_compare: { requiredFields: ['strategyIds'] },
-        custom_strategy_run: { requiredFields: ['strategyId'] },
-      }
-      payload.outputContracts = {
-        custom_strategy_validate: ['status', 'validationSummary', 'repairPlan', 'unsupportedDetails', 'dataRequirements'],
-        custom_strategy_backtest: ['metrics', 'lifecycleAdvice', 'dataCoverage', 'assumptions'],
-        custom_strategy_rank: ['ranked', 'portfolioEvidence', 'rebalanceDraft', 'dataCoverage'],
-        custom_strategy_observe: ['observation', 'dcaObservation', 'monitorDraft', 'fundRiskEvidence'],
-        custom_strategy_fund_backtest: ['periodEvidence', 'fundRiskEvidence', 'fundCoverageEvidence'],
-        custom_strategy_save: ['strategyId', 'status', 'lifecycle', 'dataAndAssumptionSummary'],
-        custom_strategy_list: ['count', 'strategies'],
-        custom_strategy_read: ['strategyId', 'status', 'runnable', 'strategySpec', 'lifecycle', 'nextActions'],
-        custom_strategy_compare: ['count', 'strategies', 'bestBy', 'comparisonNotes'],
-        custom_strategy_run: ['metrics', 'readback_only', 'lifecycleIssue'],
-      }
+      delete payload.inputContracts
+      delete payload.outputContracts
     }
   }
   return JSON.stringify(payload, null, 2)

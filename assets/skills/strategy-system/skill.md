@@ -22,21 +22,22 @@ appropriate strategy automatically and return a full reasoning chain.
 
 ## Tool Actions
 
-```
-DataProcess(action: "strategy_list")
-→ List all available strategies and their win rates
+For a fund strategy, fund DCA, fund observation, or fund monitor request, do
+not use `DataProcess(action:"score_technical"|"summary"|"signals"|"support"|
+"indicators"|"ai_record")`. Those actions are stock/K-line or prediction-log
+tools and are invalid for fund NAV/yield evidence. Use this bounded sequence:
 
-DataProcess(action: "strategy_execute", symbol: "600519", strategyId: "preset_01")
-→ Execute the strategy and return a full reasoning chain:
-  1. ✅ Bullish MA alignment: MA5 > MA10 > MA20 confirmed
-  2. ✅ Pullback support: only 1.5% above MA10
-  3. ✅ Volume contraction confirmed: volume declined for 3 consecutive days
-  4. ⚠️ Neutral RSI: RSI = 52
-  Overall score: 82/100 | Decision: favorable entry setup
-
-DataProcess(action: "strategy_backtest", symbol: "600519", strategyId: "preset_01", limit: 250)
-→ Historical backtest for the strategy: signal count / win rate / average return / max drawdown
+```text
+DataStore(action: "query_fund_list", query: "<fund name or family>", limit: 10)
+DataStore(action: "query_fund_nav", code: "<ordinary fund code>", limit: 120)
+DataStore(action: "query_fund_money_yield", code: "<money fund code>", limit: 120)
+MarketData(action: "custom_strategy_validate", strategySpec: <fund StrategySpec>)
+MarketData(action: "custom_strategy_observe", strategySpec: <fund StrategySpec>, fundRows: <rows from fund readback>)
 ```
+
+If no concrete fund code can be resolved from the prompt or local fund list,
+ask for a fund code/name. Do not guess a fund code and do not fall back to
+stock technical analysis.
 
 For technical-strategy backtest, comparison, or parameter optimization, use the
 governed `MarketData` backtest path, not shell/log/file inspection:
@@ -46,13 +47,6 @@ DataStore(action: "coverage", symbols: "600519")
 DataStore(action: "query_kline", code: "600519", period: "daily", start: "2021-06-28", end: "2026-06-28", limit: 1300)
 MarketData(action: "optimize_params", code: "600519", strategy: "rsi", period: "5y", paramGrid: {"period":[10,14,20], "oversold":[25,30,35], "overbought":[65,70,75]})
 ```
-
-`strategy_execute` always needs a concrete `symbol` or bounded `symbols` list.
-Do not call it with only `strategyId`. If the user asks a broad “which stock”
-or “what should I buy/watch” question, discover candidates first through
-governed `DataStore` / `MarketData` readbacks such as hot rank, sector rank,
-flow rank, watchlist rows, or another explicit candidate source, then run
-`strategy_execute` on that bounded set.
 
 Single-name technical actions are not batch actions. For `DataProcess` actions
 such as `indicators`, `support`, `volume`, `pattern`, `trend`, or `summary`,
@@ -278,14 +272,49 @@ Fund StrategySpec is a separate observation contract. For fund strategies, set
 `fund_conditional_value_at_risk`, `money_yield`,
 `seven_day_yield`, or `dca_interval`. A validated fund
 StrategySpec is not stock-backtestable in the current runtime. Do not call
-`custom_strategy_backtest` for it; gather evidence through `query_fund_nav`,
-`query_fund_money_yield`, `query_fund_performance`, or `query_fund_holding`.
+`custom_strategy_backtest` for it, and do not call stock-only `DataProcess`
+actions such as `score_technical`, `summary`, `signals`, `support`,
+`indicators`, or `ai_record`. Gather evidence through `query_fund_nav`,
+`query_fund_money_yield`, `query_fund_performance`, or `query_fund_holding`,
+then pass the structured NAV/yield rows to `custom_strategy_observe`.
 Use `MarketData(action:"custom_strategy_help")` as the code-owned discovery
 surface for the current fund `indicatorCatalog`, `indicatorCategories`, source,
 required fields, and parameter schema. Do not maintain a separate fund-method
 list from prose when drafting a fund StrategySpec.
 Money funds require `money_yield` or `seven_day_yield`; do not force them into
 ordinary NAV rules.
+Use the same canonical StrategySpec rule shape for fund observation. Do not use
+`entryRules`, condition strings, or stock indicators such as `sma` for NAV
+trend. Example ordinary-fund DCA observation spec:
+
+```json
+{
+  "name": "fund_dca_drawdown_trend_v1",
+  "assetClass": "fund",
+  "market": "fund",
+  "dataRequirements": {
+    "dataClass": "ordinary_fund_nav",
+    "requiredFields": ["date", "nav"],
+    "minBars": 60
+  },
+  "indicators": [
+    {"id": "navTrend20", "type": "nav_trend", "source": "nav", "params": {"period": 20}},
+    {"id": "navTrend60", "type": "nav_trend", "source": "nav", "params": {"period": 60}},
+    {"id": "fundDrawdown60", "type": "fund_drawdown", "source": "nav", "params": {"period": 60}}
+  ],
+  "entry": {
+    "all": [
+      {"left": "fundDrawdown60", "op": ">=", "right": 8},
+      {"left": "navTrend20", "op": ">", "right": {"mul": ["navTrend60", 1]}}
+    ]
+  },
+  "exit": {
+    "any": [
+      {"left": "fundDrawdown60", "op": ">=", "right": 15}
+    ]
+  }
+}
+```
 `custom_strategy_observe` returns current fund observation evidence, including
 `dcaObservation`, `monitorDraft`, and, when `fundRows` contains multiple
 fund code groups, `comparisonEvidence`. `custom_strategy_fund_backtest`
@@ -459,95 +488,12 @@ Custom-strategy workflow is contract-driven:
   schema, validator, data coverage, persistence/readback, monitor semantics, or
   confirmation boundary. Do not add exact user-prompt wording as the fix.
 
-## Preset Strategies
-
-| ID | Name | Type | Logic |
-|---|---|---|---|
-| preset_01 | Pullback on shrinking volume | stockTrading | Bullish MA stack -> support -> volume contraction -> RSI |
-| preset_02 | Value growth | stockPicking | PE/PB -> ROE -> money flow -> technical score |
-| preset_03 | Breakout with volume | stockTrading | New high -> volume expansion -> trend -> MACD |
-| preset_04 | Undervalued DCA | fundPicking | PE percentile -> scale -> drawdown -> ranking |
-
 ## Agent Rules
 
-1. **For buy-readiness or recommendation intents**: use `strategy_list` first to pick the right strategy. If the user did not provide a symbol, discover a bounded candidate set before `strategy_execute`. Then run `strategy_execute` with `symbol` or `symbols` and return the reasoning chain.
-2. **Recommendations must be explainable**: do not say only "buy". Include the decision steps.
-3. **New analysis must be recorded**: after `strategy_execute`, call `ai_record` to persist the prediction.
-4. **Validate regularly**: `ai_validate` should update strategy win rates over time.
-5. **Prefer proven strategies**: favor strategies with higher win rate once `timesUsed >= 3` and `winRate > 50%`.
-
-## Reasoning Chain Format
-
-```markdown
-## Wuliangye (000858) - Pullback on Shrinking Volume
-
-1. ✅ Bullish MA alignment: MA5(165.2) > MA10(162.8) > MA20(158.5) -> uptrend intact
-2. ✅ Pullback support: current price is only 1.5% above MA10 -> attractive entry zone
-3. ✅ Volume contraction: the last 3 volume ratios declined (1.2 -> 0.9 -> 0.7) -> not a panic selloff
-4. ⚠️ Neutral RSI: RSI = 52 -> no extra confirmation
-
-Overall score: 82/100 | Decision: favorable entry | Historical win rate: 70%
-```
-
-## Integration with Other Systems
-
-```
-strategy_execute -> decision output -> ai_record persists the prediction
-ai_validate -> validation -> update strategy winRate -> write to knowledge/findings or failures
-strategy_backtest -> historical validation -> support decision quality
-MarketData backtest -> scoring + signal detection -> closed-loop execution suggestions
-Watchlist.add -> watch pool -> wait for entry conditions
-XueqiuTrade -> paper execution -> closed-loop validation
-```
-
-## Extended ai_record Format
-
-When recording a prediction, use a fully structured payload so later validation can compare outcomes precisely:
-
-```
-DataProcess(action: "ai_record",
-  symbol: "600519",
-  direction: "bullish",
-  priceAtAnalysis: 1680,
-  strategy: "ema_cross",
-  backtestScore: 82,
-  entryCondition: "EMA20 crossed above EMA50, RSI=45, pullback on shrinking volume",
-  expectedReturn: 15,
-  expectedTimeframe: 30,
-  stopLoss: 1520,
-  confidence: "high",
-  reasoning: "Bullish moving-average structure plus pullback to MA10 on shrinking volume, backtest grade A (score 82), EMA golden cross already confirmed"
-)
-```
-
-**Field Notes**
-
-| Field | Type | Meaning |
-|------|------|------|
-| symbol | string | Instrument code |
-| direction | string | bullish/bearish/neutral |
-| priceAtAnalysis | number | Price at the time of analysis |
-| strategy | string | Strategy ID or strategy name |
-| backtestScore | number | Backtest score (0-100) |
-| entryCondition | string | Entry-condition description |
-| expectedReturn | number | Expected return percent |
-| expectedTimeframe | number | Expected holding period in days |
-| stopLoss | number | Stop-loss price |
-| confidence | string | high/medium/low |
-| reasoning | string | Reasoning summary |
-
-## ai_validate Comparison Rules
-
-Validate by comparing the prediction against realized outcomes:
-
-```
-DataProcess(action: "ai_validate")
-→ For each ai_record:
-  - Actual return vs expectedReturn -> was the direction correct?
-  - Actual holding time vs expectedTimeframe -> was the timing accurate?
-  - Whether stopLoss was triggered
-  - Whether the strategy score matched the realized result
-→ Update winRate
-→ 3 consecutive successful validations -> write to {{DATA_DIR}}/memory/knowledge/findings/
-→ 3 consecutive failed validations -> write to {{DATA_DIR}}/memory/knowledge/failures/
-```
+1. Use governed `MarketData(custom_strategy_*)` actions for user-authored
+   StrategySpec work.
+2. Use `DataProcess(strategy_execute|strategy_backtest|ai_record|ai_validate)`
+   only for explicit legacy preset-strategy or prediction-log workflows.
+3. Recommendations must be explainable and must disclose strategy evidence,
+   data coverage, assumptions, and whether the result is analysis,
+   observation, backtest, monitor setup, or simulated-trade preparation.

@@ -136,16 +136,17 @@ function normalizeFundObservationSpec(input: NormalizedStrategySpec): Normalized
   const name = String(input.name ?? 'fund observation strategy').trim()
   const version = numberOf(input.version, 1)
   const id = input.id || `custom_${slug(name)}_v${version}`
-  const rawIndicators = normalizeRawIndicators(input.indicators ?? observationSource.indicators)
+  const rawIndicators = normalizeRawIndicators(input.indicators ?? observationSource.indicators ?? loose.signals)
   const indicators = normalizeFundIndicators(rawIndicators)
   const indicatorIds = new Set(indicators.map((indicator) => String(indicator.id)))
   const observationRules = [
+    ...conditionRulesFromObservationList(loose.signals),
     ...conditionRulesFromObservationList(observationSource.entries),
     ...conditionRulesFromObservationList(observationSource.signals),
     ...conditionRulesFromObservationList(observationSource.rules),
   ]
   const entrySource = input.entry ?? loose.entryRule ?? loose.entryConditions ?? fundEntrySource(observationRules)
-  const exitSource = input.exit ?? loose.exitRule ?? loose.exitConditions ?? fundExitSource(observationRules)
+  const exitSource = input.exit ?? loose.exitRule ?? loose.exitConditions ?? fundExitSource(observationRules, indicators)
   return {
     ...input,
     id,
@@ -210,9 +211,10 @@ function fundIndicatorFromSource(source: Record<string, unknown>): NonNullable<N
     : type === 'nav_trend'
       ? `navTrend${period}`
       : `${type.replace(/_([a-z])/g, (_, char) => String(char).toUpperCase())}${period}`
+  const explicitId = source.id ?? source.output ?? source.alias
   return {
     ...source,
-    id: String(remapped ? defaultId : source.id ?? defaultId),
+    id: String(remapped ? defaultId : explicitId ?? defaultId),
     type,
     source: (source.source as string | undefined) ?? (type === 'money_yield' || type === 'seven_day_yield' ? 'yield' : 'nav'),
     params: {
@@ -238,13 +240,17 @@ function conditionRulesFromObservationList(raw: unknown): Record<string, unknown
 
 function fundEntrySource(rules: Record<string, unknown>[]): RuleGroup {
   const candidates = rules.filter((rule) => !isFundExitObservation(rule))
-  return { all: normalizeFundObservationRules(candidates.length ? [candidates[0]] : rules.slice(0, 1)) }
+  return { all: normalizeFundObservationRules(candidates.length ? candidates : rules.slice(0, 1)) }
 }
 
-function fundExitSource(rules: Record<string, unknown>[]): RuleGroup {
+function fundExitSource(
+  rules: Record<string, unknown>[],
+  indicators: NonNullable<NormalizedStrategySpec['indicators']> = [],
+): RuleGroup {
   const candidates = rules.filter(isFundExitObservation)
   if (candidates.length) return { any: normalizeFundObservationRules(candidates) }
-  return { any: [{ left: 'fundDrawdown20', op: '>=', right: 15 }] }
+  const drawdown = indicators.find((indicator) => indicator.type === 'fund_drawdown')
+  return { any: [{ left: drawdown?.id ?? 'fundDrawdown20', op: '>=', right: 15 }] }
 }
 
 function normalizeFundObservationRules(rules: Record<string, unknown>[]): Rule[] {
@@ -256,21 +262,54 @@ function normalizeFundObservationRules(rules: Record<string, unknown>[]): Rule[]
 }
 
 function normalizeFundObservationRule(rule: Record<string, unknown>): Rule {
-  const left = String(rule.left ?? '').trim()
-  const right = rule.right
+  const left = fundRuleSide(rule.left ?? rule.indicator ?? rule.type)
+  const normalizedLeft = normalizeFundRuleLeft(left, numberOf(rule.period ?? (rule.params as Record<string, unknown> | undefined)?.period, 20))
+  const rawRight = rule.right ?? rule.threshold ?? rule.value
+  const right = normalizeFundRuleRight(normalizedLeft, rawRight, left)
   if (left === 'nav' && String(right).toLowerCase().startsWith('sma')) {
     return { left: 'navTrend20', op: String(rule.op ?? rule.operator ?? '>').trim() || '>', right: 0 }
   }
   return {
-    left: normalizeFundRuleLeft(left),
-    op: String(rule.op ?? rule.operator ?? '').trim() || '>=',
+    left: normalizedLeft,
+    op: normalizeFundRuleOp(normalizedLeft, String(rule.op ?? rule.operator ?? '').trim()),
     right: typeof right === 'string' && right.toLowerCase().startsWith('sma') ? 0 : right,
   }
 }
 
-function normalizeFundRuleLeft(raw: string): string {
-  if (/drawdown/i.test(raw)) return 'fundDrawdown20'
-  if (/navtrend|trend|sma|ma/i.test(raw)) return 'navTrend20'
+function normalizeFundRuleOp(left: string, raw: string): string {
+  const op = normalizeOperator(raw) || '>='
+  return left.startsWith('fundDrawdown') && (op === '<' || op === '<=')
+    ? '>='
+    : op
+}
+
+function fundRuleSide(raw: unknown): string {
+  if (raw && typeof raw === 'object' && !Array.isArray(raw)) {
+    const source = raw as Record<string, unknown>
+    return String(source.indicator ?? source.id ?? source.source ?? source.field ?? '').trim()
+  }
+  return String(raw ?? '').trim()
+}
+
+function normalizeFundRuleRight(left: string, raw: unknown, rawLeft = ''): unknown {
+  const valueSource = raw && typeof raw === 'object' && !Array.isArray(raw)
+    ? (raw as Record<string, unknown>).value ?? (raw as Record<string, unknown>).threshold
+    : raw
+  const isDrawdown = left.startsWith('fundDrawdown') || /(^|_)dd($|_)|drawdown/i.test(rawLeft)
+  if (!isDrawdown) return valueSource
+  const value = numericValue(valueSource)
+  if (value == null) return raw
+  const absolute = Math.abs(value)
+  return absolute > 0 && absolute <= 1 ? absolute * 100 : absolute
+}
+
+function normalizeFundRuleLeft(raw: string, period = 20): string {
+  if (/^[a-z][a-z0-9_]*_\d+$/i.test(raw)) return raw
+  if (/drawdown/i.test(raw)) return `fundDrawdown${period}`
+  if (/navtrend|trend|sma|ma/i.test(raw)) return `navTrend${period}`
+  if (fundStrategyIndicators.has(raw)) {
+    return `${raw.replace(/_([a-z])/g, (_, char) => String(char).toUpperCase())}${period}`
+  }
   return raw || 'navTrend20'
 }
 

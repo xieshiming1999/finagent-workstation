@@ -107,9 +107,10 @@ separate contract validates the next step.
     `DataProcess(action:"watch_signal_check", type:"fund", status:"watching")`.
     Answer from the returned JSON `results`: `triggered`, `status`, `checks`,
     `unsupportedRules`, and `provenance`.
-    Do not call `DataProcess(action:"signals")` for fund or ETF codes; that is
-    stock/K-line technical analysis and should return a tool error for known
-    fund codes.
+    Do not call `DataProcess(action:"signals"|"score_technical"|"summary"|
+    "support"|"indicators"|"ai_record")` for fund or ETF codes; those are
+    stock/K-line technical analysis or stock prediction-log actions and should
+    return a tool error for known fund codes.
     If the user only asked to check fund observation signals, stop at signal
     status and missing evidence. Do not offer `Portfolio` paper-trade or
     `XueqiuTrade` execution as the immediate next step unless the user
