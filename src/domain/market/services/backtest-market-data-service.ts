@@ -917,7 +917,7 @@ function compactCustomStrategyRankResult(full: Record<string, unknown>): Record<
     candidateCount: full.candidateCount,
     rankedCount: full.rankedCount,
     failedCount: full.failedCount,
-    ranked: compactArray(full.ranked, 10, compactRankedRow),
+    ranked: compactArray(full.ranked, 5, compactRankedRow),
     excluded: compactArray(full.excluded, 10, compactExcludedRow),
     candidateFailureEvidence: full.candidateFailureEvidence,
     selectedSymbols: selectedPositions
@@ -926,20 +926,16 @@ function compactCustomStrategyRankResult(full: Record<string, unknown>): Record<
     portfolioEvidence: portfolioEvidence ? {
       mode: portfolioEvidence.mode,
       selectedCount: portfolioEvidence.selectedCount,
-      assumptions: portfolioEvidence.assumptions,
-      selectionEvidence: portfolioEvidence.selectionEvidence,
+      selectionEvidence: compactPortfolioSelectionEvidence(portfolioEvidence.selectionEvidence),
       aggregateMetrics: portfolioEvidence.aggregateMetrics,
       correlationEvidence: portfolioEvidence.correlationEvidence,
       portfolioRiskEvidence: portfolioEvidence.portfolioRiskEvidence,
-      portfolioReturnQualityEvidence: portfolioEvidence.portfolioReturnQualityEvidence,
       concentrationEvidence: portfolioEvidence.concentrationEvidence,
-      portfolioStabilityEvidence: portfolioEvidence.portfolioStabilityEvidence,
-      portfolioRebalanceSimulation: portfolioEvidence.portfolioRebalanceSimulation,
       portfolioBacktestEvidence: portfolioEvidence.portfolioBacktestEvidence,
       portfolioScoringEvidence: portfolioEvidence.portfolioScoringEvidence,
       portfolioDrawdownBudgetEvidence: portfolioEvidence.portfolioDrawdownBudgetEvidence,
       positionContributionEvidence: compactPositionContributionEvidence(portfolioEvidence.positionContributionEvidence),
-      portfolioValidation: portfolioEvidence.portfolioValidation,
+      portfolioValidation: compactPortfolioValidation(portfolioEvidence.portfolioValidation),
       riskNotes: portfolioEvidence.riskNotes,
     } : undefined,
     rebalanceDraft: rebalanceDraft ? {
@@ -953,10 +949,41 @@ function compactCustomStrategyRankResult(full: Record<string, unknown>): Record<
       tradeBoundary: rebalanceDraft.tradeBoundary,
       evidenceSource: 'See portfolioEvidence for aggregate metrics, concentration, drawdown budget, validation, and rebalance simulation.',
     } : undefined,
-    rankedRowsEvidence: full.rankedRowsEvidence,
-    allCandidates: compactArray(full.allCandidates, 12, compactCandidateRow),
+    allCandidates: compactArray(full.allCandidates, 8, compactCandidateRow),
     workflowAdvice: full.workflowAdvice,
     fullResultAdvice: 'Default custom_strategy_rank output is compact to avoid tool-output spill. Use detail:"full" only for explicit diagnostics; do not open memory/.tool_outputs files for normal workflow answers.',
+  }
+}
+
+function compactPortfolioSelectionEvidence(value: unknown): Record<string, unknown> | undefined {
+  const evidence = asRecord(value)
+  if (!evidence) return undefined
+  return {
+    topN: evidence.topN,
+    selectedCount: evidence.selectedCount,
+    eligibleCount: evidence.eligibleCount,
+    selectedSymbols: evidence.selectedSymbols,
+    minScore: evidence.minScore,
+    maxPairwiseCorrelation: evidence.maxPairwiseCorrelation,
+    correlationEligibleCount: evidence.correlationEligibleCount,
+    correlationSkipped: Array.isArray(evidence.correlationSkipped)
+      ? evidence.correlationSkipped.slice(0, 5)
+      : evidence.correlationSkipped,
+    tradeBoundary: evidence.tradeBoundary,
+  }
+}
+
+function compactPortfolioValidation(value: unknown): Record<string, unknown> | undefined {
+  const validation = asRecord(value)
+  if (!validation) return undefined
+  return {
+    status: validation.status,
+    selectedCount: validation.selectedCount,
+    eligibleCount: validation.eligibleCount,
+    minScore: validation.minScore,
+    maxPairwiseCorrelation: validation.maxPairwiseCorrelation,
+    correlationEligibleCount: validation.correlationEligibleCount,
+    warnings: Array.isArray(validation.warnings) ? validation.warnings.slice(0, 4) : validation.warnings,
   }
 }
 
@@ -1002,6 +1029,9 @@ function compactPositionContributionEvidence(value: unknown): Record<string, unk
 }
 
 function compactRankedRow(row: Record<string, unknown>): Record<string, unknown> {
+  const selection = asRecord(row.selectionEvidence)
+  const coverage = asRecord(row.dataCoverage)
+  const risk = asRecord(compactRiskEvidence(row.riskEvidence))
   return {
     symbol: row.symbol,
     name: row.name,
@@ -1010,16 +1040,27 @@ function compactRankedRow(row: Record<string, unknown>): Record<string, unknown>
     rankingMetric: row.rankingMetric,
     status: row.status,
     relativeStrength: row.relativeStrength,
-    selectionEvidence: row.selectionEvidence,
+    selectionEvidence: selection ? {
+      selectedForDraft: selection.selectedForDraft,
+      exclusionReason: selection.exclusionReason,
+      selectionRule: selection.selectionRule,
+      correlationConstraintEvidence: selection.correlationConstraintEvidence,
+    } : undefined,
     weightEvidence: row.weightEvidence,
     assumptions: row.assumptions,
     selectedForDraft: asRecord(row.selectionEvidence)?.selectedForDraft,
     exclusionReason: asRecord(row.selectionEvidence)?.exclusionReason,
     metrics: row.metrics,
-    dataCoverage: row.dataCoverage,
-    dataEvidence: row.dataEvidence,
+    dataCoverage: coverage ? {
+      sufficient: coverage.sufficient,
+      rows: coverage.rows,
+      requiredBars: coverage.requiredBars,
+      start: coverage.start,
+      end: coverage.end,
+      source: coverage.source,
+    } : row.dataCoverage,
     benchmarkEvidence: row.benchmarkEvidence,
-    riskEvidence: compactRiskEvidence(row.riskEvidence),
+    riskEvidence: risk,
   }
 }
 

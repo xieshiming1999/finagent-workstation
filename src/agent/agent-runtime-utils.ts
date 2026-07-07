@@ -37,7 +37,7 @@ export function maybePersistResult(basePath: string, result: string): string {
     const filename = `tool_output_${Date.now()}.txt`
     const filepath = join(dir, filename)
     writeFileSync(filepath, result, 'utf-8')
-    return `${result.slice(0, 2000)}\n\n... (${result.length} chars total, full output saved to ${filepath} — use Read to access)`
+    return `${result.slice(0, 2000)}\n\n... (${result.length} chars total; full output was persisted in diagnostic tool-output storage. For normal answers, use this preview and call a narrower query with limit/filters or a code-owned summary action instead of reading the full generated output.)`
   } catch {
     return result.slice(0, maxChars) + `\n... (truncated from ${result.length} chars)`
   }
