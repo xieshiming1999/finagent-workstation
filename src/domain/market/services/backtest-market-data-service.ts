@@ -67,6 +67,8 @@ export class BacktestMarketDataService {
         return this.readCustomStrategySave(ctx, input)
       case 'custom_strategy_list':
         return JSON.stringify(listCustomStrategies(ctx, input), null, 2)
+      case 'custom_strategy_read':
+        return JSON.stringify(readSavedCustomStrategySummary(ctx, input), null, 2)
       case 'custom_strategy_compare':
         return JSON.stringify(compareCustomStrategies(ctx, strategyIdsOf(input)), null, 2)
       case 'custom_strategy_run':
@@ -733,8 +735,65 @@ function strategyDataCoverage(
 }
 
 function strategyIdsOf(input: Record<string, unknown>): string[] {
-  const value = input.strategyIds ?? input.strategy_ids
+  const params = asRecord(input.params) ?? {}
+  const value = input.strategyIds ?? input.strategy_ids ?? input.strategyId ?? input.strategy_id ??
+    params.strategyIds ?? params.strategy_ids ?? params.strategyId ?? params.strategy_id
   return Array.isArray(value) ? value.map((item) => String(item).trim()).filter(Boolean) : []
+}
+
+function readSavedCustomStrategySummary(ctx: ToolContext, input: Record<string, unknown>): Record<string, unknown> {
+  const strategyId = String(
+    input.strategyId ?? input.strategy_id ?? asRecord(input.params)?.strategyId ?? asRecord(input.params)?.strategy_id ?? '',
+  ).trim()
+  if (!strategyId) throw new Error('strategyId required for custom_strategy_read')
+  const record = readCustomStrategy(ctx, strategyId)
+  const spec = asRecord(record.strategySpec) ?? asRecord(record.spec) ?? {}
+  const evidence = asRecord(record.backtestEvidence) ?? asRecord(record.evidence) ?? {}
+  const dataAndAssumptionSummary = asRecord(record.dataAndAssumptionSummary) ?? {}
+  const validationSummary = asRecord(record.validationSummary) ??
+    asRecord(asRecord(record.validationReport)?.validationSummary) ??
+    asRecord(evidence.validationSummary)
+  return {
+    action: 'custom_strategy_read',
+    strategyId: record.strategyId ?? strategyId,
+    version: record.version ?? 1,
+    status: record.status,
+    savedStatus: record.status,
+    runnable: isRunnableBacktestedStrategyRecord(record),
+    strategySpec: {
+      id: spec.id ?? record.strategyId ?? strategyId,
+      name: spec.name ?? null,
+      assetClass: spec.assetClass ?? spec.market ?? 'stock',
+      symbols: symbolListOfSpec(spec),
+      indicators: Array.isArray(spec.indicators) ? spec.indicators : [],
+      entry: spec.entry ?? null,
+      exit: spec.exit ?? null,
+      positionSizing: spec.positionSizing ?? null,
+      dataRequirements: spec.dataRequirements ?? null,
+    },
+    validationSummary: validationSummary ?? null,
+    validationIssueCount: Array.isArray(record.validationIssues) ? record.validationIssues.length : 0,
+    repairStepCount: Array.isArray(record.repairPlan) ? record.repairPlan.length : 0,
+    unsupportedCount: Array.isArray(record.unsupportedDetails) ? record.unsupportedDetails.length : 0,
+    evidenceAction: evidence.action ?? null,
+    metrics: asRecord(evidence.metrics) ?? null,
+    dataCoverage: asRecord(evidence.dataCoverage) ?? asRecord(dataAndAssumptionSummary.dataCoverage) ?? null,
+    dataEvidence: asRecord(evidence.dataEvidence) ?? asRecord(dataAndAssumptionSummary.dataEvidence) ?? null,
+    lifecycle: record.lifecycle ?? {},
+    dataAndAssumptionSummary,
+    nextActions: isRunnableBacktestedStrategyRecord(record)
+      ? [{ action: 'custom_strategy_run', strategyId: record.strategyId ?? strategyId }]
+      : [{ action: 'custom_strategy_list', strategyIds: [record.strategyId ?? strategyId] }],
+  }
+}
+
+function symbolListOfSpec(spec: Record<string, unknown>): string[] {
+  const raw = spec.symbols ?? spec.codes ?? spec.universe
+  if (Array.isArray(raw)) return raw.map((item) => String(item).trim()).filter(Boolean)
+  const universe = asRecord(raw)
+  if (universe && Array.isArray(universe.symbols)) return universe.symbols.map((item) => String(item).trim()).filter(Boolean)
+  const single = spec.symbol ?? spec.code ?? spec.fundCode
+  return single == null ? [] : [String(single).trim()].filter(Boolean)
 }
 
 function savedStrategyReadback(ctx: ToolContext, strategyId: string, reason: string): Record<string, unknown> {

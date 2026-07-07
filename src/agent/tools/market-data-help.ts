@@ -45,7 +45,8 @@ BACKTEST:
   custom_strategy_backtest — Validate and run a sandboxed custom strategy. code, strategySpec, optional outOfSampleRatio for chronological holdout evidence, optional walkForwardFolds for stability evidence. Returns structured dataCoverage and lifecycleAdvice; prefer those over prose for source/cache/window sufficiency and save/rerun decisions. lifecycleAdvice.saveable=true means status:"backtested" is valid evidence for custom_strategy_save even when metrics.tradeCount is 0.
   custom_strategy_rank     — Validate a stock StrategySpec across symbols[], rank candidates, and return top-N rebalance evidence plus portfolioBacktestEvidence and portfolioScoringEvidence. This is the governed strategy-candidate scoring surface; do not add legacy DataProcess technical scoring after using it. rankingMetric may be score, total_return_pct, sharpe_ratio, max_drawdown_pct, trade_count, relative_strength_pct, or rps. Optional rebalanceInterval, maxPositionWeight, and minScore are evidence-only draft assumptions; minScore excludes weak ranked rows from the rebalance draft but keeps them visible with selectionEvidence. This is not a trade/order action.
   custom_strategy_save     — Save a validated/backtested custom strategy. strategySpec, evidence(optional)
-  custom_strategy_list     — List saved custom strategies
+  custom_strategy_list     — List saved custom strategies with bounded path-free rows
+  custom_strategy_read     — Read one saved custom strategy summary by strategyId without opening files
   custom_strategy_compare  — Compare saved custom strategies by lifecycle, metric, portfolio, and data coverage evidence. strategyIds optional. Does not rerun or fetch data.
   custom_strategy_run      — Run a saved custom strategy. code, strategyId. Non-runnable saved artifacts return readback_only with lifecycleIssue and validationIssues.
 

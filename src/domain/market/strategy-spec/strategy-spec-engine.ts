@@ -140,6 +140,7 @@ export function customStrategyHelp(input: Record<string, unknown> = {}): string 
     '- custom_strategy_rank: validate a stock StrategySpec across symbols[] and return top-N ranking/rebalance evidence',
     '- custom_strategy_save: save only a validated/backtested StrategySpec',
     '- custom_strategy_list: list saved custom strategies',
+    '- custom_strategy_read: read one saved custom strategy by strategyId with bounded StrategySpec/evidence summary',
     '- custom_strategy_run: run a saved custom strategy by strategyId',
     '',
     `Executable v1 supports ${stockIndicatorTypes.length} stock indicators across categories ${Object.keys(groupedIndicatorCatalog).sort().join(', ')}. Preview: ${stockIndicatorPreview.join(', ')}. Use detail:"catalog" only when the full indicator catalog is needed.`,
@@ -148,7 +149,7 @@ export function customStrategyHelp(input: Record<string, unknown> = {}): string 
     'Output contract: custom_strategy_backtest returns metrics/signals/trades plus lifecycleAdvice, benchmarkEvidence, riskEvidence, riskRewardEvidence, dataEvidence, dataCoverage, assumptions, outOfSample, and walkForward when requested. lifecycleAdvice.saveable=true means status:"backtested" is valid evidence for custom_strategy_save, even when metrics.tradeCount is 0. benchmarkEvidence is same-window buy-and-hold close-to-close reference evidence, not an executable trade simulation. riskRewardEvidence summarizes completed-trade payoff, profit factor, expectancy, and best/worst trade; it is not a trade guarantee. dataCoverage includes rows, requiredBars, sufficient, source/cache, actual date window, and dataRequirements.',
     'Output contract: custom_strategy_rank returns ranked rows with per-candidate benchmark/risk/data coverage evidence plus validationSummary, validationIssues, unsupportedDetails, dataRequirements, portfolioEvidence, rebalanceDraft, portfolioBacktestEvidence, portfolioScoringEvidence, portfolioDrawdownBudgetEvidence, portfolioReturnQualityEvidence, concentrationEvidence, portfolioStabilityEvidence, portfolioValidation, and candidateFailureEvidence. It is evidence-only and never places orders.',
     'Output contract: custom_strategy_observe returns fund observation evidence such as dcaObservation, monitorDraft, comparisonEvidence, fundRiskEvidence, and fundCoverageEvidence. custom_strategy_fund_backtest returns NAV/yield period evidence and fund tradeBoundary, not stock K-line backtest.',
-    'Output contract: custom_strategy_save and custom_strategy_list expose validationSummary, validationIssues, repairPlan, unsupportedDetails, dataRequirements, dataAndAssumptionSummary, and lifecycle at the artifact/list-row level; use those fields before opening nested validationReport or backtestEvidence.',
+    'Output contract: custom_strategy_save, custom_strategy_list, and custom_strategy_read expose validationSummary, validationIssues, repairPlan, unsupportedDetails, dataRequirements, dataAndAssumptionSummary, and lifecycle at the artifact/list-row/readback level; use custom_strategy_read for one saved strategy instead of opening files.',
     'Output contract: custom_strategy_run returns runnable backtest evidence only for saved backtested stock strategies, including validationSummary, validationIssues, repairPlan, unsupportedDetails, dataRequirements, benchmarkEvidence, dataCoverage, and lifecycle; non-runnable saved artifacts return readback_only with lifecycleIssue, validationIssues, repairPlan, evidenceAction, dataAndAssumptionSummary, and lifecycle.',
     'Proxy contract: if a supported StrategySpec is a replacement for unsupported original signals, declare proxyFor and unsupportedOriginalSignals. The validator rejects proxy StrategySpec validation/backtest/save until proxyApproval:{approved:true} is present from explicit user approval.',
     'Stock StrategySpec example: {"name":"low_risk_pullback","market":"cn","universe":{"type":"single","symbols":["600519"]},"dataRequirements":{"minBars":120,"adjust":"none","requiredFields":["open","high","low","close","volume"]},"indicators":[{"id":"ema20","type":"ema","source":"close","params":{"period":20}},{"id":"ema60","type":"ema","source":"close","params":{"period":60}},{"id":"rsi14","type":"rsi","source":"close","params":{"period":14}},{"id":"atrPct14","type":"atr_pct","source":"close","params":{"period":14}}],"entry":{"all":[{"left":"ema20","op":">","right":{"mul":["ema60",1]}},{"left":"rsi14","op":"<=","right":60},{"left":"atrPct14","op":"<=","right":3}]},"exit":{"any":[{"type":"stop_loss_pct","value":6},{"type":"take_profit_pct","value":12},{"type":"atr_stop_loss","value":2,"period":14},{"type":"trailing_stop_pct","value":8}]},"positionSizing":{"type":"fixed_fraction","value":0.2}}',
@@ -168,6 +169,7 @@ export function customStrategyHelp(input: Record<string, unknown> = {}): string 
       'custom_strategy_rank',
       'custom_strategy_save',
       'custom_strategy_list',
+      'custom_strategy_read',
       'custom_strategy_compare',
       'custom_strategy_run',
     ],
@@ -510,12 +512,12 @@ export function customStrategyHelp(input: Record<string, unknown> = {}): string 
       custom_strategy_list: {
         topFields: [
           'artifactContract',
-          'paths',
           'count',
           'strategies',
+          'requestedStrategyIds',
+          'missingStrategyIds',
         ],
         rowFields: [
-          'itemPath',
           'strategyId',
           'status',
           'assetClass',
@@ -688,7 +690,12 @@ export function customStrategyHelp(input: Record<string, unknown> = {}): string 
       custom_strategy_list: {
         requiredFields: [],
         optionalFields: ['limit'],
-        boundary: 'List reads saved strategy artifacts only; it does not rerun, fetch provider data, or authorize trades.',
+        boundary: 'List reads saved strategy artifacts only with bounded path-free rows; it does not rerun, fetch provider data, or authorize trades.',
+      },
+      custom_strategy_read: {
+        requiredFields: ['strategyId'],
+        optionalFields: [],
+        boundary: 'Read returns one bounded saved strategy summary; it does not open files, rerun, fetch provider data, or authorize trades.',
       },
       custom_strategy_compare: {
         requiredFields: ['strategyIds'],
@@ -725,6 +732,9 @@ export function customStrategyHelp(input: Record<string, unknown> = {}): string 
       custom_strategy_list: {
         coreFields: ['artifactContract', 'count', 'strategies', 'requestedStrategyIds', 'missingStrategyIds'],
       },
+      custom_strategy_read: {
+        coreFields: ['strategyId', 'status', 'runnable', 'strategySpec', 'validationSummary', 'evidenceAction', 'metrics', 'dataCoverage', 'lifecycle', 'nextActions'],
+      },
       custom_strategy_compare: {
         coreFields: ['count', 'requestedStrategyIds', 'missingStrategyIds', 'strategies', 'bestBy', 'comparisonNotes'],
       },
@@ -741,6 +751,7 @@ export function customStrategyHelp(input: Record<string, unknown> = {}): string 
         custom_strategy_rank: { requiredFields: ['strategySpec', 'symbols'], boundary: 'portfolio/ranking evidence only' },
         custom_strategy_save: { requiredFields: ['strategySpec', 'evidence'] },
         custom_strategy_list: { requiredFields: [] },
+        custom_strategy_read: { requiredFields: ['strategyId'] },
         custom_strategy_compare: { requiredFields: ['strategyIds'] },
         custom_strategy_run: { requiredFields: ['strategyId'] },
       }
@@ -752,6 +763,7 @@ export function customStrategyHelp(input: Record<string, unknown> = {}): string 
         custom_strategy_fund_backtest: ['periodEvidence', 'fundRiskEvidence', 'fundCoverageEvidence'],
         custom_strategy_save: ['strategyId', 'status', 'lifecycle', 'dataAndAssumptionSummary'],
         custom_strategy_list: ['count', 'strategies'],
+        custom_strategy_read: ['strategyId', 'status', 'runnable', 'strategySpec', 'lifecycle', 'nextActions'],
         custom_strategy_compare: ['count', 'strategies', 'bestBy', 'comparisonNotes'],
         custom_strategy_run: ['metrics', 'readback_only', 'lifecycleIssue'],
       }
@@ -813,17 +825,24 @@ export function savedCustomStrategySymbol(ctx: ToolContext, strategyId: string):
 }
 
 function strategyListOptionsOf(input: Record<string, unknown>): StrategyListOptions {
-  const detailValue = String(input.detail ?? '').toLowerCase()
+  const params = input.params && typeof input.params === 'object' && !Array.isArray(input.params)
+    ? input.params as Record<string, unknown>
+    : {}
+  const detailValue = String(input.detail ?? params.detail ?? '').toLowerCase()
   const strategyIds = strategyIdsOfInput(input)
   return {
     detail: detailValue === 'full' ? 'full' : 'summary',
-    limit: typeof input.limit === 'number' ? input.limit : Number(input.limit),
+    limit: typeof input.limit === 'number' ? input.limit : Number(input.limit ?? params.limit),
     ...(strategyIds.length > 0 ? { strategyIds } : {}),
   }
 }
 
 function strategyIdsOfInput(input: Record<string, unknown>): string[] {
-  const raw = input.strategyIds ?? input.strategy_ids ?? input.strategyId ?? input.strategy_id
+  const params = input.params && typeof input.params === 'object' && !Array.isArray(input.params)
+    ? input.params as Record<string, unknown>
+    : {}
+  const raw = input.strategyIds ?? input.strategy_ids ?? input.strategyId ?? input.strategy_id ??
+    params.strategyIds ?? params.strategy_ids ?? params.strategyId ?? params.strategy_id
   const values = Array.isArray(raw) ? raw : raw == null ? [] : [raw]
   return values.map((value) => String(value).trim()).filter(Boolean)
 }

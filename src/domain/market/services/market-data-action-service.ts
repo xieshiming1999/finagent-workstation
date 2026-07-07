@@ -85,6 +85,7 @@ export class MarketDataActionService {
       case 'custom_strategy_rank':
       case 'custom_strategy_save':
       case 'custom_strategy_list':
+      case 'custom_strategy_read':
       case 'custom_strategy_compare':
       case 'custom_strategy_run':
         return this.backtestActionService.readAction(action, input, ctx, code, limit)

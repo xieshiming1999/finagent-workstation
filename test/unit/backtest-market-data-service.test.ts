@@ -557,6 +557,23 @@ describe('BacktestMarketDataService', () => {
       unsupportedDetails: [],
       lifecycle: expect.any(Object),
     })
+    const nestedFullListed = JSON.parse(await service.readAction('custom_strategy_list', { params: { detail: 'full', strategyIds: ['custom_rsi_volume_rebound_v1'] } }, { basePath } as any, '', 120))
+    expect(nestedFullListed).toMatchObject({ action: 'custom_strategy_list', detail: 'full', returned: 1 })
+    const readback = JSON.parse(await service.readAction('custom_strategy_read', { strategyId: 'custom_rsi_volume_rebound_v1' }, { basePath } as any, '', 120))
+    expect(readback).toMatchObject({
+      action: 'custom_strategy_read',
+      strategyId: 'custom_rsi_volume_rebound_v1',
+      runnable: true,
+      strategySpec: expect.objectContaining({
+        id: 'custom_rsi_volume_rebound_v1',
+        assetClass: 'stock',
+      }),
+      nextActions: expect.arrayContaining([
+        expect.objectContaining({ action: 'custom_strategy_run', strategyId: 'custom_rsi_volume_rebound_v1' }),
+      ]),
+    })
+    expect(readback.paths).toBeUndefined()
+    expect(readback.itemPath).toBeUndefined()
 
     const rerun = JSON.parse(await service.readAction('custom_strategy_run', { strategyId: 'custom_rsi_volume_rebound_v1' }, { basePath } as any, '', 120))
     expect(rerun).toMatchObject({ action: 'custom_strategy_run', strategyId: 'custom_rsi_volume_rebound_v1' })
