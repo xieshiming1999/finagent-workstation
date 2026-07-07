@@ -8,6 +8,7 @@ import {
   loadRunnableCustomStrategySpec,
   saveCustomStrategyRecord,
   savedCustomStrategyRecordSymbol,
+  type StrategyListOptions,
 } from './strategy-lifecycle-store'
 import {
   executableIndicators,
@@ -791,8 +792,8 @@ export function saveCustomStrategy(ctx: ToolContext, spec: StrategySpec, evidenc
   return saveCustomStrategyRecord(ctx, validation, evidence)
 }
 
-export function listCustomStrategies(ctx: ToolContext): Record<string, unknown> {
-  return listCustomStrategyRecords(ctx)
+export function listCustomStrategies(ctx: ToolContext, input: Record<string, unknown> = {}): Record<string, unknown> {
+  return listCustomStrategyRecords(ctx, strategyListOptionsOf(input))
 }
 
 export function compareCustomStrategies(ctx: ToolContext, strategyIds: string[] = []): Record<string, unknown> {
@@ -809,4 +810,20 @@ export function readCustomStrategy(ctx: ToolContext, strategyId: string): Record
 
 export function savedCustomStrategySymbol(ctx: ToolContext, strategyId: string): string | null {
   return savedCustomStrategyRecordSymbol(ctx, strategyId)
+}
+
+function strategyListOptionsOf(input: Record<string, unknown>): StrategyListOptions {
+  const detailValue = String(input.detail ?? '').toLowerCase()
+  const strategyIds = strategyIdsOfInput(input)
+  return {
+    detail: detailValue === 'full' ? 'full' : 'summary',
+    limit: typeof input.limit === 'number' ? input.limit : Number(input.limit),
+    ...(strategyIds.length > 0 ? { strategyIds } : {}),
+  }
+}
+
+function strategyIdsOfInput(input: Record<string, unknown>): string[] {
+  const raw = input.strategyIds ?? input.strategy_ids ?? input.strategyId ?? input.strategy_id
+  const values = Array.isArray(raw) ? raw : raw == null ? [] : [raw]
+  return values.map((value) => String(value).trim()).filter(Boolean)
 }

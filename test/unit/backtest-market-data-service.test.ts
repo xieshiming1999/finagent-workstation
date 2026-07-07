@@ -522,7 +522,7 @@ describe('BacktestMarketDataService', () => {
     const firstCreatedAt = saved.lifecycle.createdAt
 
     const listed = JSON.parse(await service.readAction('custom_strategy_list', {}, { basePath } as any, '', 120))
-    expect(listed).toMatchObject({ action: 'custom_strategy_list', count: 1 })
+    expect(listed).toMatchObject({ action: 'custom_strategy_list', detail: 'summary', count: 1, returned: 1 })
     expect(listed).toMatchObject({
       artifactContract: 'strategy-library-v1',
       paths: expect.objectContaining({
@@ -534,14 +534,25 @@ describe('BacktestMarketDataService', () => {
       itemPath: path.join(basePath, 'strategies', 'items', 'custom_rsi_volume_rebound_v1.json'),
       evidenceAction: 'custom_strategy_backtest',
       assetClass: 'stock',
+      runnable: true,
+      lifecycleStatus: 'backtested',
       validationSummary: expect.objectContaining({ canBacktest: true }),
-      validationIssues: [],
-      repairPlan: [],
-      unsupportedDetails: [],
+      validationIssueCount: 0,
+      repairStepCount: 0,
+      unsupportedCount: 0,
       dataRequirements: expect.objectContaining({ requiredLookbackBars: 20 }),
       dataAndAssumptionSummary: expect.objectContaining({
         dataCoverage: expect.objectContaining({ sufficient: true }),
       }),
+    })
+    expect(listed.strategies[0].validationIssues).toBeUndefined()
+    const fullListed = JSON.parse(await service.readAction('custom_strategy_list', { detail: 'full', strategyIds: ['custom_rsi_volume_rebound_v1'] }, { basePath } as any, '', 120))
+    expect(fullListed).toMatchObject({ action: 'custom_strategy_list', detail: 'full', count: 1, returned: 1 })
+    expect(fullListed.strategies[0]).toMatchObject({
+      strategyId: 'custom_rsi_volume_rebound_v1',
+      validationIssues: [],
+      repairPlan: [],
+      unsupportedDetails: [],
       lifecycle: expect.any(Object),
     })
 
@@ -1331,7 +1342,7 @@ describe('BacktestMarketDataService', () => {
     })
     const listedFundBacktest = JSON.parse(await service.readAction(
       'custom_strategy_list',
-      {},
+      { detail: 'full', strategyIds: [savedFundBacktest.strategyId] },
       { basePath: fundBacktestBasePath } as any,
       '',
       120,
@@ -2767,9 +2778,9 @@ describe('BacktestMarketDataService', () => {
     expect(listed.strategies[0]).toMatchObject({
       strategyId: 'custom_invalid_price_ref_v1',
       savedStatus: 'backtested',
-      lifecycle: expect.objectContaining({
-        savedStatus: 'backtested',
-      }),
+      runnable: false,
+      lifecycleStatus: 'invalid',
+      lifecycleIssue: expect.objectContaining({ category: 'validation' }),
     })
 
     const readback = JSON.parse(await service.readAction(
@@ -3636,7 +3647,7 @@ describe('BacktestMarketDataService', () => {
 
     const listed = JSON.parse(await service.readAction(
       'custom_strategy_list',
-      {},
+      { detail: 'full', strategyIds: [saved.strategyId] },
       { basePath } as any,
       '',
       120,

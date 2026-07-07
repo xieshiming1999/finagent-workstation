@@ -66,7 +66,7 @@ export class BacktestMarketDataService {
       case 'custom_strategy_save':
         return this.readCustomStrategySave(ctx, input)
       case 'custom_strategy_list':
-        return JSON.stringify(listCustomStrategies(ctx), null, 2)
+        return JSON.stringify(listCustomStrategies(ctx, input), null, 2)
       case 'custom_strategy_compare':
         return JSON.stringify(compareCustomStrategies(ctx, strategyIdsOf(input)), null, 2)
       case 'custom_strategy_run':

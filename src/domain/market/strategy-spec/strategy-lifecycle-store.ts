@@ -35,6 +35,12 @@ type StrategyRecord = {
   updatedAt: string
 }
 
+export type StrategyListOptions = {
+  limit?: number
+  detail?: 'summary' | 'full'
+  strategyIds?: string[]
+}
+
 export function saveCustomStrategyRecord(ctx: ToolContext, validation: StrategyValidation, evidence?: unknown): Record<string, unknown> {
   const existingRows = readStore(ctx)
   const existing = existingRows.find((row) => row.strategyId === validation.strategyId)
@@ -140,9 +146,12 @@ function statusForEvidence(evidence: unknown): StrategyRecord['status'] {
   }
 }
 
-export function listCustomStrategyRecords(ctx: ToolContext): Record<string, unknown> {
+export function listCustomStrategyRecords(ctx: ToolContext, options: StrategyListOptions = {}): Record<string, unknown> {
   const rows = readStore(ctx)
-  const strategies = rows.map((row) => {
+  const requestedIds = new Set((options.strategyIds ?? []).map((id) => String(id).trim()).filter(Boolean))
+  const limit = clampListLimit(options.limit)
+  const detail = options.detail ?? 'summary'
+  const allStrategies = rows.map((row) => {
     const spec = row.strategySpec ?? row.spec
     const savedValidation = validateSavedStrategySpec(spec)
     const evidence = isRecord(row.backtestEvidence) ? row.backtestEvidence : isRecord(row.evidence) ? row.evidence : {}
@@ -187,15 +196,35 @@ export function listCustomStrategyRecords(ctx: ToolContext): Record<string, unkn
       itemPath: strategyItemPath(String(ctx.basePath ?? process.cwd()), String(row.strategyId)),
     }
   }).sort(strategyListSort)
+  const filtered = requestedIds.size > 0
+    ? allStrategies.filter((row) => requestedIds.has(String(row.strategyId)))
+    : allStrategies
+  const selected = filtered.slice(0, limit)
+  const strategies = detail === 'full' ? selected : selected.map(compactStrategyListRow)
+  const runnableRows = allStrategies
+    .filter((row) => isRecord(row.lifecycle) && row.lifecycle.runnable === true)
+    .slice(0, Math.min(limit, 8))
+    .map(compactStrategyListRow)
   return {
     action: 'custom_strategy_list',
+    detail,
     count: rows.length,
-    runnableCount: strategies.filter((row) => isRecord(row.lifecycle) && row.lifecycle.runnable === true).length,
-    invalidCount: strategies.filter((row) => row.status === 'invalid').length,
+    returned: strategies.length,
+    limit,
+    hasMore: filtered.length > selected.length,
+    requestedStrategyIds: Array.from(requestedIds),
+    missingStrategyIds: Array.from(requestedIds).filter((id) => !allStrategies.some((row) => row.strategyId === id)),
+    runnableCount: allStrategies.filter((row) => isRecord(row.lifecycle) && row.lifecycle.runnable === true).length,
+    invalidCount: allStrategies.filter((row) => row.status === 'invalid').length,
     artifactContract: 'strategy-library-v1',
     paths: strategyArtifactPaths(String(ctx.basePath ?? process.cwd())),
-    runnableStrategies: strategies.filter((row) => isRecord(row.lifecycle) && row.lifecycle.runnable === true).slice(0, 8),
+    runnableStrategies: runnableRows,
     strategies,
+    nextActions: [
+      'Use custom_strategy_run with strategyId for executable readback.',
+      'Use custom_strategy_compare with strategyIds for saved evidence comparison.',
+      'Use custom_strategy_list with detail:"full" and strategyIds only when a full row is needed.',
+    ],
   }
 }
 
@@ -559,6 +588,95 @@ function strategyListSort(
   const rightInvalid = right.status === 'invalid' ? 1 : 0
   if (leftInvalid !== rightInvalid) return leftInvalid - rightInvalid
   return Date.parse(String(right.updatedAt ?? '')) - Date.parse(String(left.updatedAt ?? ''))
+}
+
+function compactStrategyListRow(row: Record<string, unknown>): Record<string, unknown> {
+  const lifecycle = isRecord(row.lifecycle) ? row.lifecycle : {}
+  const validationIssues = Array.isArray(row.validationIssues) ? row.validationIssues : []
+  const repairPlan = Array.isArray(row.repairPlan) ? row.repairPlan : []
+  const unsupportedDetails = Array.isArray(row.unsupportedDetails) ? row.unsupportedDetails : []
+  const dataSummary = compactDataAndAssumptionSummary(row.dataAndAssumptionSummary)
+  return {
+    strategyId: row.strategyId,
+    version: row.version,
+    status: row.status,
+    savedStatus: row.savedStatus,
+    updatedAt: row.updatedAt,
+    name: row.name,
+    assetClass: row.assetClass,
+    symbols: row.symbols,
+    evidenceAction: row.evidenceAction,
+    runnable: lifecycle.runnable === true,
+    lifecycleStatus: lifecycle.status ?? row.status,
+    lifecycleIssue: lifecycle.lifecycleIssue ?? null,
+    validationSummary: row.validationSummary ?? null,
+    validationIssueCount: validationIssues.length,
+    repairStepCount: repairPlan.length,
+    unsupportedCount: unsupportedDetails.length,
+    dataRequirements: row.dataRequirements ?? null,
+    dataAndAssumptionSummary: dataSummary,
+    itemPath: row.itemPath,
+  }
+}
+
+function compactDataAndAssumptionSummary(value: unknown): Record<string, unknown> {
+  if (!isRecord(value)) return {}
+  const dataCoverage = isRecord(value.dataCoverage) ? value.dataCoverage : null
+  const dataEvidence = isRecord(value.dataEvidence) ? value.dataEvidence : null
+  const fundCategoryEvidence = isRecord(value.fundCategoryEvidence) ? value.fundCategoryEvidence : null
+  const portfolioEvidence = isRecord(value.portfolioEvidence) ? value.portfolioEvidence : null
+  const riskRewardEvidence = isRecord(value.riskRewardEvidence) ? value.riskRewardEvidence : null
+  return {
+    assetClass: value.assetClass ?? null,
+    symbols: value.symbols ?? null,
+    ...(dataCoverage
+      ? {
+          dataCoverage: {
+            symbol: dataCoverage.symbol ?? null,
+            source: dataCoverage.source ?? null,
+            rows: dataCoverage.rows ?? dataCoverage.actualRows ?? null,
+            sufficient: dataCoverage.sufficient ?? null,
+            actualStartDate: dataCoverage.actualStartDate ?? null,
+            actualEndDate: dataCoverage.actualEndDate ?? null,
+          },
+        }
+      : {}),
+    ...(dataEvidence
+      ? {
+          dataEvidence: {
+            source: dataEvidence.source ?? null,
+            cacheStatus: dataEvidence.cacheStatus ?? null,
+            fetchedAt: dataEvidence.fetchedAt ?? null,
+            sourceDataTime: dataEvidence.sourceDataTime ?? null,
+          },
+        }
+      : {}),
+    ...(fundCategoryEvidence ? { fundCategoryEvidence } : {}),
+    ...(portfolioEvidence
+      ? {
+          portfolioEvidence: {
+            selectedSymbols: portfolioEvidence.selectedSymbols ?? null,
+            portfolioReturnPct: portfolioEvidence.portfolioReturnPct ?? null,
+            portfolioMaxDrawdownPct: portfolioEvidence.portfolioMaxDrawdownPct ?? null,
+          },
+        }
+      : {}),
+    ...(riskRewardEvidence
+      ? {
+          riskRewardEvidence: {
+            profitFactor: riskRewardEvidence.profitFactor ?? null,
+            payoffRatio: riskRewardEvidence.payoffRatio ?? null,
+            expectancyPct: riskRewardEvidence.expectancyPct ?? null,
+          },
+        }
+      : {}),
+  }
+}
+
+function clampListLimit(value: unknown): number {
+  const numeric = typeof value === 'number' ? value : Number(value)
+  if (!Number.isFinite(numeric)) return 8
+  return Math.max(1, Math.min(50, Math.trunc(numeric)))
 }
 
 function effectiveStatus(row: StrategyRecord, validation: StrategyValidationContract | null): string {
