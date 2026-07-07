@@ -333,6 +333,15 @@ the evidence is ordinary fund NAV, money-fund yield, or ETF/listed-fund
 evidence. Money funds should report `pricingBasis:"money_yield"` and ETF /
 ETF-link rows must state whether the evidence uses NAV, listed market price,
 or still requires an explicit pricing basis.
+For ETF/listed-fund rotation, pricing-basis disclosure is mandatory:
+before giving a concrete rotation design, make one bounded listed-price
+evidence read with `MarketData(action:"etf")`, `MarketData(action:"quote")`, or
+local `DataStore(query_quote/query_kline)` for a small ETF basket. Then report
+observed listed-price/quote/K-line evidence, observed or missing NAV/IOPV
+evidence, and observed or missing underlying-index evidence. Premium or
+discount claims require NAV/IOPV rows; tracking or trend confirmation claims
+require underlying-index rows. If those rows were not retrieved, state that
+they are missing instead of presenting the check as verified.
 
 Saved strategy artifacts expose a code-owned `strategyType`. Use it when
 choosing lifecycle actions instead of reclassifying from prompt wording:

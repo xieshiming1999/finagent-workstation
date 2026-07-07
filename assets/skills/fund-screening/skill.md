@@ -63,6 +63,20 @@ live `fetch fund_holding` unless the user explicitly asks for manager due
 diligence, a validated observation strategy, or the final answer cannot
 honestly disclose the holding/manager gap.
 
+For ETF/listed-fund rotation, do not answer from fund-screening concepts alone.
+Make one bounded listed-price evidence read before giving a concrete rotation
+design. Use `MarketData(action:"etf")`, `MarketData(action:"quote")` for a
+small ETF basket, or local `DataStore(query_quote/query_kline)` when rows are
+already available. In the final answer, explicitly separate:
+
+- observed listed market price / quote / K-line evidence;
+- missing or not retrieved NAV / IOPV evidence;
+- missing or not retrieved underlying-index evidence.
+
+Use NAV / IOPV only for premium-discount checks and use underlying-index rows
+only for tracking or trend confirmation. If those rows were not retrieved,
+state the gap rather than presenting the checks as verified.
+
 ### 2. Use the desktop fund screener
 
 4433-style return screening:

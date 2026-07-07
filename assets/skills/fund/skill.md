@@ -116,6 +116,33 @@ separate contract validates the next step.
     `XueqiuTrade` execution as the immediate next step unless the user
     explicitly asks to prepare or execute a trade.
 
+### ETF / listed-fund rotation
+1. Treat ETF/listed-fund rotation as a listed-market workflow, not an ordinary
+   open-end fund workflow. Listed quote/K-line evidence is the execution and
+   ranking basis when those are the only rows retrieved.
+2. Before giving a concrete rotation design, make one bounded evidence read for
+   listed ETF prices or K-line rows. Prefer the governed ETF/listed-price path
+   such as `MarketData(action: "etf")`, `MarketData(action: "quote")` for a
+   small ETF basket, or local `DataStore(query_quote/query_kline)` when rows are
+   already available. Do not answer as if ETF evidence was observed when the
+   only tool used was `Skill`.
+3. Always disclose pricing-basis status in the final answer:
+   - observed: listed market price / quote / K-line when `MarketData(quote)`,
+     `DataStore(query_quote)`, ETF quote rows, or ETF K-line rows were used;
+   - missing or not retrieved: NAV / IOPV when no fund NAV, ETF NAV, IOPV, or
+     Wind ETF price-indicator row was read;
+   - missing or not retrieved: underlying index evidence when no index quote or
+     index K-line row was read.
+4. Use NAV / IOPV for premium-discount checks and use underlying index data for
+   tracking-error or trend-confirmation checks. Do not present those checks as
+   verified unless the supporting rows were actually retrieved.
+5. For a design-only answer, one bounded listed-price read is acceptable, but
+   the answer must label what was observed and what still needs NAV/IOPV or
+   index confirmation before execution.
+6. Do not trigger subscription, redemption, simulated trade, or Xueqiu actions
+   unless the user explicitly asks for trade preparation and confirms the side
+   effect.
+
 For a text fund comparison, the normal bounded path is Skill plus local
 DataStore readbacks. Do not switch to `DataProcess(stats)`, stock/K-line tools,
 `ServiceCall`, or `Script` to recompute metrics unless the user explicitly asks
