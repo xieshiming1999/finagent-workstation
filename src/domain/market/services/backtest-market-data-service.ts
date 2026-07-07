@@ -336,20 +336,19 @@ export class BacktestMarketDataService {
         dataEvidence: loaded.evidence,
       })
     }
-    return JSON.stringify(
-      rankCustomStrategyPortfolio({
-        strategySpec: input.strategySpec,
-        candidates,
-        topN: Number(input.topN ?? 3),
-        rankingMetric: String(input.rankingMetric ?? 'score'),
-        rebalanceInterval: String(input.rebalanceInterval ?? input.rebalance_interval ?? 'single_period_draft'),
-        maxPositionWeight: Number(input.maxPositionWeight ?? input.max_position_weight ?? Number.NaN),
-        minScore: Number(input.minScore ?? input.min_score ?? Number.NaN),
-        maxPairwiseCorrelation: Number(input.maxPairwiseCorrelation ?? input.max_pairwise_correlation ?? Number.NaN),
-      }),
-      null,
-      2,
-    )
+    const ranked = rankCustomStrategyPortfolio({
+      strategySpec: input.strategySpec,
+      candidates,
+      topN: Number(input.topN ?? 3),
+      rankingMetric: String(input.rankingMetric ?? 'score'),
+      rebalanceInterval: String(input.rebalanceInterval ?? input.rebalance_interval ?? 'single_period_draft'),
+      maxPositionWeight: Number(input.maxPositionWeight ?? input.max_position_weight ?? Number.NaN),
+      minScore: Number(input.minScore ?? input.min_score ?? Number.NaN),
+      maxPairwiseCorrelation: Number(input.maxPairwiseCorrelation ?? input.max_pairwise_correlation ?? Number.NaN),
+    })
+    const detail = String(input.detail ?? input.mode ?? '').toLowerCase()
+    if (detail === 'full') return JSON.stringify(ranked, null, 2)
+    return JSON.stringify(compactCustomStrategyRankResult(ranked))
   }
 
   private async readCustomStrategySave(
@@ -897,6 +896,184 @@ function portfolioRankReadbackFields(summary: Record<string, unknown>): Record<s
       'request_trade_preparation_after_confirmation',
     ],
     tradeBoundary: 'Portfolio rank readback only; no simulated or real orders without explicit confirmation, separate sizing, and non-writing preview.',
+  }
+}
+
+function compactCustomStrategyRankResult(full: Record<string, unknown>): Record<string, unknown> {
+  const portfolioEvidence = asRecord(full.portfolioEvidence)
+  const rebalanceDraft = asRecord(full.rebalanceDraft)
+  const selectedPositions = compactArray(rebalanceDraft?.positions, 5, compactPortfolioPosition)
+  return {
+    action: full.action ?? 'custom_strategy_rank',
+    detail: 'summary',
+    status: full.status,
+    strategyId: full.strategyId,
+    version: full.version,
+    validationSummary: full.validationSummary,
+    validationIssues: full.validationIssues ?? [],
+    unsupportedDetails: full.unsupportedDetails ?? [],
+    dataRequirements: compactDataRequirements(full.dataRequirements),
+    rankingMetric: full.rankingMetric,
+    candidateCount: full.candidateCount,
+    rankedCount: full.rankedCount,
+    failedCount: full.failedCount,
+    ranked: compactArray(full.ranked, 10, compactRankedRow),
+    excluded: compactArray(full.excluded, 10, compactExcludedRow),
+    candidateFailureEvidence: full.candidateFailureEvidence,
+    selectedSymbols: selectedPositions
+      .map((position) => String(asRecord(position)?.symbol ?? '').trim())
+      .filter(Boolean),
+    portfolioEvidence: portfolioEvidence ? {
+      mode: portfolioEvidence.mode,
+      selectedCount: portfolioEvidence.selectedCount,
+      assumptions: portfolioEvidence.assumptions,
+      selectionEvidence: portfolioEvidence.selectionEvidence,
+      aggregateMetrics: portfolioEvidence.aggregateMetrics,
+      correlationEvidence: portfolioEvidence.correlationEvidence,
+      portfolioRiskEvidence: portfolioEvidence.portfolioRiskEvidence,
+      portfolioReturnQualityEvidence: portfolioEvidence.portfolioReturnQualityEvidence,
+      concentrationEvidence: portfolioEvidence.concentrationEvidence,
+      portfolioStabilityEvidence: portfolioEvidence.portfolioStabilityEvidence,
+      portfolioRebalanceSimulation: portfolioEvidence.portfolioRebalanceSimulation,
+      portfolioBacktestEvidence: portfolioEvidence.portfolioBacktestEvidence,
+      portfolioScoringEvidence: portfolioEvidence.portfolioScoringEvidence,
+      portfolioDrawdownBudgetEvidence: portfolioEvidence.portfolioDrawdownBudgetEvidence,
+      positionContributionEvidence: compactPositionContributionEvidence(portfolioEvidence.positionContributionEvidence),
+      portfolioValidation: portfolioEvidence.portfolioValidation,
+      riskNotes: portfolioEvidence.riskNotes,
+    } : undefined,
+    rebalanceDraft: rebalanceDraft ? {
+      mode: rebalanceDraft.mode,
+      topN: rebalanceDraft.topN,
+      rebalanceInterval: rebalanceDraft.rebalanceInterval,
+      maxPositionWeight: rebalanceDraft.maxPositionWeight,
+      minScore: rebalanceDraft.minScore,
+      maxPairwiseCorrelation: rebalanceDraft.maxPairwiseCorrelation,
+      positions: selectedPositions,
+      tradeBoundary: rebalanceDraft.tradeBoundary,
+      evidenceSource: 'See portfolioEvidence for aggregate metrics, concentration, drawdown budget, validation, and rebalance simulation.',
+    } : undefined,
+    rankedRowsEvidence: full.rankedRowsEvidence,
+    allCandidates: compactArray(full.allCandidates, 12, compactCandidateRow),
+    workflowAdvice: full.workflowAdvice,
+    fullResultAdvice: 'Default custom_strategy_rank output is compact to avoid tool-output spill. Use detail:"full" only for explicit diagnostics; do not open memory/.tool_outputs files for normal workflow answers.',
+  }
+}
+
+function compactArray(
+  value: unknown,
+  limit: number,
+  mapper: (row: Record<string, unknown>) => Record<string, unknown>,
+): Array<Record<string, unknown>> {
+  if (!Array.isArray(value)) return []
+  return value.map(asRecord).filter((row): row is Record<string, unknown> => !!row).slice(0, limit).map(mapper)
+}
+
+function compactDataRequirements(value: unknown): Record<string, unknown> | undefined {
+  const dataRequirements = asRecord(value)
+  if (!dataRequirements) return undefined
+  const indicators = asRecord(dataRequirements.indicators)
+  return {
+    indicatorKeys: indicators ? Object.keys(indicators) : [],
+    minimumBars: dataRequirements.minimumBars,
+    notes: 'Compact summary only. Use detail:"full" for full indicator schemas.',
+  }
+}
+
+function compactPositionContributionEvidence(value: unknown): Record<string, unknown> | undefined {
+  const evidence = asRecord(value)
+  if (!evidence) return undefined
+  return {
+    mode: evidence.mode,
+    targetWeight: evidence.targetWeight,
+    selectedCount: evidence.selectedCount,
+    tradeBoundary: evidence.tradeBoundary,
+    positions: compactArray(evidence.positions, 5, (row) => ({
+      symbol: row.symbol,
+      rankingMetric: row.rankingMetric,
+      relativeStrengthPercentile: row.relativeStrengthPercentile,
+      weightedReturnContributionPct: row.weightedReturnContributionPct,
+      weightedDrawdownContributionPct: row.weightedDrawdownContributionPct,
+      selectionEvidence: row.selectionEvidence,
+      weightEvidence: row.weightEvidence,
+      dataCoverage: row.dataCoverage,
+    })),
+  }
+}
+
+function compactRankedRow(row: Record<string, unknown>): Record<string, unknown> {
+  return {
+    symbol: row.symbol,
+    name: row.name,
+    rank: row.rank,
+    score: row.score,
+    rankingMetric: row.rankingMetric,
+    status: row.status,
+    relativeStrength: row.relativeStrength,
+    selectionEvidence: row.selectionEvidence,
+    weightEvidence: row.weightEvidence,
+    assumptions: row.assumptions,
+    selectedForDraft: asRecord(row.selectionEvidence)?.selectedForDraft,
+    exclusionReason: asRecord(row.selectionEvidence)?.exclusionReason,
+    metrics: row.metrics,
+    dataCoverage: row.dataCoverage,
+    dataEvidence: row.dataEvidence,
+    benchmarkEvidence: row.benchmarkEvidence,
+    riskEvidence: compactRiskEvidence(row.riskEvidence),
+  }
+}
+
+function compactCandidateRow(row: Record<string, unknown>): Record<string, unknown> {
+  return {
+    symbol: row.symbol,
+    name: row.name,
+    rank: row.rank,
+    status: row.status,
+    score: row.score,
+    selectedForDraft: asRecord(row.selectionEvidence)?.selectedForDraft,
+    exclusionReason: asRecord(row.selectionEvidence)?.exclusionReason,
+    dataCoverage: row.dataCoverage,
+  }
+}
+
+function compactRiskEvidence(value: unknown): Record<string, unknown> | unknown {
+  const risk = asRecord(value)
+  if (!risk) return value
+  return {
+    mode: risk.mode,
+    maxDrawdownPct: risk.maxDrawdownPct,
+    sharpeRatio: risk.sharpeRatio,
+    volatilityPct: risk.volatilityPct,
+    atrPct: risk.atrPct,
+    riskWarnings: risk.riskWarnings,
+  }
+}
+
+function compactExcludedRow(row: Record<string, unknown>): Record<string, unknown> {
+  return {
+    symbol: row.symbol,
+    name: row.name,
+    rank: row.rank,
+    score: row.score,
+    status: row.status,
+    error: row.error,
+    reason: row.reason ?? row.exclusionReason ?? asRecord(row.selectionEvidence)?.exclusionReason,
+    selectionEvidence: row.selectionEvidence,
+    dataCoverage: row.dataCoverage,
+    dataEvidence: row.dataEvidence,
+    validationIssues: row.validationIssues,
+  }
+}
+
+function compactPortfolioPosition(row: Record<string, unknown>): Record<string, unknown> {
+  return {
+    symbol: row.symbol,
+    targetWeight: row.targetWeight,
+    weightCapped: row.weightCapped,
+    basis: row.basis,
+    selectionEvidence: row.selectionEvidence,
+    weightEvidence: row.weightEvidence,
+    contributionEvidence: row.contributionEvidence,
   }
 }
 

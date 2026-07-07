@@ -3464,6 +3464,7 @@ describe('BacktestMarketDataService', () => {
         rankingMetric: 'relative_strength_pct',
         rebalanceInterval: 'monthly',
         maxPositionWeight: 0.4,
+        detail: 'full',
       },
       { basePath: '/tmp' } as any,
       '',

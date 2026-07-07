@@ -344,7 +344,26 @@ export class WatchlistTool implements Tool {
           } : {}),
         }))
 
-        return JSON.stringify({ count: list.length, items: list }, null, 2)
+        const stockSymbols = results
+          .filter((item) => item.status === 'watching' && (item.type || 'stock').toLowerCase() === 'stock')
+          .map((item) => item.symbol)
+          .filter(Boolean)
+        const uniqueStockSymbols = Array.from(new Set(stockSymbols)).slice(0, 12)
+        const payload: Record<string, unknown> = { count: list.length, items: list }
+        if (uniqueStockSymbols.length >= 2) {
+          payload.nextAction = {
+            tool: 'MarketData',
+            action: 'custom_strategy_rank',
+            symbols: uniqueStockSymbols,
+            topN: Math.min(3, uniqueStockSymbols.length),
+            maxPositionWeight: 0.35,
+            rebalanceInterval: 'monthly',
+            boundary: 'Evidence-only portfolio observation. Use portfolioEvidence, concentrationEvidence, drawdown-budget evidence, candidateFailureEvidence, and rebalanceDraft. Do not create watchlist entries, Portfolio orders, XueqiuTrade actions, broker orders, or automatic rebalances unless a separate user confirmation authorizes that side effect.',
+            reason: 'Multiple watched stock symbols are available. For portfolio observation, use the governed custom_strategy_rank contract instead of manually ranking quotes or K-line summaries.',
+          }
+        }
+
+        return JSON.stringify(payload, null, 2)
       }
 
       case 'enter': {
