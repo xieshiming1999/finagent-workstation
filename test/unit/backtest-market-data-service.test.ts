@@ -536,13 +536,14 @@ describe('BacktestMarketDataService', () => {
       validationIssueCount: 0,
       repairStepCount: 0,
       unsupportedCount: 0,
-      dataRequirements: expect.objectContaining({ requiredLookbackBars: 20 }),
       dataAndAssumptionSummary: expect.objectContaining({
         dataCoverage: expect.objectContaining({ sufficient: true }),
       }),
     })
     expect(listed.strategies[0].itemPath).toBeUndefined()
+    expect(listed.strategies[0].dataRequirements).toBeUndefined()
     expect(listed.strategies[0].validationIssues).toBeUndefined()
+    expect(JSON.stringify(listed).length).toBeLessThan(9000)
     const fullListed = JSON.parse(await service.readAction('custom_strategy_list', { detail: 'full', strategyIds: ['custom_rsi_volume_rebound_v1'] }, { basePath } as any, '', 120))
     expect(fullListed).toMatchObject({ action: 'custom_strategy_list', detail: 'full', count: 1, returned: 1 })
     expect(fullListed.paths).toMatchObject({

@@ -613,7 +613,6 @@ function compactStrategyListRow(row: Record<string, unknown>): Record<string, un
     validationIssueCount: validationIssues.length,
     repairStepCount: repairPlan.length,
     unsupportedCount: unsupportedDetails.length,
-    dataRequirements: row.dataRequirements ?? null,
     dataAndAssumptionSummary: dataSummary,
   }
 }
