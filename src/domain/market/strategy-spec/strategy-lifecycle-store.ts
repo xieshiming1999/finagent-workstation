@@ -7,6 +7,13 @@ import {
   strategyArtifactPaths,
   strategyItemPath,
 } from './strategy-artifact-contract'
+import { normalizeStrategySpec } from './strategy-spec-normalizer'
+import {
+  isFundStrategySpec,
+  validateFundStrategySpec,
+  validateStockStrategySpec,
+  type StrategyValidationContract,
+} from './strategy-spec-validator'
 
 type StrategyRecord = {
   strategyId: string
@@ -135,48 +142,60 @@ function statusForEvidence(evidence: unknown): StrategyRecord['status'] {
 
 export function listCustomStrategyRecords(ctx: ToolContext): Record<string, unknown> {
   const rows = readStore(ctx)
+  const strategies = rows.map((row) => {
+    const spec = row.strategySpec ?? row.spec
+    const savedValidation = validateSavedStrategySpec(spec)
+    const evidence = isRecord(row.backtestEvidence) ? row.backtestEvidence : isRecord(row.evidence) ? row.evidence : {}
+    const validationIssues = savedValidation?.validationIssues ??
+      row.validationIssues ??
+      (isRecord(row.validationReport) && Array.isArray(row.validationReport.validationIssues) ? row.validationReport.validationIssues : null) ??
+      (isRecord(evidence) && Array.isArray(evidence.validationIssues) ? evidence.validationIssues : [])
+    const repairPlan = savedValidation?.repairPlan ??
+      row.repairPlan ??
+      (isRecord(row.validationReport) && Array.isArray(row.validationReport.repairPlan) ? row.validationReport.repairPlan : null) ??
+      (isRecord(evidence) && Array.isArray(evidence.repairPlan) ? evidence.repairPlan : [])
+    const unsupportedDetails = savedValidation?.unsupportedDetails ??
+      row.unsupportedDetails ??
+      (isRecord(row.validationReport) && Array.isArray(row.validationReport.unsupportedDetails) ? row.validationReport.unsupportedDetails : null) ??
+      (isRecord(evidence) && Array.isArray(evidence.unsupportedDetails) ? evidence.unsupportedDetails : [])
+    const lifecycle = effectiveLifecycle(row, savedValidation)
+    return {
+      strategyId: row.strategyId,
+      version: row.version,
+      status: effectiveStatus(row, savedValidation),
+      savedStatus: row.status,
+      updatedAt: row.updatedAt,
+      name: spec?.name,
+      assetClass: spec?.assetClass ?? spec?.market ?? 'stock',
+      symbols: symbolsOf(spec ?? {}),
+      evidenceAction: evidence.action ?? null,
+      validationSummary:
+        savedValidation?.validationSummary ??
+        row.validationSummary ??
+        (isRecord(row.validationReport) ? row.validationReport.validationSummary : null) ??
+        (isRecord(evidence) ? evidence.validationSummary : null),
+      validationIssues,
+      repairPlan,
+      unsupportedDetails,
+      dataRequirements:
+        savedValidation?.dataRequirements ??
+        row.dataRequirements ??
+        (isRecord(row.validationReport) ? row.validationReport.dataRequirements : null) ??
+        (isRecord(evidence) ? evidence.dataRequirements : null),
+      dataAndAssumptionSummary: row.dataAndAssumptionSummary ?? {},
+      lifecycle,
+      itemPath: strategyItemPath(String(ctx.basePath ?? process.cwd()), String(row.strategyId)),
+    }
+  }).sort(strategyListSort)
   return {
     action: 'custom_strategy_list',
     count: rows.length,
+    runnableCount: strategies.filter((row) => isRecord(row.lifecycle) && row.lifecycle.runnable === true).length,
+    invalidCount: strategies.filter((row) => row.status === 'invalid').length,
     artifactContract: 'strategy-library-v1',
     paths: strategyArtifactPaths(String(ctx.basePath ?? process.cwd())),
-    strategies: rows.map((row) => {
-      const spec = row.strategySpec ?? row.spec
-      const evidence = isRecord(row.backtestEvidence) ? row.backtestEvidence : isRecord(row.evidence) ? row.evidence : {}
-      return {
-        strategyId: row.strategyId,
-        version: row.version,
-        status: row.status,
-        updatedAt: row.updatedAt,
-        name: spec?.name,
-        assetClass: spec?.assetClass ?? spec?.market ?? 'stock',
-        symbols: symbolsOf(spec ?? {}),
-        evidenceAction: evidence.action ?? null,
-        validationSummary:
-          row.validationSummary ??
-          (isRecord(row.validationReport) ? row.validationReport.validationSummary : null) ??
-          (isRecord(evidence) ? evidence.validationSummary : null),
-        validationIssues:
-          row.validationIssues ??
-          (isRecord(row.validationReport) && Array.isArray(row.validationReport.validationIssues) ? row.validationReport.validationIssues : null) ??
-          (isRecord(evidence) && Array.isArray(evidence.validationIssues) ? evidence.validationIssues : []),
-        repairPlan:
-          row.repairPlan ??
-          (isRecord(row.validationReport) && Array.isArray(row.validationReport.repairPlan) ? row.validationReport.repairPlan : null) ??
-          (isRecord(evidence) && Array.isArray(evidence.repairPlan) ? evidence.repairPlan : []),
-        unsupportedDetails:
-          row.unsupportedDetails ??
-          (isRecord(row.validationReport) && Array.isArray(row.validationReport.unsupportedDetails) ? row.validationReport.unsupportedDetails : null) ??
-          (isRecord(evidence) && Array.isArray(evidence.unsupportedDetails) ? evidence.unsupportedDetails : []),
-        dataRequirements:
-          row.dataRequirements ??
-          (isRecord(row.validationReport) ? row.validationReport.dataRequirements : null) ??
-          (isRecord(evidence) ? evidence.dataRequirements : null),
-        dataAndAssumptionSummary: row.dataAndAssumptionSummary ?? {},
-        lifecycle: row.lifecycle ?? {},
-        itemPath: strategyItemPath(String(ctx.basePath ?? process.cwd()), String(row.strategyId)),
-      }
-    }),
+    runnableStrategies: strategies.filter((row) => isRecord(row.lifecycle) && row.lifecycle.runnable === true).slice(0, 8),
+    strategies,
   }
 }
 
@@ -220,7 +239,8 @@ export function loadRunnableCustomStrategyRecord(ctx: ToolContext, strategyId: s
 }
 
 export function loadRunnableCustomStrategySpec(ctx: ToolContext, strategyId: string): StrategySpec {
-  return loadRunnableCustomStrategyRecord(ctx, strategyId).spec
+  const row = loadRunnableCustomStrategyRecord(ctx, strategyId)
+  return row.strategySpec ?? row.spec
 }
 
 export function savedCustomStrategyRecordSymbol(ctx: ToolContext, strategyId: string): string | null {
@@ -387,7 +407,8 @@ function symbolsOf(spec: Record<string, unknown>): string[] {
 
 function comparisonRow(row: StrategyRecord): Record<string, unknown> {
   const spec = row.strategySpec ?? row.spec ?? {}
-  const lifecycle = isRecord(row.lifecycle) ? row.lifecycle : {}
+  const savedValidation = validateSavedStrategySpec(spec)
+  const lifecycle = effectiveLifecycle(row, savedValidation)
   const summary = isRecord(row.dataAndAssumptionSummary) ? row.dataAndAssumptionSummary : {}
   const evidence = isRecord(row.backtestEvidence) ? row.backtestEvidence : isRecord(row.evidence) ? row.evidence : {}
   const metrics = isRecord(evidence.metrics) ? evidence.metrics : {}
@@ -441,16 +462,17 @@ function comparisonRow(row: StrategyRecord): Record<string, unknown> {
   return {
     strategyId: row.strategyId,
     name: spec.name,
-    status: row.status,
+    status: effectiveStatus(row, savedValidation),
+    savedStatus: row.status,
     strategyType: strategyTypeOf(row.status, spec, evidenceAction, summary),
     assetClass: spec.assetClass ?? spec.market ?? 'stock',
     symbols: symbolsOf(spec),
     runnable: lifecycle.runnable === true,
     updatedAt: row.updatedAt,
     evidenceAction: evidenceAction || null,
-    validationIssueCount: Array.isArray(row.validationIssues) ? row.validationIssues.length : 0,
-    repairStepCount: Array.isArray(row.repairPlan) ? row.repairPlan.length : 0,
-    unsupportedCount: Array.isArray(row.unsupportedDetails) ? row.unsupportedDetails.length : 0,
+    validationIssueCount: Array.isArray(savedValidation?.validationIssues) ? savedValidation.validationIssues.length : Array.isArray(row.validationIssues) ? row.validationIssues.length : 0,
+    repairStepCount: Array.isArray(savedValidation?.repairPlan) ? savedValidation.repairPlan.length : Array.isArray(row.repairPlan) ? row.repairPlan.length : 0,
+    unsupportedCount: Array.isArray(savedValidation?.unsupportedDetails) ? savedValidation.unsupportedDetails.length : Array.isArray(row.unsupportedDetails) ? row.unsupportedDetails.length : 0,
     metrics: {
       totalReturnPct: metrics.totalReturnPct,
       sharpeRatio: metrics.sharpeRatio,
@@ -508,6 +530,64 @@ function comparisonRow(row: StrategyRecord): Record<string, unknown> {
     },
     score: comparisonScore(metrics, riskReward, portfolioMetrics),
     tradeBoundary: 'Saved strategy comparison is evidence-only; it does not authorize simulated or real order placement.',
+  }
+}
+
+function validateSavedStrategySpec(spec: unknown): StrategyValidationContract | null {
+  if (!isRecord(spec)) return null
+  const contractSpec = spec as unknown as StrategySpec
+  const rawValidation = isFundStrategySpec(contractSpec)
+    ? validateFundStrategySpec(spec as unknown as StrategySpec)
+    : validateStockStrategySpec(spec as unknown as StrategySpec)
+  if (rawValidation.status === 'rejected') return rawValidation
+  const normalized = normalizeStrategySpec(spec as unknown as StrategySpec) as StrategySpec & Record<string, unknown>
+  return isFundStrategySpec(normalized)
+    ? validateFundStrategySpec(normalized)
+    : validateStockStrategySpec(normalized)
+}
+
+function strategyListSort(
+  left: Record<string, unknown>,
+  right: Record<string, unknown>,
+): number {
+  const leftLifecycle = isRecord(left.lifecycle) ? left.lifecycle : {}
+  const rightLifecycle = isRecord(right.lifecycle) ? right.lifecycle : {}
+  const leftRunnable = leftLifecycle.runnable === true ? 1 : 0
+  const rightRunnable = rightLifecycle.runnable === true ? 1 : 0
+  if (leftRunnable !== rightRunnable) return rightRunnable - leftRunnable
+  const leftInvalid = left.status === 'invalid' ? 1 : 0
+  const rightInvalid = right.status === 'invalid' ? 1 : 0
+  if (leftInvalid !== rightInvalid) return leftInvalid - rightInvalid
+  return Date.parse(String(right.updatedAt ?? '')) - Date.parse(String(left.updatedAt ?? ''))
+}
+
+function effectiveStatus(row: StrategyRecord, validation: StrategyValidationContract | null): string {
+  if (validation?.status === 'rejected') return 'invalid'
+  return row.status
+}
+
+function effectiveLifecycle(row: StrategyRecord, validation: StrategyValidationContract | null): Record<string, unknown> {
+  const base = isRecord(row.lifecycle) ? row.lifecycle : {}
+  const status = effectiveStatus(row, validation)
+  const runnable = status === 'backtested' && validation?.status !== 'rejected'
+  return {
+    ...base,
+    status,
+    savedStatus: row.status,
+    runnable,
+    ...(validation?.status === 'rejected'
+      ? {
+          lifecycleIssue: {
+            category: 'validation',
+            path: 'strategySpec',
+            field: 'strategySpec',
+            value: row.strategyId,
+            message: validation.errors.join('; '),
+            suggestion: 'Repair and save a validated StrategySpec before requesting executable rerun.',
+          },
+          nextActions: ['read_saved_evidence', 'repair_strategy_spec'],
+        }
+      : {}),
   }
 }
 

@@ -2713,7 +2713,69 @@ describe('BacktestMarketDataService', () => {
     expect(readback.validationIssues).toEqual(expect.arrayContaining([
       expect.objectContaining({ category: 'lifecycle', path: 'strategyId' }),
     ]))
-    expect(readback.repairPlan).toEqual([])
+    expect(readback.repairPlan).toEqual(expect.arrayContaining([
+      expect.objectContaining({
+        repairAction: 'repair_and_save_validated_strategy_spec',
+        blocking: true,
+      }),
+    ]))
+  })
+
+  it('marks stale invalid saved strategies as non-runnable and returns readback instead of tool error', async () => {
+    const basePath = fs.mkdtempSync(path.join(os.tmpdir(), 'fin-custom-strategy-invalid-saved-'))
+    fs.mkdirSync(path.join(basePath, 'data'), { recursive: true })
+    fs.writeFileSync(path.join(basePath, 'data', 'custom-strategies.json'), JSON.stringify([
+      {
+        strategyId: 'custom_invalid_price_ref_v1',
+        status: 'backtested',
+        updatedAt: '2026-07-07T00:00:00.000Z',
+        strategySpec: {
+          id: 'custom_invalid_price_ref_v1',
+          name: 'Invalid saved strategy',
+          market: 'cn',
+          symbol: '600519',
+          indicators: [
+            { id: 'sma20', type: 'sma', source: 'close', params: { period: 20 } },
+          ],
+          entry: { all: [{ left: 'price14', op: 'crosses_above', right: 'sma20' }] },
+          exit: { any: [{ type: 'stop_loss_pct', value: 5 }] },
+          positionSizing: { type: 'fixed_fraction', value: 0.2 },
+        },
+        backtestEvidence: { action: 'custom_strategy_backtest', status: 'backtested' },
+      },
+    ]))
+
+    const { BacktestMarketDataService } = await import('../../src/domain/market/services/backtest-market-data-service')
+    const service = new BacktestMarketDataService()
+
+    const listed = JSON.parse(await service.readAction('custom_strategy_list', {}, { basePath } as any, '', 120))
+    expect(listed.strategies[0]).toMatchObject({
+      strategyId: 'custom_invalid_price_ref_v1',
+      savedStatus: 'backtested',
+      lifecycle: expect.objectContaining({
+        savedStatus: 'backtested',
+      }),
+    })
+
+    const readback = JSON.parse(await service.readAction(
+      'custom_strategy_run',
+      { strategyId: 'custom_invalid_price_ref_v1' },
+      { basePath } as any,
+      '600519',
+      120,
+    ))
+    expect(readback).toMatchObject({
+      action: 'custom_strategy_run',
+      strategyId: 'custom_invalid_price_ref_v1',
+      status: 'readback_only',
+      runnable: false,
+      savedStatus: 'backtested',
+    })
+    expect(readback.reason).toContain('price14')
+    expect(readback.validationIssues).toEqual(expect.arrayContaining([
+      expect.objectContaining({ category: 'lifecycle' }),
+    ]))
+    expect(readback.lifecycleIssue.message).toContain('price14')
   })
 
   it('compares saved custom strategy lifecycle evidence without rerun', async () => {

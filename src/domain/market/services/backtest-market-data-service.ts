@@ -379,16 +379,21 @@ export class BacktestMarketDataService {
     }
     const resolvedCode = code || savedCustomStrategySymbol(ctx, strategyId)
     if (!resolvedCode) return JSON.stringify(savedStrategyReadback(ctx, strategyId, 'code-unavailable'), null, 2)
-    const spec = loadCustomStrategy(ctx, strategyId)
-    const loaded = await this.loadBarsPreferLocal(ctx, resolvedCode, Math.max(limit, 300))
-    const result = runCustomStrategyBacktest(spec, loaded.bars, resolvedCode)
-    return JSON.stringify({
-      ...result,
-      action: 'custom_strategy_run',
-      repairPlan: Array.isArray(record.repairPlan) ? record.repairPlan : [],
-      dataEvidence: loaded.evidence,
-      dataCoverage: strategyDataCoverage(spec, loaded.evidence, resolvedCode),
-    }, null, 2)
+    try {
+      const spec = loadCustomStrategy(ctx, strategyId)
+      const loaded = await this.loadBarsPreferLocal(ctx, resolvedCode, Math.max(limit, 300))
+      const result = runCustomStrategyBacktest(spec, loaded.bars, resolvedCode)
+      return JSON.stringify({
+        ...result,
+        action: 'custom_strategy_run',
+        repairPlan: Array.isArray(record.repairPlan) ? record.repairPlan : [],
+        dataEvidence: loaded.evidence,
+        dataCoverage: strategyDataCoverage(spec, loaded.evidence, resolvedCode),
+      }, null, 2)
+    } catch (error) {
+      const message = error instanceof Error ? error.message : String(error)
+      return JSON.stringify(savedStrategyReadback(ctx, strategyId, message), null, 2)
+    }
   }
 
   private resolveFundRows(
@@ -759,8 +764,24 @@ function savedStrategyReadback(ctx: ToolContext, strategyId: string, reason: str
     dataAndAssumptionSummary,
     lifecycle: record.lifecycle ?? {},
     lifecycleIssue,
-    validationIssues: [lifecycleIssue],
-    repairPlan: Array.isArray(record.repairPlan) ? record.repairPlan : [],
+    validationIssues: [
+      lifecycleIssue,
+      ...(Array.isArray(record.validationIssues) ? record.validationIssues : []),
+    ],
+    repairPlan: Array.isArray(record.repairPlan) && record.repairPlan.length > 0
+      ? record.repairPlan
+      : [{
+          source: 'custom_strategy_run',
+          category: 'lifecycle',
+          path: 'strategySpec',
+          field: 'strategySpec',
+          value: strategyId,
+          message: reason,
+          repairAction: 'repair_and_save_validated_strategy_spec',
+          target: 'custom_strategy_save',
+          blocking: true,
+          suggestion: 'Repair the saved StrategySpec, validate it, attach backtest evidence, then save a new runnable version.',
+        }],
     workflowAdvice: 'This saved strategy is not a runnable stock backtest artifact. Use this readback evidence directly, or create/save a backtested stock StrategySpec before requesting executable rerun.',
     ...portfolioRankReadbackFields(dataAndAssumptionSummary),
   }
