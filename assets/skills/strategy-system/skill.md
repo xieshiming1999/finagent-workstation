@@ -85,8 +85,10 @@ needed. Do not use `Read` to inspect overflow help output for ordinary
 strategy design.
 
 Do not use `Read`, `LS`, `Grep`, `Glob`, or hand-authored file paths to inspect
-strategy artifacts while designing or validating a strategy. Strategy lifecycle
-state is exposed through `custom_strategy_help`, `custom_strategy_validate`,
+strategy artifacts, memory files, skill source files, or tool-output files while
+designing, ranking, validating, or reviewing a strategy. Runtime memory needed
+for the turn is already injected; strategy lifecycle state is exposed through
+`custom_strategy_help`, `custom_strategy_validate`,
 `custom_strategy_backtest`, `custom_strategy_save`, `custom_strategy_list`,
 `custom_strategy_read`, `custom_strategy_compare`, and `custom_strategy_run`.
 Use `custom_strategy_read` for one saved strategy inspection; use
