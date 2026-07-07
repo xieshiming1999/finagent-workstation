@@ -53,6 +53,7 @@ function normalizeStrategyRecord(value: unknown): StrategyLibraryItem | null {
   const spec = firstRecord(row.strategySpec, row.spec)
   const evidence = firstRecord(row.backtestEvidence, row.evidence)
   const summary = asRecord(row.dataAndAssumptionSummary)
+  const lifecycle = asRecord(row.lifecycle)
   const strategyId = stringValue(row.strategyId) || stringValue(spec.id)
   if (!strategyId) return null
   const symbols = extractSymbols(spec, row)
@@ -81,7 +82,7 @@ function normalizeStrategyRecord(value: unknown): StrategyLibraryItem | null {
     dataSummary: summarizeDataEvidence(evidence, summary),
     riskRewardSummary: summarizeRiskReward(evidence, summary),
     assumptionSummary: summarizeAssumptions(spec, summary),
-    runnable: status === 'backtested',
+    runnable: lifecycle.runnable === true || status === 'backtested',
   }
 }
 

@@ -178,6 +178,28 @@ describe('strategy library surface contract', () => {
     })
   })
 
+  it('uses explicit lifecycle runnable state for strategy library actions', () => {
+    const payload = {
+      ok: true,
+      strategies: [
+        {
+          strategyId: 'validated_runnable_v1',
+          status: 'validated',
+          lifecycle: { runnable: true, status: 'backtested' },
+          spec: { name: 'Validated runnable', assetClass: 'stock', symbol: '600519' },
+          evidence: { action: 'custom_strategy_backtest' },
+        },
+      ],
+    }
+
+    const rendererItem = normalizeStrategyLibrary(payload).strategies[0]
+    expect(rendererItem.runnable).toBe(true)
+
+    const mainItem = normalizeStrategyLibraryItems({ ...payload, path: '', count: 1 })[0]
+    expect(mainItem.runnable).toBe(true)
+    expect(buildStrategyLibraryActionPrompt('rerun', mainItem)).toContain('custom_strategy_run')
+  })
+
   it('classifies ranked and ETF strategy artifacts with first-class strategy types', () => {
     const library = normalizeStrategyLibrary({
       ok: true,
