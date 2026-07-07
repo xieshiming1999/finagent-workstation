@@ -50,6 +50,7 @@ const indicatorCalculators: Record<string, IndicatorCalculator> = {
   aroon_oscillator: (bars, _values, period) => aroonOscillator(bars, period),
   aroon_up: (bars, _values, period) => aroonComponent(bars, period, 'up'),
   aroon_down: (bars, _values, period) => aroonComponent(bars, period, 'down'),
+  vortex_spread: (bars, _values, period) => vortexSpread(bars, period),
   rolling_volatility: (_bars, values, period) => rollingVolatility(values, period),
   donchian_width_pct: (bars, _values, period) => donchianWidthPct(bars, period),
   range_compression_ratio: (bars, _values, _period, params) => rangeCompressionRatio(bars, params),
@@ -775,6 +776,30 @@ function aroonComponent(bars: KlineBar[], period: number, component: 'up' | 'dow
     const aroonUp = (100 * (period - periodsSinceHigh)) / period
     const aroonDown = (100 * (period - periodsSinceLow)) / period
     return component === 'down' ? aroonDown : aroonUp
+  })
+}
+
+function vortexSpread(bars: KlineBar[], period: number): Array<number | null> {
+  return bars.map((_bar, index) => {
+    if (index < period || period <= 0) return null
+    let plusMovement = 0
+    let minusMovement = 0
+    let trueRange = 0
+    for (let i = index - period + 1; i <= index; i++) {
+      const current = bars[i]
+      const previous = bars[i - 1]
+      plusMovement += Math.abs(current.high - previous.low)
+      minusMovement += Math.abs(current.low - previous.high)
+      trueRange += Math.max(
+        current.high - current.low,
+        Math.max(
+          Math.abs(current.high - previous.close),
+          Math.abs(current.low - previous.close),
+        ),
+      )
+    }
+    if (trueRange === 0) return 0
+    return plusMovement / trueRange - minusMovement / trueRange
   })
 }
 
