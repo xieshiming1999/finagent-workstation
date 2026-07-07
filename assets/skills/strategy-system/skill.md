@@ -94,9 +94,11 @@ Do not use `Read`, `LS`, `Grep`, `Glob`, or hand-authored file paths to inspect
 strategy artifacts while designing or validating a strategy. Strategy lifecycle
 state is exposed through `custom_strategy_help`, `custom_strategy_validate`,
 `custom_strategy_backtest`, `custom_strategy_save`, `custom_strategy_list`,
-`custom_strategy_compare`, and `custom_strategy_run`. If those actions do not
-return the needed structured state, report the missing contract instead of
-guessing a file path.
+`custom_strategy_read`, `custom_strategy_compare`, and `custom_strategy_run`.
+Use `custom_strategy_read` for one saved strategy inspection; use
+`custom_strategy_run` only when rerunning a saved runnable stock strategy. If
+those actions do not return the needed structured state, report the missing
+contract instead of guessing a file path.
 
 ```text
 MarketData(action: "custom_strategy_help")
@@ -106,6 +108,7 @@ MarketData(action: "custom_strategy_observe", strategySpec: {...}, fundRows: [..
 MarketData(action: "custom_strategy_fund_backtest", strategySpec: {...}, fundRows: [...])
 MarketData(action: "custom_strategy_rank", symbols: ["600519","000858","300750"], strategySpec: {...}, topN: 2)
 MarketData(action: "custom_strategy_save", strategySpec: {...}, evidence: <backtest result>)
+MarketData(action: "custom_strategy_read", strategyId: "custom_rsi_volume_rebound_v1")
 MarketData(action: "custom_strategy_compare", strategyIds: ["custom_rsi_volume_rebound_v1"])
 MarketData(action: "custom_strategy_run", code: "600519", strategyId: "custom_rsi_volume_rebound_v1")
 ```
@@ -116,6 +119,18 @@ Before composing custom strategy calls, read
 code-owned call contract for validate, backtest, fund observe/backtest, rank,
 save, and run. Do not infer missing inputs from previous prose or saved file
 paths.
+
+Saved strategy rule: list is for discovery, read is for one artifact, run is
+for executable rerun. For “save, restart/readback, and rerun” workflows, use:
+
+```text
+MarketData(action: "custom_strategy_list")
+MarketData(action: "custom_strategy_read", strategyId: "<id>")
+MarketData(action: "custom_strategy_run", strategyId: "<id>")
+```
+
+Do not use `Read` on `custom-strategies.json`, `strategies/items/*.json`, or
+`.tool_outputs/*` to inspect saved strategy state.
 
 Lifecycle rule: `custom_strategy_backtest` with `status:"backtested"` and
 `lifecycleAdvice.saveable:true` is valid evidence for
