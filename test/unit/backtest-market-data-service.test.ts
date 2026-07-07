@@ -744,6 +744,12 @@ describe('BacktestMarketDataService', () => {
     expect(help.executableV1.catalogRequest).toMatchObject({ detail: 'catalog' })
     expect(help.executableV1.indicatorCatalog).toBeUndefined()
     expect(help.fundObservationV1.indicatorCatalog).toBeUndefined()
+    expect(help.executableV1.stockExample).toBeUndefined()
+    expect(help.fundObservationV1.ordinaryFundExample).toBeUndefined()
+    expect(help.proxyContract).toBeUndefined()
+    expect(help.unsupportedV1).toBeUndefined()
+    expect(help.executableV1.indicatorPreviewCatalog.length).toBeLessThanOrEqual(8)
+    expect(help.fundObservationV1.indicatorPreviewCatalog.length).toBeLessThanOrEqual(8)
     expect(Object.keys(help.inputContracts)).toEqual(expect.arrayContaining([
       'custom_strategy_validate',
       'custom_strategy_backtest',
@@ -757,8 +763,13 @@ describe('BacktestMarketDataService', () => {
     ]))
     expect(help.inputContracts.custom_strategy_run.requiredFields).toContain('strategyId')
     expect(help.inputContracts.custom_strategy_rank.requiredFields).toEqual(expect.arrayContaining(['strategySpec', 'symbols']))
-    expect(help.outputContracts.custom_strategy_run.coreFields).toContain('lifecycle')
-    expect(help.outputContracts.custom_strategy_compare.coreFields).toContain('strategies')
+    expect(help.outputContracts.custom_strategy_run).toContain('lifecycleIssue')
+    expect(help.outputContracts.custom_strategy_rank).toEqual(expect.arrayContaining(['ranked', 'portfolioEvidence', 'rebalanceDraft']))
+    expect(JSON.stringify(help).length).toBeLessThan(22000)
+    const contractHelp = JSON.parse(await service.readAction('custom_strategy_help', { detail: 'contracts' }, { basePath: '/tmp' } as any, '', 120))
+    expect(contractHelp.outputContracts.custom_strategy_run.coreFields).toContain('lifecycle')
+    expect(contractHelp.outputContracts.custom_strategy_compare.coreFields).toContain('strategies')
+    expect(contractHelp.executableV1.indicatorCatalog).toBeUndefined()
     const detailedHelp = JSON.parse(await service.readAction('custom_strategy_help', { detail: 'catalog' }, { basePath: '/tmp' } as any, '', 120))
     expect(detailedHelp).toMatchObject({
       action: 'custom_strategy_help',
@@ -902,7 +913,7 @@ describe('BacktestMarketDataService', () => {
     expect(detailedHelp.executableV1.indicatorCatalogByCategory.volume).toEqual(expect.arrayContaining([
       expect.objectContaining({ type: 'money_flow_index' }),
     ]))
-    expect(help.executableV1.stockExample).toMatchObject({
+    expect(detailedHelp.executableV1.stockExample).toMatchObject({
       indicators: expect.any(Array),
       entry: expect.objectContaining({ all: expect.any(Array) }),
       exit: expect.objectContaining({ any: expect.any(Array) }),
