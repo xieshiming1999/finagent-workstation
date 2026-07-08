@@ -56,6 +56,7 @@ const KNOWN_API_KEYS: Array<{
     | 'braveSearchApiKey'
     | 'tavilySearchApiKey'
     | 'fredApiKeyName'
+    | 'beaApiKeyName'
     | 'xueqiuCookieLabel'
     | 'xueqiuPortfolioIds'
   hint?: string
@@ -66,6 +67,7 @@ const KNOWN_API_KEYS: Array<{
   { key: 'BRAVE_SEARCH_KEY', labelKey: 'braveSearchApiKey', hintKey: 'thousandPerMonthFree' },
   { key: 'TAVILY_API_KEY', labelKey: 'tavilySearchApiKey', hintKey: 'thousandPerMonthFree' },
   { key: 'FRED_API_KEY', labelKey: 'fredApiKeyName', hint: 'fred.stlouisfed.org' },
+  { key: 'BEA_API_KEY', labelKey: 'beaApiKeyName', hint: 'apps.bea.gov' },
   { key: 'XQ_COOKIE', labelKey: 'xueqiuCookieLabel', hintKey: 'browserDevTools' },
   { key: 'XQ_PORTFOLIO', labelKey: 'xueqiuPortfolioIds', hint: 'finasimu,finhsimu,finamsim' },
 ]
