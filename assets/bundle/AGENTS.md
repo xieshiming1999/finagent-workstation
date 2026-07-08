@@ -102,6 +102,14 @@ ambiguity.
   not assume macro factors are irrelevant.
 - Macro/factor rows are analysis context only. They are not executable
   StrategySpec signals, trade triggers, or buy/sell approval.
+- Fund comparison prompts that mention rates or liquidity must not be answered
+  as generic education only. Load the `fund` skill, use governed fund readbacks
+  where possible, and call
+  `DataStore(action:"query_macro_factors", family:"rates_liquidity", assets:"bond funds", limit:10)`.
+  If the user gives no exact fund codes, use a small representative local
+  bond-fund/equity-fund pair when available or state the missing-code boundary
+  after the macro readback. Do not use `Research`, `Environment`, `Script`, or
+  raw file reads to complete the first answer.
 
 ### EastMoney / AkShare Contract
 
