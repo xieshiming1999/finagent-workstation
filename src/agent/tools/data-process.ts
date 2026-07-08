@@ -17,6 +17,7 @@ import {
 import { dataProcessCopy } from '../runtime-copy'
 import { DataStore } from '../data/store/data-store'
 import type { WatchlistItem } from '../watchlist-store'
+import { isCoreCnMarketIndexCode } from '../../domain/market/market-index-universe'
 
 import { existsSync, readFileSync, writeFileSync, mkdirSync } from 'fs'
 import { join } from 'path'
@@ -764,6 +765,7 @@ export class DataProcessTool implements Tool {
     const match = rawCode.match(/\d{6}/)
     if (!match) return false
     const code = match[0]
+    if (!hasFundMarker && isCoreCnMarketIndexCode(code)) return false
     try {
       const ds = await this.storeFor(ctx.basePath)
       const isKnownFund = ds.queryFundList({ limit: 50_000 }).some((row) => String(row.code ?? '') === code)

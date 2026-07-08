@@ -189,7 +189,7 @@ describe('DataStore screening failure logging', () => {
     const tool = new DataProcessTool()
 
     await expect(tool.call('dp-stock-indicators', { action: 'indicators', code: '000001', indicators: ['rsi'] }, makeCtx(cleanupPaths[cleanupPaths.length - 1]))).resolves.toContain(
-      'Indicators for 25 bars',
+      '"action": "indicators"',
     )
   })
 
@@ -227,6 +227,49 @@ describe('DataStore screening failure logging', () => {
       provider: 'local',
       indicators: { rsi14: expect.any(Number) },
     })
+  })
+
+  it('does not classify core market index codes as funds when fund_list has colliding codes', async () => {
+    const store = await openStore()
+    store.saveFundList([{
+      code: '000300',
+      name: '华夏沪深300ETF联接',
+      fund_type: 'index',
+      company: null,
+      manager: null,
+      setup_date: null,
+      total_size: 10,
+      nav: null,
+      nav_date: null,
+      return_1y: null,
+      return_3y: null,
+      return_ytd: null,
+      updated_at: '2026-06-26',
+    }])
+    store.saveKline(Array.from({ length: 25 }, (_, index) => ({
+      code: '000300',
+      date: `2026-05-${String(index + 1).padStart(2, '0')}`,
+      open: 10 + index * 0.1,
+      high: 10.2 + index * 0.1,
+      low: 9.8 + index * 0.1,
+      close: 10.1 + index * 0.1,
+      volume: 1000 + index,
+      amount: null,
+      change_pct: null,
+      turnover_rate: null,
+      adjust: 'qfq',
+      source: 'fixture',
+    })))
+    const tool = new DataProcessTool()
+
+    const output = await tool.call('dp-index-indicators', {
+      action: 'indicators',
+      code: '000300',
+      indicators: ['rsi'],
+    }, makeCtx(cleanupPaths[cleanupPaths.length - 1]))
+
+    expect(JSON.parse(output)).toMatchObject({ action: 'indicators', code: '000300', bars: 25 })
+    expect(output).not.toContain('known fund code in fund_list')
   })
 
   it('returns analysis evidence with governed provenance for summary', async () => {
