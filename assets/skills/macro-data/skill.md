@@ -68,9 +68,12 @@ Typical use:
 
 Base: `https://api.stlouisfed.org/fred/series/observations`
 
-`FRED_API_KEY` should be set in Settings. If it is missing, skip FRED and use
-governed factor readback, BEA/Fed Treasury/Frankfurter, or cached rows where
-possible. Do not assume Econdb anonymous access is available.
+`FRED_API_KEY` should be set in Settings. If the key is missing, unknown, or
+not visible in the current tool result, skip FRED and use governed factor
+readback, BEA/Fed Treasury/Frankfurter, or cached rows where possible. Never
+call a FRED URL with an empty `api_key=` parameter; record FRED as unavailable
+instead of spending a failing request. Do not assume Econdb anonymous access is
+available.
 
 | Metric | Series ID | Notes |
 |---|---|---|

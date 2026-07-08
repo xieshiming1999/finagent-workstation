@@ -151,11 +151,14 @@ separate contract validates the next step.
    effect.
 
 For a text fund comparison, the normal bounded path is Skill plus local
-DataStore readbacks. Do not switch to `DataProcess(stats)`, stock/K-line tools,
-`ServiceCall`, or `Script` to recompute metrics unless the user explicitly asks
-for a generated artifact or the local fund readbacks are insufficient. If NAV
-history is already returned with daily returns, estimate return/drawdown from
-the visible rows or state that exact deeper statistics were not computed.
+DataStore readbacks. Tool results are already in the conversation context; do
+not inspect `memory/.tool_outputs` or use `LS`, `Read`, `Grep`, `Glob`, `Bash`,
+`Script`, raw provider diagnostics, stock/K-line tools, or broad extra fetches
+to recompute metrics unless the user explicitly asks for a generated artifact
+or local fund readbacks are insufficient. If NAV history is already returned
+with daily returns, use the returned summary fields or estimate return/drawdown
+from the visible rows; otherwise state that exact deeper statistics were not
+computed.
 
 ## Dashboard Creation
 
