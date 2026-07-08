@@ -250,6 +250,66 @@ function renderAnalysisEvidence(evidence) {
   return html;
 }
 
+function normalizeArray(value) {
+  if (Array.isArray(value)) return value;
+  if (value === undefined || value === null || value === '') return [];
+  return [value];
+}
+
+function factorArrayValue(factor, keys) {
+  for (var i = 0; i < keys.length; i++) {
+    var value = factor && factor[keys[i]];
+    if (Array.isArray(value)) return value.join(', ');
+    if (nonEmpty(value)) return value;
+  }
+  return '';
+}
+
+function macroFactorRows(config) {
+  return normalizeArray(
+    config.macroFactors ||
+    config.macroFactorEvidence ||
+    (config.evidence && (config.evidence.macroFactors || config.evidence.macroFactorEvidence)) ||
+    (config.analysisEvidence && (config.analysisEvidence.macroFactors || config.analysisEvidence.macroFactorEvidence))
+  ).filter(function(row) {
+    return row && typeof row === 'object';
+  });
+}
+
+function renderMacroFactorEvidence(factors) {
+  var rows = normalizeArray(factors).filter(function(row) {
+    return row && typeof row === 'object';
+  });
+  if (!rows.length) return '';
+  return renderFlexibleTable({
+    headers: ['因子', '影响对象', '传导路径', '状态', '来源/时间'],
+    rows: rows.map(function(factor) {
+      var title = joinFields([
+        candidateValue(factor, ['title', 'name', 'factor', 'family']),
+        candidateValue(factor, ['severity', 'confidence'])
+      ]);
+      var affected = joinFields([
+        factorArrayValue(factor, ['affected_assets', 'affectedAssets', 'assets']),
+        factorArrayValue(factor, ['affected_regions', 'affectedRegions', 'regions']),
+        factorArrayValue(factor, ['affected_sectors', 'affectedSectors', 'sectors'])
+      ]);
+      var transmission = factorArrayValue(factor, ['transmission_channels', 'transmissionChannels', 'channels']);
+      var source = joinFields([
+        candidateValue(factor, ['source_name', 'sourceName', 'source']),
+        candidateValue(factor, ['source_published_at', 'sourcePublishedAt', 'sourceTime', 'asOf']),
+        candidateValue(factor, ['fetched_at', 'fetchedAt', 'retrievedAt'])
+      ]);
+      return [
+        title || '-',
+        affected || '-',
+        transmission || candidateValue(factor, ['summary']) || '-',
+        candidateValue(factor, ['status', 'failure_class', 'failureClass']) || '-',
+        source || '-'
+      ];
+    })
+  });
+}
+
 function buildSectionsFromConfig(config) {
   if (Array.isArray(config.sections) && config.sections.length) {
     var directSections = config.sections.map(function(section) {
@@ -268,6 +328,10 @@ function buildSectionsFromConfig(config) {
     var directEvidenceHtml = renderAnalysisEvidence(config.analysisEvidence || (config.evidence && config.evidence.analysisEvidence));
     if (directEvidenceHtml) {
       directSections.push({ title: '分析证据', type: 'html', content: directEvidenceHtml });
+    }
+    var directMacroHtml = renderMacroFactorEvidence(macroFactorRows(config));
+    if (directMacroHtml) {
+      directSections.push({ title: '宏观/因子证据', type: 'html', content: directMacroHtml });
     }
     return directSections.filter(hasRenderableSection);
   }
@@ -325,6 +389,11 @@ function buildSectionsFromConfig(config) {
   var evidenceHtml = renderAnalysisEvidence(config.analysisEvidence || (config.evidence && config.evidence.analysisEvidence));
   if (evidenceHtml) {
     sections.push({ title: '分析证据', type: 'html', content: evidenceHtml });
+  }
+
+  var macroHtml = renderMacroFactorEvidence(macroFactorRows(config));
+  if (macroHtml) {
+    sections.push({ title: '宏观/因子证据', type: 'html', content: macroHtml });
   }
 
   if (Array.isArray(config.gaps) && config.gaps.length) {
