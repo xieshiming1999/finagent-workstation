@@ -5,6 +5,7 @@ import { tmpdir } from 'os'
 import { DataStore } from '../../src/agent/data/store/data-store'
 import { closeDb } from '../../src/agent/data/store/db'
 import { readMacroFactorRadar, refreshMacroFactorRadar } from '../../src/main/macro-factor-radar'
+import { queryMacroFactors } from '../../src/agent/tools/data-store-tool-query-macro'
 
 describe('macro factor radar persistence', () => {
   let basePath = ''
@@ -69,5 +70,29 @@ describe('macro factor radar persistence', () => {
       interface_id: 'macro.factor_radar',
       status: 'ok',
     })
+  })
+
+  it('queries relevant macro factors with explicit missing evidence', () => {
+    readMacroFactorRadar(store)
+
+    const copper = JSON.parse(queryMacroFactors(store, { target: 'Copper', limit: 5 }))
+    expect(copper).toMatchObject({
+      action: 'query_macro_factors',
+      status: 'ok',
+      provenance: {
+        canonicalSchema: 'market_moving_factor_v1',
+        canonicalTable: 'market_moving_factor',
+        readbackAction: 'query_macro_factors',
+      },
+    })
+    expect(copper.rows.some((row: any) => `${row.title}`.includes('Copper'))).toBe(true)
+
+    const missing = JSON.parse(queryMacroFactors(store, { target: 'Nonexistent factor target', limit: 5 }))
+    expect(missing).toMatchObject({
+      action: 'query_macro_factors',
+      count: 0,
+      status: 'missing',
+    })
+    expect(missing.missingReason).toContain('macro-evidence gap')
   })
 })

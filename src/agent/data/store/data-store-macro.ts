@@ -56,13 +56,27 @@ export function saveMarketMovingFactors(store: StoreDeps, rows: Row[]): void {
 
 export function queryMarketMovingFactors(
   store: StoreDeps,
-  opts: { family?: string; status?: string; source?: string; limit?: number } = {},
+  opts: {
+    family?: string
+    status?: string
+    source?: string
+    target?: string
+    assets?: string[]
+    regions?: string[]
+    sectors?: string[]
+    families?: string[]
+    limit?: number
+  } = {},
 ): Row[] {
   const where = ['1=1']
   const params: unknown[] = []
   if (opts.family) {
     where.push('family = ?')
     params.push(opts.family)
+  }
+  if (opts.families && opts.families.length > 0) {
+    where.push(`family IN (${opts.families.map(() => '?').join(',')})`)
+    params.push(...opts.families)
   }
   if (opts.status) {
     where.push('status = ?')
@@ -79,7 +93,40 @@ export function queryMarketMovingFactors(
      ORDER BY COALESCE(event_at, source_published_at, fetched_at) DESC, fetched_at DESC
      LIMIT ?`,
     ...params,
-  ).map(decodeFactorRow)
+  ).map(decodeFactorRow).filter((row) => matchesRelevance(row, opts))
+}
+
+function matchesRelevance(row: Row, opts: {
+  target?: string
+  assets?: string[]
+  regions?: string[]
+  sectors?: string[]
+}): boolean {
+  const needles = [
+    opts.target,
+    ...(opts.assets ?? []),
+    ...(opts.regions ?? []),
+    ...(opts.sectors ?? []),
+  ].map((value) => String(value ?? '').trim().toLowerCase()).filter(Boolean)
+  if (needles.length === 0) return true
+  const haystack = [
+    row.factor_id,
+    row.family,
+    row.title,
+    row.summary,
+    row.source_name,
+    row.expected_direction,
+    ...stringList(row.affected_assets),
+    ...stringList(row.affected_regions),
+    ...stringList(row.affected_sectors),
+    ...stringList(row.transmission_channels),
+  ].map((value) => String(value ?? '').toLowerCase())
+  return needles.some((needle) => haystack.some((value) => value.includes(needle)))
+}
+
+function stringList(value: unknown): string[] {
+  if (!Array.isArray(value)) return []
+  return value.map((item) => String(item ?? '')).filter(Boolean)
 }
 
 function decodeFactorRow(row: Row): Row {

@@ -45,6 +45,23 @@ Use the Yahoo section of the `tradingview-scanner` skill:
 ### TradingView charts
 TradingView widgets, heatmaps, ticker tape, scanners, and fallback rules are maintained in the separate `tradingview` skill. Load `Skill(skill: "tradingview")` before building a market-overview dashboard. Global symbols commonly used here are `SSE:000001`, `SZSE:399001`, `HSI:HSI`, `NASDAQ:IXIC`, and `SP:SPX`.
 
+### Macro/factor context
+
+For market regime, market-cause, cross-asset, commodity, rates, country, or
+index/passive-flow questions, read the governed factor layer before concluding:
+
+```text
+DataStore(action: "query_macro_factors", target: "A-shares", limit: 10)
+DataStore(action: "query_macro_factors", family: "rates_liquidity", limit: 10)
+DataStore(action: "query_macro_factors", regions: "Indonesia", family: "index_classification", limit: 10)
+```
+
+Keep this evidence separate from index, sector, flow, and technical evidence.
+Use the row source time, fetched time, affected assets, status, and
+transmission channel. If the readback returns `status:"missing"`, state that
+the current factor layer has no matching macro evidence instead of assuming no
+macro driver exists.
+
 ## Workflow
 
 For market-wide money-flow intent, keep the first answer bounded:
@@ -81,6 +98,8 @@ For market-wide unusual-activity discovery intent, keep the first answer bounded
    rows.
 3. Use `query_flow_rank` / `flow_rank` for broad capital-flow ranking. Use
    single-stock `flow` only with an explicit stock code.
-4. Use Yahoo Finance for global-market context when needed.
-5. Use TradingView Scanner for technical sentiment and breadth when needed.
-6. Present the result with a dashboard or `showTable`.
+4. Use `DataStore(action:"query_macro_factors", ...)` when macro/rates/country/
+   commodity/index/passive-flow context may explain the move.
+5. Use Yahoo Finance for global-market context when needed.
+6. Use TradingView Scanner for technical sentiment and breadth when needed.
+7. Present the result with a dashboard or `showTable`.

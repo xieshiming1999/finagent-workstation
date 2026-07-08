@@ -75,6 +75,7 @@ import {
   queryIndustryMap,
   queryKline,
   queryLimitPool,
+  queryMacroFactors,
   queryMarginTrading,
   queryMarketScreening,
   queryMomentum,
@@ -214,6 +215,7 @@ export class DataStoreTool implements Tool {
           "query_fund_manager",
           "query_finance_news",
           "query_market_screening",
+          "query_macro_factors",
           "query_margin_trading",
           "query_technical_indicator",
           "query_alpha_factors",
@@ -531,6 +533,36 @@ export class DataStoreTool implements Tool {
         description:
           "For query_alpha_factors: alpha factor name such as momentum_5d or kmid.",
       },
+      family: {
+        type: "string",
+        description:
+          "For query_macro_factors: macro factor family such as macro_calendar, rates_liquidity, cross_asset_stress, policy_regulation, index_classification, commodity_research, or narrative_attention.",
+      },
+      families: {
+        type: "string",
+        description:
+          "For query_macro_factors: comma-separated macro factor families.",
+      },
+      target: {
+        type: "string",
+        description:
+          "For query_macro_factors: structured target already identified by the agent, such as Copper, Indonesia equities, US Treasury, A-shares, bond funds, or a sector/theme.",
+      },
+      assets: {
+        type: "string",
+        description:
+          "For query_macro_factors: comma-separated affected asset filters.",
+      },
+      regions: {
+        type: "string",
+        description:
+          "For query_macro_factors: comma-separated affected region filters.",
+      },
+      sectors: {
+        type: "string",
+        description:
+          "For query_macro_factors: comma-separated affected sector filters.",
+      },
       tool: {
         type: "string",
         description:
@@ -697,6 +729,8 @@ export class DataStoreTool implements Tool {
         return queryFinanceNews(ds, input);
       case "query_market_screening":
         return queryMarketScreening(ds, input);
+      case "query_macro_factors":
+        return queryMacroFactors(ds, input);
       case "query_margin_trading":
         return queryMarginTrading(ds, input);
       case "query_technical_indicator":

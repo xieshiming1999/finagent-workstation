@@ -48,6 +48,20 @@ DataStore(action: "query_kline", code: "600519", period: "daily", start: "2021-0
 MarketData(action: "optimize_params", code: "600519", strategy: "rsi", period: "5y", paramGrid: {"period":[10,14,20], "oversold":[25,30,35], "overbought":[65,70,75]})
 ```
 
+For strategy preparation, read macro/factor context when the requested symbol,
+fund, sector, country, rate regime, commodity, or index/passive-flow exposure
+could affect assumptions:
+
+```text
+DataStore(action: "query_macro_factors", target: "<identified exposure>", limit: 10)
+```
+
+Use this only as a macro assumptions section in validation/backtest discussion:
+possible regime pressure, source time, fetched time, affected assets, and
+missing evidence. Do not encode macro/news/research prose as executable
+StrategySpec rules unless a later StrategySpec contract explicitly supports the
+factor type.
+
 Single-name technical actions are not batch actions. For `DataProcess` actions
 such as `indicators`, `support`, `volume`, `pattern`, `trend`, or `summary`,
 call one concrete `symbol` at a time. Do not pass `symbols` unless the tool

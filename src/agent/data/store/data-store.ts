@@ -475,7 +475,17 @@ export class DataStore {
     macroStore.saveMarketMovingFactors(this.reuseStore(), rows)
   }
 
-  queryMarketMovingFactors(opts: { family?: string; status?: string; source?: string; limit?: number } = {}): Array<Record<string, unknown>> {
+  queryMarketMovingFactors(opts: {
+    family?: string
+    families?: string[]
+    status?: string
+    source?: string
+    target?: string
+    assets?: string[]
+    regions?: string[]
+    sectors?: string[]
+    limit?: number
+  } = {}): Array<Record<string, unknown>> {
     return macroStore.queryMarketMovingFactors(this.reuseStore(), opts)
   }
   saveMarketScreeningSnapshots(rows: MarketScreeningSnapshotRow[]): void {

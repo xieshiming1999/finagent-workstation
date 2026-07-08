@@ -26,6 +26,7 @@ DataStore(action: "coverage", symbols: ["600519"])
 DataStore(action: "query_quote", code: "600519")
 DataStore(action: "query_kline", code: "600519", limit: 120)
 DataStore(action: "query_fundamental", code: "600519", limit: 8)
+DataStore(action: "query_macro_factors", target: "<identified sector, commodity, country, rate, or theme>", limit: 10)
 ```
 
 For A-share real-time quote, use:
@@ -88,6 +89,10 @@ for each candidate.
 
 ### Single-stock analysis
 1. local reusable checks first
+1. when the stock has clear exposure to rates, liquidity, currency, commodity,
+   policy, country/index, or sector-level macro pressure, call
+   `DataStore(action:"query_macro_factors", ...)` with structured target,
+   assets, regions, sectors, or family filters and cite returned provenance
 2. fetch missing quote / kline / fundamental / money-flow data when the user
    asked for deep analysis and the readback result explicitly says reusable
    rows are missing
@@ -104,6 +109,10 @@ or `DataProcess(action:"volume")` returns `analysisEvidence`, use that
 `observedFacts`, `interpretations`, `missingEvidence`, `confidence`, and
 `sourceCoverage`. Do not treat `strategyReadiness:"analysis_only"` as a
 validated StrategySpec, backtest, monitor, watchlist rule, or trade plan.
+
+Keep macro/factor evidence in its own section. It can explain possible outside
+pressure or confirmation, but it is not a direct buy/sell signal and should not
+override missing stock-specific evidence.
 
 When a bounded stock-candidate workflow returns
 `analysisEvidence.kind:"candidate_research"` with

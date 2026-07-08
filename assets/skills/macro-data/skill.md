@@ -96,6 +96,26 @@ Research(action: "fetch", params: {url: "https://api.fiscaldata.treasury.gov/ser
 
 ## Analysis patterns
 
+### A0. Governed factor readback
+
+Before broad market, stock, fund, or strategy-preparation analysis where macro
+forces may matter, read the governed factor layer first:
+
+```text
+DataStore(action: "query_macro_factors", target: "Copper", limit: 10)
+DataStore(action: "query_macro_factors", regions: "Indonesia", family: "index_classification", limit: 10)
+DataStore(action: "query_macro_factors", assets: "bond funds", family: "rates_liquidity", limit: 10)
+```
+
+Use returned `market_moving_factor_v1` rows as cited context with source time,
+fetched time, source, status, affected assets, and transmission channel. If the
+result returns `status:"missing"`, state that the current factor layer has no
+matching evidence instead of assuming macro factors are irrelevant.
+
+Macro factors are context for analysis. They are not executable buy/sell
+signals and should not be converted into StrategySpec conditions unless a later
+strategy contract explicitly supports that factor type.
+
 ### A. Current Macro Regime
 
 1. Econdb for China GDP, CPI, and PMI

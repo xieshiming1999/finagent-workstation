@@ -21,7 +21,7 @@ Query local data:
   query_option_quote, query_option_daily_kline
   query_option_open_interest, query_option_volume, query_option_implied_volatility, query_option_moneyness
   query_option_bid_ask_spread, query_option_price_change, query_option_trade_recency
-  query_market_screening, query_technical_indicator, query_alpha_factors, query_raw_payload, query_api_calls, query_stock_list, interfaces, interface_describe, interface_availability, coverage, reusable_summary, data_health, finance_doctor, data_feeds, runtime_probe, stock_list
+  query_market_screening, query_macro_factors, query_technical_indicator, query_alpha_factors, query_raw_payload, query_api_calls, query_stock_list, interfaces, interface_describe, interface_availability, coverage, reusable_summary, data_health, finance_doctor, data_feeds, runtime_probe, stock_list
   fund_list, search, stats
 
 Fetch:
@@ -64,6 +64,7 @@ Notes:
   - Use finance_doctor when the agent needs local runtime, session/history, DataStore, provider-route, feed, and service readiness before continuing a workflow.
   - Use data_feeds to inspect configured Data Manager feed status before running a prefetch; it is read-only and does not call providers.
   - Use query_stock_list with keyword/query and limit for structured stock identity readback before query_quote when a company name must be resolved to a code. It returns JSON data rows and does not require parsing the legacy search display.
+  - Use query_macro_factors before market, stock, fund, or strategy-preparation analysis when outside macro forces may matter. Pass structured filters such as target, assets, regions, sectors, family, or status. It reads market_moving_factor_v1 rows with source time/fetched time/provenance and returns an explicit missingReason when no factor row matches.
   - Use fetch_status to inspect durable provider.fetch_task_queue evidence. It accepts status pending/running/completed/failed/cancelled/all, returns actionableFailures and nonActionableEvidence with nextAction guidance, and does not blindly retry non-actionable stale or missing-scope rows.
   - Use runtime_probe when you need the app to generate fresh governed live-provider evidence instead of only reading the last report snapshot. Start with probeAction:"status"; inspect recommendedTargets, blockedTargets, providerProbePacks, and guidance before running a bounded probe. Automatic failures/all runs are for retryable transport, timeout, provider-error, runtime-unavailable, or transport-unstable targets; credential/permission, quota/rate-limit, unsupported-route, runtime-blocked, schema-contract, schema-mismatch, and explicit do-not-retry rows stay blocked until their root cause changes or the user deliberately passes bounded probeIds.
   - Query local data before repeating external calls.`;
