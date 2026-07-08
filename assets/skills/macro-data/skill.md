@@ -8,14 +8,19 @@ when_to_use: User asks about macroeconomics, rates, inflation, CPI, GDP, FX, the
 
 | Source | Coverage | Auth | Notes |
 |---|---|---|---|
-| Econdb | Global macro indicators such as GDP, CPI, rates, employment, and trade | None | Free |
+| Econdb | Global macro indicators such as GDP, CPI, rates, employment, and trade | Availability varies | Use only as diagnostic/fallback; treat 401/403 as unavailable |
 | Frankfurter | FX rates from ECB-backed data | None | Free |
 | FRED | Federal Reserve data for rates, inflation, money supply, employment, and yield curves | API key | Highest-authority US macro source |
 | Fed Treasury | US treasury yields and fiscal data | None | Official |
 
-## 1. Econdb
+## 1. Econdb diagnostic fallback
 
 Base: `https://www.econdb.com/api/series/`
+
+Recent live workflow evidence shows this service can return `401` without
+usable anonymous access. Do not treat it as a guaranteed free source. Use it
+only after governed readback and preferred official/free sources are
+insufficient, and stop after one `401`/`403` response.
 
 | Metric | Series code | Notes |
 |---|---|---|
@@ -63,7 +68,9 @@ Typical use:
 
 Base: `https://api.stlouisfed.org/fred/series/observations`
 
-`FRED_API_KEY` should be set in Settings. If it is missing, skip FRED and use Econdb where possible.
+`FRED_API_KEY` should be set in Settings. If it is missing, skip FRED and use
+governed factor readback, BEA/Fed Treasury/Frankfurter, or cached rows where
+possible. Do not assume Econdb anonymous access is available.
 
 | Metric | Series ID | Notes |
 |---|---|---|
@@ -118,10 +125,12 @@ strategy contract explicitly supports that factor type.
 
 ### A. Current Macro Regime
 
-1. Econdb for China GDP, CPI, and PMI
+1. Governed factor readback for existing `market_moving_factor_v1` context
 2. Frankfurter for recent USD/CNY trend
 3. FRED, if configured, for Fed funds, 10Y yields, and the 2s10s spread
-4. Classify the environment as recovery, overheating, stagflation, or slowdown
+4. BEA/Fed Treasury where the requested macro variable matches their coverage
+5. Econdb only as a bounded diagnostic fallback
+6. Classify the environment as recovery, overheating, stagflation, or slowdown
 
 ### B. Macro links inside single-stock analysis
 
@@ -139,7 +148,11 @@ strategy contract explicitly supports that factor type.
 
 ## Guardrails
 
-- Econdb and Frankfurter are usually delayed, not real-time
+- Econdb may require credentials or reject anonymous requests; treat 401/403 as
+  unavailable and use official/cached alternatives
+- Frankfurter is usually delayed, not real-time
 - FRED follows its release schedule, not daily updates
 - Macro data is context, not the whole investment conclusion
-- If no FRED key is configured, Econdb still covers a large part of normal use
+- If no FRED key is configured, do not retry FRED or Econdb broadly; use
+  governed factor readback, Fed Treasury, BEA when configured, Frankfurter, or
+  explicitly disclose the macro evidence gap

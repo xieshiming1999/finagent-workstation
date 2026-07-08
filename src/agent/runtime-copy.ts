@@ -368,8 +368,8 @@ export const researchToolCopy = {
     '缺少 url。示例: Research(action: "fetch", url: "https://...")',
   ),
   missingFredKey: () => runtimeText(
-    'FRED_API_KEY not configured. Set it in Settings, or use Econdb as free alternative.',
-    '未配置 FRED_API_KEY。请在设置中配置，或使用 Econdb 作为免费替代方案。',
+    'FRED_API_KEY not configured. Set it in Settings, or use governed macro-factor readback, Fed Treasury, BEA when configured, Frankfurter, or cached rows; do not assume Econdb anonymous access is available.',
+    '未配置 FRED_API_KEY。请在设置中配置，或使用受治理宏观因子读回、Fed Treasury、已配置的 BEA、Frankfurter 或本地缓存；不要假定 Econdb 匿名访问可用。',
   ),
   helpText: () => runtimeText(`Research actions:
 
