@@ -1,4 +1,4 @@
-export type WidgetType = 'watchlist' | 'fund-watchlist' | 'pulse' | 'fund-pulse' | 'calendar' | 'news' | 'research' | 'api-health' | 'portfolio' | 'session' | 'sessions' | 'data' | 'strategy-library'
+export type WidgetType = 'watchlist' | 'fund-watchlist' | 'pulse' | 'fund-pulse' | 'factor-radar' | 'calendar' | 'news' | 'research' | 'api-health' | 'portfolio' | 'session' | 'sessions' | 'data' | 'strategy-library'
 
 export type SidebarWidgetCategory = 'user' | 'system' | 'agent'
 
@@ -65,6 +65,18 @@ export const sidebarPanelContracts: readonly SidebarPanelContract[] = [
     renderFetchPolicy: 'read-cache-only',
     emptyState: 'Offer fund search/add workflow and suggested funds.',
     errorState: 'Keep the saved fund list visible and show data refresh failure separately.',
+  },
+  {
+    type: 'factor-radar',
+    category: 'user',
+    purpose: 'Display macro, policy, index-provider, cross-asset, and research-summary factors with provenance before they are used in analysis.',
+    ownedData: ['market_moving_factor_v1 rows', 'macro source registry', 'source/fetched timestamps', 'retrieval failure classifications'],
+    primaryActions: ['refresh macro factors', 'open source', 'copy evidence', 'send selected factor to agent'],
+    refreshPolicy: 'manual-or-stale',
+    renderFetchPolicy: 'poll-readonly',
+    pollIntervalMs: 300000,
+    emptyState: 'Explain that no macro factor rows exist and offer refresh.',
+    errorState: 'Show source/credential/network/parse failure without clearing prior factor rows.',
   },
   {
     type: 'news',
@@ -178,6 +190,7 @@ export const defaultSidebarWidgetTypes: WidgetType[] = [
   'watchlist',
   'fund-pulse',
   'fund-watchlist',
+  'factor-radar',
   'news',
   'data',
   'strategy-library',

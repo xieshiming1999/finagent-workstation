@@ -36,6 +36,7 @@ import type {
 } from './data-store-types'
 import * as equityStore from './data-store-equity'
 import * as maintenanceStore from './data-store-maintenance'
+import * as macroStore from './data-store-macro'
 import * as marketStore from './data-store-market'
 import * as reuseStore from './data-store-reuse'
 
@@ -462,6 +463,20 @@ export class DataStore {
   }
   queryFinanceNews(opts: { keyword?: string; source?: string; limit?: number } = {}): FinanceNewsRow[] {
     return marketStore.queryFinanceNews(this, opts) as unknown as FinanceNewsRow[]
+  }
+  queryWindEconomicSeries(limit = 20): Array<Record<string, unknown>> {
+    return reuseStore.queryWindEconomicSeries(this.reuseStore(), limit)
+  }
+  queryWindDocuments(limit = 20): Array<Record<string, unknown>> {
+    return reuseStore.queryWindDocuments(this.reuseStore(), limit)
+  }
+
+  saveMarketMovingFactors(rows: Array<Record<string, unknown>>): void {
+    macroStore.saveMarketMovingFactors(this.reuseStore(), rows)
+  }
+
+  queryMarketMovingFactors(opts: { family?: string; status?: string; source?: string; limit?: number } = {}): Array<Record<string, unknown>> {
+    return macroStore.queryMarketMovingFactors(this.reuseStore(), opts)
   }
   saveMarketScreeningSnapshots(rows: MarketScreeningSnapshotRow[]): void {
     marketStore.saveMarketScreeningSnapshots(this, rows as unknown as Array<Record<string, unknown>>)

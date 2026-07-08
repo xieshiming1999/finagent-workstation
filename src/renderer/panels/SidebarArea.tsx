@@ -3,6 +3,7 @@ import WatchlistWidget from '../components/WatchlistWidget'
 import FundWatchlistWidget from '../components/FundWatchlistWidget'
 import MarketPulseWidget from '../components/MarketPulseWidget'
 import FundPulseWidget from '../components/FundPulseWidget'
+import MacroFactorRadarWidget from '../components/MacroFactorRadarWidget'
 import CalendarWidget from '../components/CalendarWidget'
 import NewsFeedWidget from '../components/NewsFeedWidget'
 import ResearchWorkspaceWidget from '../components/ResearchWorkspaceWidget'
@@ -19,6 +20,7 @@ const WIDGET_COMPONENTS: Record<WidgetType, React.FC> = {
   'fund-watchlist': FundWatchlistWidget,
   pulse: MarketPulseWidget,
   'fund-pulse': FundPulseWidget,
+  'factor-radar': MacroFactorRadarWidget,
   calendar: CalendarWidget,
   news: NewsFeedWidget,
   research: ResearchWorkspaceWidget,
@@ -100,6 +102,7 @@ function SidebarIcon({ type }: { type: WidgetType }) {
   switch (type) {
     case 'pulse': return <Icon path="M4 13h4l2-8 4 14 2-6h4" />
     case 'fund-pulse': return <Icon path="M12 3a9 9 0 1 1-9 9h9V3Zm2 0v7h7a9 9 0 0 0-7-7Z" filled />
+    case 'factor-radar': return <Icon path="M12 3v4M12 17v4M4.2 6.2l2.8 2.8M17 17l2.8 2.8M3 12h4M17 12h4M4.2 17.8 7 15M17 7l2.8-2.8M9 12a3 3 0 1 0 6 0 3 3 0 0 0-6 0Z" />
     case 'watchlist': return <Icon path="M7 6h13M7 12h13M7 18h13M4 6h.01M4 12h.01M4 18h.01" />
     case 'fund-watchlist': return <Icon path="M4 7h16v12H4V7Zm3-3h10v3H7V4Zm4 7h5M8 15h8" />
     case 'news': return <Icon path="M4 5h13a3 3 0 0 1 3 3v11H7a3 3 0 0 1-3-3V5Zm4 4h7M8 13h8M8 17h5" />

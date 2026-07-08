@@ -62,6 +62,24 @@ export function getRecentApiCalls(store: StoreDeps, minutes = 30, limit = 100): 
   return store.query('SELECT * FROM api_call_log WHERE created_at >= ? ORDER BY created_at DESC LIMIT ?', cutoff, limit)
 }
 
+export function queryWindEconomicSeries(store: StoreDeps, limit = 20): Row[] {
+  return store.query<Row>(
+    `SELECT * FROM wind_economic_series
+     ORDER BY date DESC, updated_at DESC
+     LIMIT ?`,
+    limit,
+  )
+}
+
+export function queryWindDocuments(store: StoreDeps, limit = 20): Row[] {
+  return store.query<Row>(
+    `SELECT * FROM wind_document
+     ORDER BY published_at DESC, updated_at DESC
+     LIMIT ?`,
+    limit,
+  )
+}
+
 export function saveApiResultCache(store: StoreDeps, row: ApiResultCacheRow): void {
   store.exec(
     `INSERT OR REPLACE INTO api_result_cache

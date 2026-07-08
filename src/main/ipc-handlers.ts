@@ -14,6 +14,7 @@ import { globalApiStats, globalCircuitBreaker } from '../agent/data/tracked-fetc
 import { globalHookRegistry } from '../agent/hook-registry'
 import type { LLMProvider } from '../agent/llm-provider'
 import type { DataStore } from '../agent/data/store/data-store'
+import { readMacroFactorRadar, refreshMacroFactorRadar } from './macro-factor-radar'
 import type { FetchQueue } from '../agent/data/queue/fetch-queue'
 import { getSourceStatus } from '../agent/data/queue/rate-limiter'
 import { readAllLogs, readRecentLog } from './logger'
@@ -396,6 +397,18 @@ export function wireIPC(ctx: IPCContext): void {
   })
 
   ipcMain.handle('data:probe-status', () => runtimeProbeService.getStatus())
+
+  ipcMain.handle('data:macro-factors', () => {
+    const ds = ctx.getDataStore()
+    if (!ds || !ds.isReady) return { rows: [], sources: [], generatedAt: new Date().toISOString(), error: 'DataStore not yet initialized, please wait' }
+    return readMacroFactorRadar(ds)
+  })
+
+  ipcMain.handle('data:macro-factor-refresh', async () => {
+    const ds = ctx.getDataStore()
+    if (!ds || !ds.isReady) return { rows: [], sources: [], generatedAt: new Date().toISOString(), error: 'DataStore not yet initialized, please wait' }
+    return refreshMacroFactorRadar(ds, loadConfig(ctx.globalConfigPath()))
+  })
 
   ipcMain.handle('data:run-probes', async (_, mode: RuntimeProbeMode = 'all', probeIds: string[] = []) => {
     return runtimeProbeService.run(mode, Array.isArray(probeIds) ? probeIds : [])

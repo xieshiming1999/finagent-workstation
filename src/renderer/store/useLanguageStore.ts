@@ -729,6 +729,16 @@ const messages = {
     agentAccessKline: 'DataStore(query_kline), backtest',
     agentAccessFundamental: 'DataStore(query_fundamental), scoring',
     agentAccessGeneric: 'DataStore query actions',
+    factorRadar: 'Factor Radar',
+    macroFactorLoading: 'Loading macro factors...',
+    macroFactorActive: 'active',
+    macroFactorBlocked: 'blocked',
+    macroFactorSources: 'Sources',
+    macroFactorRows: 'Rows',
+    macroFactorSchema: 'Schema',
+    macroFactorEmpty: 'No macro factor rows yet. Refresh to load verified source families.',
+    macroFactorAffected: 'Affected',
+    macroFactorSendToAgent: 'Analyze',
     newsFeed: 'News Feed',
     loadingNewsRequiresSidecar: 'Loading news... (requires sidecar)',
     newsSearch: 'Filter news',
@@ -1519,6 +1529,16 @@ const messages = {
     agentAccessKline: 'DataStore(query_kline)、回测',
     agentAccessFundamental: 'DataStore(query_fundamental)、评分',
     agentAccessGeneric: 'DataStore 查询动作',
+    factorRadar: '因子雷达',
+    macroFactorLoading: '宏观因子加载中...',
+    macroFactorActive: '有效',
+    macroFactorBlocked: '受限',
+    macroFactorSources: '来源',
+    macroFactorRows: '行',
+    macroFactorSchema: 'Schema',
+    macroFactorEmpty: '暂无宏观因子。点击刷新以加载已验证来源。',
+    macroFactorAffected: '影响对象',
+    macroFactorSendToAgent: '分析',
     newsFeed: '新闻快讯',
     loadingNewsRequiresSidecar: '新闻加载中...（需要 sidecar）',
     newsSearch: '筛选新闻',
@@ -1645,6 +1665,7 @@ export function widgetTitle(type: WidgetType): string {
     case 'fund-watchlist': return t('fundWatchlist')
     case 'pulse': return t('marketPulse')
     case 'fund-pulse': return t('fundPulse')
+    case 'factor-radar': return t('factorRadar')
     case 'calendar': return t('calendar')
     case 'news': return t('news')
     case 'research': return t('researchWorkspace')
