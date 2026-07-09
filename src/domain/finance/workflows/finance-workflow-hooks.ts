@@ -282,6 +282,16 @@ export function maybeInterceptFinanceToolCalls(
   messages: Message[],
   proposedToolCalls: ToolUse[],
 ): DomainToolInterception | null {
+  const macroConditionPreviewReadbackCalls = buildMacroConditionWatchlistPreviewReadbackCalls(messages, proposedToolCalls)
+  if (macroConditionPreviewReadbackCalls) {
+    return {
+      skippedReason:
+        'Skipped: preview-only macro-condition watchlist workflow allows readback but not Watchlist mutation.',
+      answer: null,
+      autoToolCalls: macroConditionPreviewReadbackCalls,
+    }
+  }
+
   const macroConditionReadbackCalls = buildMacroConditionWatchlistReadbackCalls(messages, proposedToolCalls)
   if (macroConditionReadbackCalls) {
     return {
@@ -628,6 +638,23 @@ function maybeBuildFinanceBudgetProbeAnswer(messages: Message[], proposedToolCal
   return maybeBuildFinanceBoundedAnswer(messages)
 }
 
+function buildMacroConditionWatchlistPreviewReadbackCalls(
+  messages: Message[],
+  proposedToolCalls: ToolUse[],
+): ToolUse[] | null {
+  const lastUserIndex = findLastIndex(messages, (message) => message.role === Role.User)
+  if (lastUserIndex < 0) return null
+  const state = latestFinanceWorkflowState(messages, lastUserIndex)
+  if (!state || !isMacroConditionWatchlistWorkflow(state) || state.executionMode !== 'preview_only') return null
+  const hasWatchlistMutation = proposedToolCalls.some((call) => {
+    if (call.name !== 'Watchlist') return false
+    const action = String(call.input.action ?? '')
+    return action !== 'list' && action !== 'help' && action !== 'summary' && action !== 'list_groups'
+  })
+  if (!hasWatchlistMutation) return null
+  return [macroConditionWatchlistReadbackCall()]
+}
+
 function buildMacroConditionWatchlistReadbackCalls(
   messages: Message[],
   proposedToolCalls: ToolUse[],
@@ -674,6 +701,9 @@ function buildMacroConditionWatchlistPreflightToolCalls(messages: Message[]): To
   if (lastUserIndex < 0) return null
   const turnMessages = messages.slice(lastUserIndex)
   const state = latestFinanceWorkflowState(messages, lastUserIndex)
+  if (!isMacroConditionWatchlistWorkflow(state)) return null
+  const macroEvidenceReadbacks = requiredMacroEvidenceReadbackCalls(turnMessages, 'DataStore')
+  if (macroEvidenceReadbacks.length > 0) return macroEvidenceReadbacks
   if (!hasPendingMacroConditionWatchlistWorkflow(turnMessages, state)) return null
   return [macroConditionWatchlistReadbackCall()]
 }
@@ -713,6 +743,42 @@ function isMacroConditionWatchlistWorkflow(state: FinanceWorkflowState | null): 
     state.workflowKind === 'monitor_review' &&
     state.intentMode === 'observe' &&
     state.evidenceRefs.includes('macro-condition-watchlist')
+}
+
+function hasRequiredMacroEvidenceReadbacks(turnMessages: Message[]): boolean {
+  return requiredMacroEvidenceReadbackCalls(turnMessages, 'DataStore').length === 0
+}
+
+function requiredMacroEvidenceReadbackCalls(turnMessages: Message[], toolName: 'DataStore' | 'MarketData'): ToolUse[] {
+  const actions = new Set(
+    collectExecutedToolCalls(turnMessages)
+      .filter((call) => call.name === 'DataStore' || call.name === 'MarketData')
+      .map((call) => String(call.input.action ?? '')),
+  )
+  const target = 'A-shares'
+  const calls: ToolUse[] = []
+  if (!actions.has('query_macro_factors')) {
+    calls.push({
+      id: `auto-macro-condition-factors-${Date.now()}`,
+      name: toolName,
+      input: { action: 'query_macro_factors', target, limit: 10 },
+    })
+  }
+  if (!actions.has('query_macro_attribution')) {
+    calls.push({
+      id: `auto-macro-condition-attribution-${Date.now()}`,
+      name: toolName,
+      input: { action: 'query_macro_attribution', target, limit: 10 },
+    })
+  }
+  if (!actions.has('query_finance_news')) {
+    calls.push({
+      id: `auto-macro-condition-news-${Date.now()}`,
+      name: toolName,
+      input: { action: 'query_finance_news', query: target, limit: 10 },
+    })
+  }
+  return calls
 }
 
 function hasPendingWatchlistStateWorkflow(turnMessages: Message[]): boolean {
