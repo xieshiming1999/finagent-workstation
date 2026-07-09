@@ -211,7 +211,10 @@ describe('macro evidence workflow summary', () => {
 
   it('adds fresh macro and news readbacks after a governed finance news refresh', () => {
     const messages = [
-      userMessage('macro refresh'),
+      userMessage(
+        'macro refresh\n' +
+        'data: {"workflowState":{"contract":"finance-workflow-state-v1","workflowKind":"macro_attribution","assetClass":"mixed","intentMode":"analysis","executionMode":"readback","safetyBoundary":"read-only macro attribution","confirmationState":"none","source":"agent-structured-intent"}}',
+      ),
       assistantMessage('', [
         { id: 'old-factors', name: 'DataStore', input: { action: 'query_macro_factors', target: 'A-shares' } },
         { id: 'old-news', name: 'DataStore', input: { action: 'query_finance_news', query: 'A-shares' } },
@@ -232,6 +235,29 @@ describe('macro evidence workflow summary', () => {
       'query_macro_attribution',
       'query_finance_news',
     ])
+  })
+
+  it('does not retry a typed failed finance news request regardless of error prose', () => {
+    const messages = [
+      userMessage('macro refresh'),
+      assistantMessage('', [
+        { id: 'factors', name: 'DataStore', input: { action: 'query_macro_factors', target: 'A-shares' } },
+        { id: 'failed-news', name: 'DataStore', input: { action: 'finance_news', query: 'A-shares' } },
+      ]),
+      toolMessage('factors', JSON.stringify({
+        action: 'query_macro_factors',
+        rows: [{ title: 'Policy liquidity context', family: 'rates_liquidity' }],
+      })),
+      toolMessage('failed-news', 'arbitrary provider display text', true),
+    ]
+
+    const interception = maybeInterceptFinanceToolCalls(messages, [
+      { id: 'retry-news', name: 'DataStore', input: { action: 'finance_news', query: 'A-shares' } },
+    ])
+
+    const actions = interception?.autoToolCalls?.map((call) => call.input.action)
+    expect(actions).not.toContain('finance_news')
+    expect(actions).toContain('query_finance_news')
   })
 
   it('keeps proposed macro attribution when budget trimming broad evidence batches', () => {

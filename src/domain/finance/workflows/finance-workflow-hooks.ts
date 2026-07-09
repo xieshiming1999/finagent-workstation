@@ -1011,13 +1011,14 @@ function maybeCompleteMacroEvidenceCalls(
     (call.name === 'DataStore' || call.name === 'MarketData') &&
     call.input.action === 'finance_news'
   )
+  const priorFinanceNewsRefreshFailed = hasFailedFinanceNewsRefresh(messages)
   const additions: ToolUse[] = []
   const attributionBaseCalls = macroCalls.length > 0 ? macroCalls : priorMacroCalls
   const target = attributionBaseCalls
     .map((call) => String(call.input.target ?? '').trim())
     .find(Boolean) ?? 'A-shares'
   const toolName = attributionBaseCalls[0].name
-  if (!hasAction('query_macro_factors') || proposedFinanceNewsRefresh) {
+  if (!hasAction('query_macro_factors')) {
     additions.push({
       id: `auto-macro-factors-${Date.now()}`,
       name: toolName,
@@ -1050,18 +1051,7 @@ function maybeCompleteMacroEvidenceCalls(
       },
     })
   }
-  if (hasMacroSourceCatalog && hasFinanceNewsReadback && !hasAction('finance_news')) {
-    additions.push({
-      id: `auto-macro-finance-news-refresh-${Date.now()}`,
-      name: toolName,
-      input: {
-        action: 'finance_news',
-        query: target,
-        limit: 20,
-      },
-    })
-  }
-  if (!hasAction('query_finance_news') || proposedFinanceNewsRefresh) {
+  if (!hasAction('query_finance_news') || proposedFinanceNewsRefresh || priorFinanceNewsRefreshFailed) {
     additions.push({
       id: `auto-macro-finance-news-${Date.now()}`,
       name: toolName,
@@ -1074,15 +1064,19 @@ function maybeCompleteMacroEvidenceCalls(
   }
   if (additions.length === 0) return null
   const shouldSuppressGenericExternal = proposedToolCalls.some((call) => call.name === 'Research' || call.name === 'WebFetch')
+  const sanitizedProposedToolCalls = proposedToolCalls.filter((call) =>
+    !isKnownInvalidCodeRequiredReadback(call) &&
+    call.input.action !== 'finance_news'
+  )
   const retainedCalls = shouldSuppressGenericExternal
     ? []
     : additions.some((call) => call.input.action === 'finance_news')
-      ? proposedToolCalls.filter((call) => call.input.action !== 'query_finance_news')
-      : proposedToolCalls
+      ? sanitizedProposedToolCalls.filter((call) => call.input.action !== 'query_finance_news')
+      : sanitizedProposedToolCalls
   const deferredReadbacks = shouldSuppressGenericExternal
     ? []
     : additions.some((call) => call.input.action === 'finance_news')
-      ? proposedToolCalls.filter((call) => call.input.action === 'query_finance_news')
+      ? sanitizedProposedToolCalls.filter((call) => call.input.action === 'query_finance_news')
       : []
   return [
     ...cloneInterceptedToolCalls(retainedCalls),
@@ -1097,6 +1091,44 @@ function cloneInterceptedToolCalls(calls: ToolUse[]): ToolUse[] {
     id: `auto-retained-${Date.now()}-${index}-${call.id}`,
   }))
 }
+
+function hasFailedFinanceNewsRefresh(messages: Message[]): boolean {
+  const callsById = new Map<string, ToolUse>()
+  for (const call of collectToolCalls(messages)) callsById.set(call.id, call)
+  return messages.some((message) => {
+    const result = message.toolResult
+    if (!result?.isError) return false
+    const call = callsById.get(result.toolUseId)
+    if (
+      call &&
+      (call.name === 'DataStore' || call.name === 'MarketData') &&
+      call.input.action === 'finance_news'
+    ) {
+      return true
+    }
+    return false
+  })
+}
+
+function isKnownInvalidCodeRequiredReadback(call: ToolUse): boolean {
+  if (call.name !== 'DataStore' && call.name !== 'MarketData') return false
+  const action = String(call.input.action ?? '')
+  const symbol = stringValue(call.input.code) ??
+    stringValue(call.input.symbol) ??
+    stringValue(call.input.indexCode) ??
+    stringValue(call.input.fundCode) ??
+    firstString(call.input.codes) ??
+    firstString(call.input.symbols)
+  return !symbol && symbolRequiredReadbackActions.has(action)
+}
+
+const symbolRequiredReadbackActions = new Set([
+  'query_fundamental',
+  'query_index_fundamentals',
+  'query_kline',
+  'query_quote',
+  'query_stock_fundamentals',
+])
 
 function maybeBuildBudgetedFinanceToolCalls(
   messages: Message[],
