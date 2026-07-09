@@ -34,6 +34,26 @@ function retryDelayMs(attempt: number, initial = 2000, max = 30000): number {
   return Math.round(capped + jitter)
 }
 
+function normalizeReasoningEffortForEndpoint(
+  effort: string | undefined,
+  baseURL: string,
+  model: string,
+): string | undefined {
+  if (!effort) return effort
+  const endpoint = baseURL.toLowerCase()
+  const modelName = model.toLowerCase()
+  if (
+    effort === 'medium' &&
+    (endpoint.includes('deepseek.com') ||
+      endpoint.includes('kimi') ||
+      modelName.includes('deepseek') ||
+      modelName.includes('kimi'))
+  ) {
+    return 'high'
+  }
+  return effort
+}
+
 export class LLMClient implements LLMProvider {
   private config: LLMConfig
   private abortController: AbortController | null = null
@@ -96,8 +116,13 @@ export class LLMClient implements LLMProvider {
       const sorted = [...tools].sort((a, b) => a.function.name.localeCompare(b.function.name))
       body.tools = sorted
     }
-    if (this.config.reasoningEffort) {
-      body.reasoning_effort = this.config.reasoningEffort
+    const reasoningEffort = normalizeReasoningEffortForEndpoint(
+      this.config.reasoningEffort,
+      this.config.baseURL,
+      this.config.model,
+    )
+    if (reasoningEffort) {
+      body.reasoning_effort = reasoningEffort
     }
     if (this.config.thinking) {
       body.thinking = this.config.thinking

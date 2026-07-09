@@ -35,6 +35,26 @@ function sleep(ms: number): Promise<void> {
   return new Promise((resolve) => setTimeout(resolve, ms))
 }
 
+function normalizeEffortForEndpoint(
+  effort: AnthropicConfig['effort'] | undefined,
+  baseURL: string,
+  model: string,
+): AnthropicConfig['effort'] | undefined {
+  if (!effort) return effort
+  const endpoint = baseURL.toLowerCase()
+  const modelName = model.toLowerCase()
+  if (
+    effort === 'medium' &&
+    (endpoint.includes('deepseek.com') ||
+      endpoint.includes('kimi') ||
+      modelName.includes('deepseek') ||
+      modelName.includes('kimi'))
+  ) {
+    return 'high'
+  }
+  return effort
+}
+
 export class AnthropicLLMClient implements LLMProvider {
   private config: AnthropicConfig
   private abortController: AbortController | null = null
@@ -82,7 +102,8 @@ export class AnthropicLLMClient implements LLMProvider {
     messages: Message[],
     tools: ToolSchema[],
   ): AsyncGenerator<SSEEvent> {
-    const normalized = normalizeMessages(messages, this.config.effort, {
+    const effort = normalizeEffortForEndpoint(this.config.effort, this.config.baseURL, this.config.model)
+    const normalized = normalizeMessages(messages, effort, {
       includeToolResultImages: this.config.capabilities?.vision ?? false,
     })
 
@@ -105,9 +126,9 @@ export class AnthropicLLMClient implements LLMProvider {
       body.tools = anthropicTools
     }
 
-    if (this.config.effort) {
+    if (effort) {
       body.thinking = { type: 'adaptive' }
-      body.output_config = { effort: this.config.effort }
+      body.output_config = { effort }
     }
 
     const headers: Record<string, string> = {
