@@ -184,6 +184,9 @@ function buildMacroEvidenceSection(evidence: MacroEvidence): string[] {
   if (evidence.contextLines.length > 0) {
     lines.push(`- 分析对象/口径：${evidence.contextLines.slice(0, 4).join('；')}。`)
   }
+  if (hasFundContext(evidence)) {
+    lines.push('- 基金分类口径：消费基金关注消费复苏、居民收入、白酒/零售政策和风险偏好；科技基金关注流动性、产业政策、外部限制和成长股估值折现率；债券基金关注利率、信用、流动性和久期风险。缺失任一类别的高等级证据时，应降低对应结论置信度。')
+  }
   if (evidence.nonMacroLines.length > 0) {
     lines.push(`- 非宏观证据状态：${evidence.nonMacroLines.slice(0, 6).join('；')}。`)
   }
@@ -206,10 +209,10 @@ function buildMacroEvidenceSection(evidence: MacroEvidence): string[] {
     lines.push(`- 不确定性/数据缺口：${evidence.missingLines.slice(0, 4).join('；')}。`)
   }
   if (evidence.reliabilityLines.length > 0) {
-    lines.push(`- 可靠性：${evidence.reliabilityLines.slice(0, 5).join('；')}。`)
+    lines.push(`- 可靠性（证据等级/新鲜度/访问/置信度）：${evidence.reliabilityLines.slice(0, 5).join('；')}。`)
   }
   if (evidence.assetImpactLines.length > 0) {
-    lines.push(`- 资产影响：${evidence.assetImpactLines.slice(0, 5).join('；')}。`)
+    lines.push(`- 资产影响（行业/基金/策略口径）：${evidence.assetImpactLines.slice(0, 5).join('；')}。`)
   }
   if (evidence.decisionLines.length > 0) {
     lines.push(`- 置信度/下一步：${evidence.decisionLines.slice(0, 5).join('；')}。`)
@@ -303,6 +306,17 @@ function targetLabel(value: string): string {
   if (/^a[-_ ]?shares$/i.test(value)) return 'A 股'
   if (/^china equities$/i.test(value)) return '中国股票 / A 股相关'
   if (/^bond funds?$/i.test(value)) return '债券基金'
+  if (/^consumption funds?$/i.test(value)) return '消费基金'
+  if (/^consumer equities$/i.test(value)) return '消费基金/消费权益'
+  if (/^technology funds?$/i.test(value)) return '科技基金'
+  if (/^technology equities$/i.test(value)) return '科技基金/科技权益'
+  if (/^equity funds?$/i.test(value)) return '权益基金'
+  if (/^index funds?$/i.test(value)) return '指数基金'
+  if (/^money funds?$/i.test(value)) return '货币基金'
+  if (/^industry funds?$/i.test(value)) return '行业基金'
+  if (/^(stock|equity)$/i.test(value)) return '股票/权益'
+  if (/^funds?$/i.test(value)) return '基金'
+  if (/^strategy$/i.test(value)) return '策略'
   if (/^moutai$/i.test(value) || /^kweichow\s+moutai$/i.test(value)) return '贵州茅台 / Moutai'
   if (value === '600519') return '贵州茅台 600519'
   if (/^chinese spirits$/i.test(value)) return '白酒'
@@ -319,12 +333,25 @@ function familyLabel(value: string): string {
     narrative_attention: '叙事/关注度',
     commodity_research: '商品/能源',
     index_classification: '指数/被动资金',
+    risk_appetite: '风险偏好',
+    macro_official_series: '官方宏观数值序列',
+    official_macro_fact: '官方宏观事实',
   }
   return labels[value] ?? value
 }
 
 function categoryLabel(value: string): string {
   return familyLabel(value)
+}
+
+function hasFundContext(evidence: MacroEvidence): boolean {
+  const textValue = [
+    ...evidence.contextLines,
+    ...evidence.factorLines,
+    ...evidence.assetImpactLines,
+    ...evidence.decisionLines,
+  ].join(' ')
+  return /基金|fund/i.test(textValue)
 }
 
 function factorRows(payload: Record<string, unknown>): string[] {
@@ -602,9 +629,13 @@ function parseDate(value: string): Date | null {
 }
 
 function listValues(value: unknown): string[] {
-  if (Array.isArray(value)) return value.map(text).filter(Boolean)
+  if (Array.isArray(value)) return value.map(text).map(displayMacroValue).filter(Boolean)
   const stringValue = text(value)
-  return stringValue ? stringValue.split(/[;,，、]/).map((item) => item.trim()).filter(Boolean) : []
+  return stringValue ? stringValue.split(/[;,，、]/).map((item) => displayMacroValue(item.trim())).filter(Boolean) : []
+}
+
+function displayMacroValue(value: string): string {
+  return targetLabel(familyLabel(value))
 }
 
 function financeNewsResultLine(content: string): string {

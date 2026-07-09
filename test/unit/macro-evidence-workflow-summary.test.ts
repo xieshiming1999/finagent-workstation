@@ -83,7 +83,7 @@ describe('macro evidence workflow summary', () => {
           family: 'rates_liquidity',
           source: 'pboc',
           sourceDataTime: '2026-07-01',
-          affectedAssets: ['equity', 'fund'],
+          affectedAssets: ['equity', 'fund', 'consumption funds', 'consumer equities', 'technology equities'],
           regions: ['China'],
           sectors: ['policy-sensitive sectors'],
           transmissionChannels: ['liquidity', 'risk_appetite'],
@@ -140,7 +140,11 @@ describe('macro evidence workflow summary', () => {
     expect(interception?.answer).toContain('政策利率和流动性预期')
     expect(interception?.answer).toContain('Monetary Policy Report')
     expect(interception?.answer).toContain('可靠性')
+    expect(interception?.answer).toContain('新鲜度')
     expect(interception?.answer).toContain('资产影响')
+    expect(interception?.answer).toContain('消费基金')
+    expect(interception?.answer).toContain('科技基金')
+    expect(interception?.answer).toContain('基金分类口径')
     expect(interception?.answer).toContain('置信度/下一步')
     expect(interception?.answer).toContain('tier=official_event_document')
     expect(interception?.answer).toContain('impact=mixed')
