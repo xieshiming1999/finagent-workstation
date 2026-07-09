@@ -128,6 +128,12 @@ export class DataProcessTool implements Tool {
         'For fund analysis use DataStore(action:"query_fund_nav"|"query_fund_money_yield"|"query_fund_performance"|"query_fund_holding", code/fundCode: "...").'
       )
     }
+    if (this.isStockOnlyAction(action) && code && isCoreCnMarketIndexCode(code)) {
+      return toolError(
+        `DataProcess(action:"${action}") is stock/K-line analysis and does not provide governed index technical indicators for core market index code ${code}. ` +
+        'Use DataStore(action:"query_index_quote", code:"000001,399001,399006,000688,000300,000905") or MarketData(action:"quote", code:"000001,399001,399006") for index evidence, and state index technical-indicator coverage as missing unless a governed index K-line/indicator contract is available.'
+      )
+    }
 
     const klineRead = code
       ? await this.readKline(ctx, code, period, limit)

@@ -13,16 +13,24 @@ export function queryFinanceNews(
   ds: DataStore,
   input: Record<string, unknown>,
 ): string {
-  const rows = ds.queryFinanceNews({
-    keyword:
-      typeof input.query === "string"
-        ? input.query
-        : typeof input.keyword === "string"
-          ? input.keyword
-          : undefined,
+  const keyword =
+    typeof input.query === "string"
+      ? input.query
+      : typeof input.keyword === "string"
+        ? input.keyword
+        : undefined;
+  let rows = ds.queryFinanceNews({
+    keyword,
     source: typeof input.source === "string" ? input.source : undefined,
     limit: Number(input.limit ?? 50),
   });
+  const queryMiss = rows.length === 0 && !!keyword?.trim();
+  if (queryMiss) {
+    rows = ds.queryFinanceNews({
+      source: typeof input.source === "string" ? input.source : undefined,
+      limit: Number(input.limit ?? 50),
+    });
+  }
   if (rows.length === 0) {
     return "No finance_news rows. Refresh the News panel or use the news.finance_feed route first.";
   }
@@ -45,7 +53,10 @@ export function queryFinanceNews(
       `${r.published_at ?? "-"} [${r.source}] ${r.title ?? "-"} ${r.publisher ?? "-"} ${r.url ?? ""}`.trim(),
     provenance,
   );
-  return withAnalysisEvidence(output, financeNewsEvidence(input, rowMaps));
+  const missNote = queryMiss
+    ? `\nqueryMiss:${keyword} returned no target-specific rows; using latest governed finance_news rows as broad macro/news context.`
+    : "";
+  return withAnalysisEvidence(`${output}${missNote}`, financeNewsEvidence(input, rowMaps));
 }
 
 function withAnalysisEvidence(text: string, evidence: AnalysisEvidencePackage): string {

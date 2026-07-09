@@ -1,7 +1,7 @@
 import { create } from 'zustand'
 import { panelTitle, t } from './useLanguageStore'
 
-export type PanelType = 'chat' | 'webview' | 'dashboard' | 'settings' | 'strategy-library' | 'data-manager'
+export type PanelType = 'chat' | 'webview' | 'dashboard' | 'settings' | 'strategy-library' | 'data-manager' | 'macro-research'
 
 export interface PanelConfig {
   id: string

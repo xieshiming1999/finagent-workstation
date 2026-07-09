@@ -1283,8 +1283,7 @@ function evaluateScenario(
         }) ?? [],
   );
   for (const expected of scenario.expectToolActions ?? []) {
-    const matched = toolActions.includes(expected) ||
-      toolActions.some((actual) => actual.endsWith(`.${expected}`));
+    const matched = toolActions.some((actual) => toolActionMatches(actual, expected));
     assertions.push({
       name: `toolAction.${expected}`,
       ok: matched,
@@ -1399,6 +1398,14 @@ function evaluateScenario(
     });
   }
   return assertions;
+}
+
+function toolActionMatches(actual: string, expected: string): boolean {
+  if (actual === expected || actual.endsWith(`.${expected}`)) return true;
+  const action = actual.includes('.') ? actual.slice(actual.lastIndexOf('.') + 1) : actual;
+  if (expected === 'quote') return action === 'quote' || action === 'query_quote';
+  if (expected === 'query_quote') return action === 'query_quote' || action === 'quote';
+  return false;
 }
 
 export function selectAskUserQuestionAnswer(

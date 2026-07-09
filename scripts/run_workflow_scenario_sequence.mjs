@@ -8,6 +8,7 @@ const port = Number(args.port ?? process.env.FINAGENT_WORKSTATION_WORKFLOW_AUTOM
 const scenarioFile = resolve(String(args.file ?? "reports/evaluation/finance_agent_p0_real_agent_scenarios_2026_06_26.json"));
 const scenarioId = args.scenario ? String(args.scenario) : undefined;
 const outDir = resolve(String(args.out ?? "reports/evaluation/workflow_runs"));
+const runtime = args.runtime ? String(args.runtime) : undefined;
 
 if (!Number.isFinite(port) || port <= 0) {
   fail("A valid --port or FINAGENT_WORKSTATION_WORKFLOW_AUTOMATION_PORT is required.");
@@ -35,7 +36,8 @@ mkdirSync(outDir, { recursive: true });
 const runStamp = new Date().toISOString().replace(/[:.]/g, "-");
 const summaries = [];
 
-for (const scenario of selected) {
+for (const originalScenario of selected) {
+  const scenario = applyRuntimeOverride(originalScenario, runtime);
   let cleanSessionResult = null;
   if (args["clean-session"] || scenario.cleanSession === true) {
     console.log(`Clearing workflow session before ${scenario.id}`);
@@ -90,6 +92,34 @@ for (const scenario of selected) {
   writeFileSync(mdPath, renderReviewMarkdown({ scenario, result, review, jsonPath }), "utf-8");
   summaries.push({ scenarioId: scenario.id, ok: result.ok, jsonPath, mdPath });
   console.log(`Wrote ${mdPath}`);
+}
+
+function applyRuntimeOverride(scenario, runtimeName) {
+  if (!runtimeName || !scenario?.runtimeOverrides?.[runtimeName]) return scenario;
+  const override = scenario.runtimeOverrides[runtimeName];
+  const merged = {
+    ...scenario,
+    ...override,
+    id: scenario.id,
+    purpose: override.purpose ?? scenario.purpose,
+    priority: override.priority ?? scenario.priority,
+    runtime: runtimeName,
+    runtimeOverrides: scenario.runtimeOverrides,
+  };
+  if (Array.isArray(scenario.turns) && Array.isArray(override.turns)) {
+    const overridesById = new Map(
+      override.turns
+        .filter((turn) => turn && typeof turn === "object")
+        .map((turn) => [turn.turnId, turn]),
+    );
+    merged.turns = scenario.turns.map((turn, index) => {
+      const turnOverride = overridesById.get(turn.turnId) ?? override.turns[index];
+      return turnOverride && typeof turnOverride === "object"
+        ? { ...turn, ...turnOverride, turnId: turn.turnId }
+        : turn;
+    });
+  }
+  return merged;
 }
 
 const indexPath = join(outDir, `${runStamp}-index.json`);

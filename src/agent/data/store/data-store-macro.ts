@@ -137,7 +137,24 @@ function decodeFactorRow(row: Row): Row {
     delete next[storageKey]
   }
   next.raw_json = decodeJson(row.raw_json)
+  const macroValues = asRecord(next.macro_values)
+  const raw = asRecord(next.raw_json)
+  next.evidence_tier = next.evidence_tier ?? macroValues.evidenceTier ?? raw.evidence_tier
+  next.limitations = next.limitations ?? macroValues.limitations ?? limitationList(macroValues.limitation) ?? raw.limitations
+  next.linked_macro_evidence_ids =
+    next.linked_macro_evidence_ids ?? macroValues.linkedMacroEvidenceIds ?? raw.linked_macro_evidence_ids
   return next
+}
+
+function asRecord(value: unknown): Record<string, unknown> {
+  return value && typeof value === 'object' && !Array.isArray(value)
+    ? value as Record<string, unknown>
+    : {}
+}
+
+function limitationList(value: unknown): string[] | undefined {
+  const text = clean(value)
+  return text ? [text] : undefined
 }
 
 function encodeJson(value: unknown): string | null {

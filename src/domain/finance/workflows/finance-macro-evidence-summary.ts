@@ -1,0 +1,452 @@
+import { Role, type Message } from '../../../agent/message'
+
+interface MacroEvidence {
+  hasMacroEvidence: boolean
+  hasNewsRefresh: boolean
+  contextLines: string[]
+  nonMacroLines: string[]
+  factorLines: string[]
+  sourceLines: string[]
+  contentLines: string[]
+  evidenceLines: string[]
+  newsLines: string[]
+  missingLines: string[]
+}
+
+export function maybeBuildMacroEvidenceAnswer(
+  messages: Message[],
+  options: {
+    failureSummary: string
+    suffix?: string
+  },
+): string | null {
+  const evidence = collectMacroEvidence(messages)
+  if (!evidence.hasMacroEvidence || !hasActionableMacroEvidence(evidence)) return null
+  return [
+    '已取得受治理的宏观证据，下面直接使用这些证据作答；未继续调用通用搜索、网页抓取、文件读取、脚本或交易工具。',
+    '',
+    ...buildMacroEvidenceSection(evidence),
+    '',
+    '## 回测 / 策略边界',
+    '',
+    '- 宏观研究、政策、商品、利率和资金流证据只能作为策略假设、观察条件或失效条件。',
+    '- 这些证据不能直接编译成可执行交易信号；如果要进入回测，需要先把可量化变量改写为 StrategySpec 支持的指标、阈值、数据窗口和风险规则。',
+    '- 本轮没有执行下单、保存策略或把宏观观点硬塞进交易信号。',
+    '',
+    '## 本轮限制',
+    '',
+    `- ${options.failureSummary}`,
+    ...(options.suffix?.trim() ? [`- ${options.suffix.trim()}`] : []),
+  ].join('\n')
+}
+
+function hasActionableMacroEvidence(evidence: MacroEvidence): boolean {
+  return evidence.factorLines.length > 0 ||
+    evidence.sourceLines.length > 0 ||
+    evidence.contentLines.length > 0 ||
+    evidence.evidenceLines.length > 0
+}
+
+export function collectMacroEvidence(messages: Message[]): MacroEvidence {
+  const factorLines: string[] = []
+  const sourceLines: string[] = []
+  const contentLines: string[] = []
+  const evidenceLines: string[] = []
+  const newsLines: string[] = []
+  const missingLines: string[] = []
+  const contextLines: string[] = []
+  const nonMacroLines: string[] = []
+  let sawMacroAction = false
+  let hasNewsRefresh = false
+
+  for (const message of messages) {
+    if (message.role === Role.Assistant) {
+      for (const call of message.toolUses ?? []) {
+        const action = text(call.input.action)
+        if (action.includes('macro')) {
+          contextLines.push(...callContextLines(call.input))
+        } else {
+          const line = nonMacroCallLine(call.name, call.input)
+          if (line) nonMacroLines.push(line)
+        }
+      }
+      continue
+    }
+    if (message.role !== Role.Tool || !message.toolResult || message.toolResult.isError) continue
+    const financeNewsLine = financeNewsResultLine(message.toolResult.content)
+    if (financeNewsLine) {
+      hasNewsRefresh = true
+      newsLines.push(financeNewsLine)
+      continue
+    }
+    const decoded = parseJsonObject(message.toolResult.content)
+    if (!decoded) continue
+    const action = text(decoded.action)
+    if (action === 'query_finance_news') {
+      const line = financeNewsPayloadLine(decoded)
+      if (line) newsLines.push(line)
+      continue
+    }
+    if (!action.includes('macro')) {
+      const line = nonMacroResultLine(decoded)
+      if (line) nonMacroLines.push(line)
+      continue
+    }
+    sawMacroAction = true
+    if (text(decoded.status) === 'missing') {
+      const reason = text(decoded.missingReason)
+      if (reason) missingLines.push(`${action}: ${reason}`)
+    }
+    switch (action) {
+      case 'query_macro_factors':
+        factorLines.push(...factorRows(decoded))
+        break
+      case 'macro_research_sources':
+        sourceLines.push(...sourceRows(decoded))
+        break
+      case 'query_macro_research_content':
+        contentLines.push(...contentRows(decoded))
+        break
+      case 'query_macro_research_evidence':
+      case 'macro_research_provenance':
+      case 'macro_research_extract':
+      case 'macro_research_extraction_status':
+      case 'query_macro_attribution':
+        evidenceLines.push(...evidenceRows(decoded))
+        break
+      default:
+        evidenceLines.push(...evidenceRows(decoded))
+        break
+    }
+  }
+
+  return {
+    hasMacroEvidence: sawMacroAction,
+    hasNewsRefresh,
+    contextLines: dedupe(contextLines),
+    nonMacroLines: dedupe(nonMacroLines),
+    factorLines: dedupe(factorLines),
+    sourceLines: dedupe(sourceLines),
+    contentLines: dedupe(contentLines),
+    evidenceLines: dedupe(evidenceLines),
+    newsLines: dedupe(newsLines),
+    missingLines: dedupe(missingLines),
+  }
+}
+
+function financeNewsPayloadLine(payload: Record<string, unknown>): string {
+  const dataRows = rows(payload, 'data')
+  const sourceDataTime = text(payload.sourceDataTime)
+  const fetchedAt = text(payload.fetchedAt)
+  const query = text(payload.query ?? payload.keyword)
+  const headlines = dataRows.slice(0, 2).map((row) =>
+    compact([text(row.published_at), `[${text(row.source)}]`, text(row.title), text(row.url)].filter(Boolean).join(' '), 120)
+  ).join('；')
+  if (dataRows.length === 0 && !sourceDataTime && !fetchedAt) return query
+    ? `query=${query} / cacheStatus=${text(payload.cacheStatus)} / evidenceTier=linked_news_evidence / limitation=target_news_query_miss`
+    : ''
+  return [
+    query ? `query=${query}` : '',
+    sourceDataTime ? `sourceTime=${sourceDataTime}` : '',
+    fetchedAt ? `fetchedAt=${fetchedAt} / 获取时间=${fetchedAt}` : '',
+    `count=${text(payload.count) || dataRows.length}`,
+    'evidenceTier=linked_news_evidence',
+    'limitation=news_clue_not_official_fact',
+    headlines,
+  ].filter(Boolean).join(' / ')
+}
+
+function buildMacroEvidenceSection(evidence: MacroEvidence): string[] {
+  const lines = [
+    '## 宏观证据与来源状态',
+    '',
+  ]
+  if (evidence.factorLines.length === 0) {
+    lines.push('- 宏观因子：本轮没有命中可复用 `market_moving_factor_v1` 行；这表示证据缺口，不表示宏观因素无关。')
+  } else {
+    lines.push(`- 宏观因子：${evidence.factorLines.slice(0, 3).join('；')}。`)
+  }
+  if (evidence.contextLines.length > 0) {
+    lines.push(`- 分析对象/口径：${evidence.contextLines.slice(0, 4).join('；')}。`)
+  }
+  if (evidence.nonMacroLines.length > 0) {
+    lines.push(`- 非宏观证据状态：${evidence.nonMacroLines.slice(0, 6).join('；')}。`)
+  }
+  if (evidence.sourceLines.length > 0) {
+    lines.push(`- 来源目录读回：${evidence.sourceLines.slice(0, 4).join('；')}。`)
+  }
+  if (evidence.contentLines.length > 0) {
+    lines.push(`- 内容证据：${evidence.contentLines.slice(0, 3).join('；')}。`)
+  }
+  if (evidence.evidenceLines.length > 0) {
+    lines.push(`- 访问/检索证据：${evidence.evidenceLines.slice(0, 4).join('；')}。`)
+  }
+  if (evidence.newsLines.length > 0) {
+    const prefix = evidence.hasNewsRefresh
+      ? '新闻刷新与读回'
+      : '新闻线索读回'
+    lines.push(`- ${prefix}：${evidence.newsLines.slice(0, 4).join('；')}。新闻只作为发现和当前事件线索，不能替代官方数据或内容级研究证据。`)
+  }
+  if (evidence.missingLines.length > 0) {
+    lines.push(`- 不确定性/数据缺口：${evidence.missingLines.slice(0, 4).join('；')}。`)
+  }
+  lines.push(
+    '',
+    '## 宏观假设和失效条件',
+    '',
+    '- 利率/流动性：如果政策利率、资金利率或期限利差与当前假设相反，股票、债券基金或策略结论需要重新验证。',
+    '- 信用：如果信用利差、违约风险、融资环境或评级迁移证据与当前假设相反，债券基金和信用类资产结论需要重新验证。',
+    '- 商品/能源：如果商品库存、关税、供需或能源价格出现反向变化，资源品、制造业成本和风险偏好判断需要重估。',
+    '- 外资/指数事件：如果指数公司调整、被动资金流或跨境流动证据缺失，应把相关结论降级为观察假设。',
+    '- 政策/监管：官方政策和交易所规则应作为独立证据层，不能用研究文章替代。',
+    '- 更新要求：在保存、复跑或监控策略前，应先更新宏观来源目录、新闻线索和可用官方/研究证据，并重新读回证据层级。',
+  )
+  return lines
+}
+
+function nonMacroCallLine(toolName: string, input: Record<string, unknown>): string {
+  if (toolName === 'Watchlist') {
+    const action = text(input.action)
+    return action === 'list' || action === 'list_groups'
+      ? `自选股: 已请求 ${action}，需以工具结果或本地读回为准`
+      : ''
+  }
+  if (toolName !== 'DataStore' && toolName !== 'MarketData') return ''
+  const action = text(input.action)
+  const label = actionLabel(action)
+  if (!label) return ''
+  const target = text(input.code) || text(input.symbol) || listText(input.symbols) || listText(input.codes) || text(input.type)
+  return `${label}: 已请求${target ? ` ${target}` : ''}，需以工具结果或本地读回为准`
+}
+
+function nonMacroResultLine(payload: Record<string, unknown>): string {
+  const action = text(payload.action)
+  const label = actionLabel(action)
+  if (!label) return ''
+  const count = text(payload.count ?? (Array.isArray(payload.rows) ? payload.rows.length : ''))
+  const status = text(payload.status)
+  const source = text(payload.source ?? payload.provider)
+  const code = text(payload.code ?? payload.symbol)
+  const detail = [
+    code,
+    source ? `source=${source}` : '',
+    status ? `status=${status}` : '',
+    count ? `count=${count}` : '',
+  ].filter(Boolean).join(' / ')
+  return `${label}${detail ? `: ${detail}` : ': 已返回结构化结果'}`
+}
+
+function actionLabel(action: string): string {
+  const labels: Record<string, string> = {
+    query_quote: '个股行情',
+    query_index_quote: '指数/市场技术面',
+    query_kline: 'K 线/技术面',
+    query_sector_ranking: '板块热度',
+    query_flow_rank: '资金流向',
+    query_northbound_flow: '北向资金',
+    query_fund_nav: '基金净值',
+    query_fund_money_yield: '货币基金收益',
+    query_fund_holding: '基金持仓',
+    query_stock_company_info: '自选股公司信息',
+    query_fund_company_info: '基金公司信息',
+  }
+  if (labels[action]) return labels[action]
+  if (action === 'fetch') return '数据刷新'
+  return ''
+}
+
+function listText(value: unknown): string {
+  return Array.isArray(value) ? value.map(text).filter(Boolean).join(',') : ''
+}
+
+function callContextLines(input: Record<string, unknown>): string[] {
+  const values = [
+    targetLabel(text(input.target)),
+    targetLabel(text(input.assets)),
+    targetLabel(text(input.symbol)),
+    targetLabel(text(input.code)),
+    familyLabel(text(input.family)),
+    categoryLabel(text(input.category)),
+  ].filter(Boolean)
+  return values as string[]
+}
+
+function targetLabel(value: string): string {
+  if (!value) return ''
+  if (value.includes(',')) {
+    return value.split(',').map((item) => targetLabel(item.trim())).filter(Boolean).join('；')
+  }
+  if (/^a[-_ ]?shares$/i.test(value)) return 'A 股'
+  if (/^china equities$/i.test(value)) return '中国股票 / A 股相关'
+  if (/^bond funds?$/i.test(value)) return '债券基金'
+  if (/^moutai$/i.test(value) || /^kweichow\s+moutai$/i.test(value)) return '贵州茅台 / Moutai'
+  if (value === '600519') return '贵州茅台 600519'
+  if (/^chinese spirits$/i.test(value)) return '白酒'
+  if (/^china consumption$/i.test(value)) return '中国消费'
+  if (/^china liquor regulation$/i.test(value)) return '白酒监管'
+  return value
+}
+
+function familyLabel(value: string): string {
+  if (!value) return ''
+  const labels: Record<string, string> = {
+    rates_liquidity: '利率/流动性',
+    policy_regulation: '政策/监管',
+    narrative_attention: '叙事/关注度',
+    commodity_research: '商品/能源',
+    index_classification: '指数/被动资金',
+  }
+  return labels[value] ?? value
+}
+
+function categoryLabel(value: string): string {
+  return familyLabel(value)
+}
+
+function factorRows(payload: Record<string, unknown>): string[] {
+  return rows(payload).map((row) => {
+    const title = text(row.title ?? row.factor_name ?? row.factorId)
+    const family = text(row.family)
+    const source = text(row.source ?? row.provider)
+    const time = text(row.sourceDataTime ?? row.source_time)
+    return [title, family, source, time].filter(Boolean).join(' / ')
+  }).filter(Boolean)
+}
+
+function sourceRows(payload: Record<string, unknown>): string[] {
+  return rows(payload).map((row) => {
+    const name = text(row.providerName ?? row.provider)
+    const access = text(row.accessClass ?? row.automationPolicy)
+    const categories = Array.isArray(row.categories)
+      ? row.categories.slice(0, 3).map(text).filter(Boolean).join(',')
+      : text(row.category)
+    const bucket = sourceBucket(row)
+    return [bucket, name, categories, access].filter(Boolean).join(' / ')
+  }).filter(Boolean)
+}
+
+function sourceBucket(row: Record<string, unknown>): string {
+  const haystack = [
+    row.provider,
+    row.providerName,
+    row.accessClass,
+    row.automationPolicy,
+    row.sourceType,
+    row.kind,
+    row.category,
+    ...(Array.isArray(row.categories) ? row.categories : []),
+  ].map(text).join(' ').toLowerCase()
+  const restricted = /(licensed|blocked|manual|anti[- ]?bot|security|restricted|gated|paywall)/.test(haystack)
+  const research = /(research|insight|public-html|pdf|institutional|blackrock|pimco|jpmorgan|goldman|msci|ftse|s&p|cme)/.test(haystack)
+  if (/(official|government|central bank|regulator|exchange|api|pbo[c]?|nbs|safe|csrc|fred|bea|world bank|imf|bis|eia|opec|iea)/.test(haystack)) {
+    return '官方来源'
+  }
+  if (/(news|feed|search)/.test(haystack)) {
+    return '新闻来源'
+  }
+  if (research && restricted) {
+    return '研究来源(受限)'
+  }
+  if (research) {
+    return '研究来源'
+  }
+  if (restricted) {
+    return '受限来源'
+  }
+  return '来源'
+}
+
+function contentRows(payload: Record<string, unknown>): string[] {
+  const contentRows = rows(payload, 'contentEvidence').length > 0
+    ? rows(payload, 'contentEvidence')
+    : rows(payload)
+  return contentRows.map((row) => {
+    const title = text(row.title ?? row.factor_name)
+    const provider = text(row.provider ?? row.source ?? row.sourceName)
+    const date = text(row.sourceDate ?? row.sourceDataTime)
+    const hash = text(row.contentHash)
+    const claims = Array.isArray(row.keyClaims)
+      ? row.keyClaims.slice(0, 2).map(text).filter(Boolean).join('；')
+      : text(row.keyClaims)
+    const preview = text(row.bodyPreview)
+    return [
+      title,
+      provider,
+      date,
+      hash ? `hash=${hash.slice(0, 12)}` : '',
+      claims,
+      preview ? `preview=${compact(preview, 120)}` : '',
+    ].filter(Boolean).join(' / ')
+  }).filter(Boolean)
+}
+
+function evidenceRows(payload: Record<string, unknown>): string[] {
+  const lines: string[] = []
+  for (const row of rows(payload).slice(0, 8)) {
+    const provider = text(row.provider ?? row.source ?? row.sourceName)
+    const family = text(row.family)
+    const status = text(row.status ?? row.failure_class)
+    const limitation = text(row.limitation ?? row.missingReason)
+    const line = [provider, family, status, limitation].filter(Boolean).join(' / ')
+    if (line) lines.push(line)
+  }
+  const generated = text(payload.generatedRows)
+  if (generated) lines.push(`${text(payload.action)}: generatedRows=${generated}`)
+  const extracted = text(payload.extracted)
+  if (extracted) lines.push(`${text(payload.action)}: extracted=${extracted}`)
+  return lines
+}
+
+function financeNewsResultLine(content: string): string {
+  const firstLine = content.trim().split('\n').find((line) => line.trim())?.trim() ?? ''
+  if (!firstLine.startsWith('finance_news |')) return ''
+  const rows = content.split('\n').slice(1).map((line) => line.trim()).filter(Boolean)
+  const source = firstLine.match(/\|\s*provider:([^|]+)/)?.[1]?.trim() ?? ''
+  const asOf = firstLine.match(/\|\s*asOf:([^|]+)/)?.[1]?.trim() ?? ''
+  const fetchedAt = firstLine.match(/\|\s*fetchedAt:([^|]+)/)?.[1]?.trim() ?? ''
+  const headlines = rows.slice(0, 2).map((line) => compact(line, 120)).join('；')
+  return [
+    source ? `provider=${source}` : 'provider=finance_news',
+    asOf ? `sourceTime=${asOf}` : '',
+    fetchedAt ? `fetchedAt=${fetchedAt} / 获取时间=${fetchedAt}` : '',
+    'evidenceTier=linked_news_evidence',
+    'limitation=news_clue_not_official_fact',
+    headlines,
+  ].filter(Boolean).join(' / ')
+}
+
+function rows(payload: Record<string, unknown>, key = 'rows'): Array<Record<string, unknown>> {
+  const value = payload[key]
+  return Array.isArray(value)
+    ? value.filter((item): item is Record<string, unknown> => !!item && typeof item === 'object' && !Array.isArray(item))
+    : []
+}
+
+function parseJsonObject(content: string): Record<string, unknown> | null {
+  const trimmed = content.trim()
+  if (!trimmed.startsWith('{')) return null
+  try {
+    const decoded = JSON.parse(trimmed) as unknown
+    return decoded && typeof decoded === 'object' && !Array.isArray(decoded)
+      ? decoded as Record<string, unknown>
+      : null
+  } catch {
+    return null
+  }
+}
+
+function dedupe(values: string[]): string[] {
+  const seen = new Set<string>()
+  return values
+    .map((value) => value.trim())
+    .filter((value) => value && !seen.has(value) && !!seen.add(value))
+}
+
+function compact(value: string, maxLength: number): string {
+  const oneLine = value.replace(/\s+/g, ' ').trim()
+  return oneLine.length > maxLength ? `${oneLine.slice(0, maxLength - 1)}...` : oneLine
+}
+
+function text(value: unknown): string {
+  return String(value ?? '').trim()
+}

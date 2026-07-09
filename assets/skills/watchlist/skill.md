@@ -18,6 +18,9 @@ directly and do not claim a watch item was created until the tool returns an id.
    `targetPrice`, or structured `conditions` when the tool/runtime supports it.
    `entryCondition` is explanatory text and must not be treated as an
    executable monitor rule by itself.
+   Macro/factor evidence may be included as rationale or invalidation context,
+   but it is not an executable watchlist trigger unless the tool exposes a
+   supported structured condition for that factor type.
 4. Read back with `Watchlist(action:"list", ...)` when the workflow requires
    verification or when multiple items were added.
 5. If the user asks for alerts, create a monitor with `MonitorCreate` after the
@@ -43,6 +46,9 @@ strategy contract into the watchlist state:
 
 If the strategy rule cannot be represented by supported watchlist fields, keep
 the unsupported part visible and do not pretend the watch item will execute it.
+If macro research or policy evidence explains why the item is being watched,
+preserve it as provenance or final-answer context; keep executable watch rules
+limited to supported numeric or structured fields.
 
 ## Examples
 

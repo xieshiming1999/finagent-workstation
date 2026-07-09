@@ -22,6 +22,10 @@ appropriate strategy automatically and return a full reasoning chain.
 
 ## Tool Actions
 
+Skill instructions are not evidence. For strategy preparation, validation-risk,
+or invalidation-condition answers, do not stop after loading this skill. Run
+the governed macro/news readbacks below, then answer from those tool results.
+
 For a fund strategy, fund DCA, fund observation, or fund monitor request, do
 not use `DataProcess(action:"score_technical"|"summary"|"signals"|"support"|
 "indicators"|"ai_record")`. Those actions are stock/K-line or prediction-log
@@ -54,6 +58,8 @@ could affect assumptions:
 
 ```text
 DataStore(action: "query_macro_factors", target: "<identified exposure>", limit: 10)
+DataStore(action: "query_macro_attribution", target: "<identified exposure>", limit: 10)
+DataStore(action: "query_finance_news", query: "<identified exposure>", limit: 10)
 ```
 
 Use this only as a macro assumptions section in validation/backtest discussion:
@@ -61,6 +67,13 @@ possible regime pressure, source time, fetched time, affected assets, and
 missing evidence. Do not encode macro/news/research prose as executable
 StrategySpec rules unless a later StrategySpec contract explicitly supports the
 factor type.
+For preparation, validation-risk, or backtest-invalidation work, use
+`query_macro_factors`, `query_macro_attribution`, and `query_finance_news` as
+the structured contract for assumptions, contradictions, confidence, news
+clues, missing evidence, invalidation conditions, and next update action.
+Macro attribution and news may become commentary, regime context, stress
+condition, or watch factor; they are not executable StrategySpec signals unless
+the StrategySpec schema explicitly supports that factor.
 
 If the current request is only a preparation step such as explaining macro,
 data, liquidity, or validation risks before strategy design, complete that

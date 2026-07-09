@@ -155,7 +155,7 @@ describe('DataStore screening failure logging', () => {
     )
   })
 
-  it('allows ambiguous bare stock codes when local K-line rows exist', async () => {
+  it('rejects stock-only DataProcess actions for core market index codes', async () => {
     const store = await openStore()
     store.saveFundList([{
       code: '000001',
@@ -188,8 +188,8 @@ describe('DataStore screening failure logging', () => {
     })))
     const tool = new DataProcessTool()
 
-    await expect(tool.call('dp-stock-indicators', { action: 'indicators', code: '000001', indicators: ['rsi'] }, makeCtx(cleanupPaths[cleanupPaths.length - 1]))).resolves.toContain(
-      '"action": "indicators"',
+    await expect(tool.call('dp-index-indicators', { action: 'indicators', code: '000001', indicators: ['rsi'] }, makeCtx(cleanupPaths[cleanupPaths.length - 1]))).rejects.toThrow(
+      'does not provide governed index technical indicators',
     )
   })
 
@@ -229,7 +229,7 @@ describe('DataStore screening failure logging', () => {
     })
   })
 
-  it('does not classify core market index codes as funds when fund_list has colliding codes', async () => {
+  it('rejects core market index codes before colliding fund or stock K-line rows can pollute evidence', async () => {
     const store = await openStore()
     store.saveFundList([{
       code: '000300',
@@ -262,14 +262,13 @@ describe('DataStore screening failure logging', () => {
     })))
     const tool = new DataProcessTool()
 
-    const output = await tool.call('dp-index-indicators', {
+    await expect(tool.call('dp-index-indicators', {
       action: 'indicators',
       code: '000300',
       indicators: ['rsi'],
-    }, makeCtx(cleanupPaths[cleanupPaths.length - 1]))
-
-    expect(JSON.parse(output)).toMatchObject({ action: 'indicators', code: '000300', bars: 25 })
-    expect(output).not.toContain('known fund code in fund_list')
+    }, makeCtx(cleanupPaths[cleanupPaths.length - 1]))).rejects.toThrow(
+      'does not provide governed index technical indicators',
+    )
   })
 
   it('returns analysis evidence with governed provenance for summary', async () => {

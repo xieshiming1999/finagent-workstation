@@ -27,6 +27,7 @@ DataStore(action: "query_quote", code: "600519")
 DataStore(action: "query_kline", code: "600519", limit: 120)
 DataStore(action: "query_fundamental", code: "600519", limit: 8)
 DataStore(action: "query_macro_factors", target: "<identified sector, commodity, country, rate, or theme>", limit: 10)
+DataStore(action: "query_macro_attribution", target: "<identified sector, commodity, country, rate, or theme>", limit: 10)
 ```
 
 For A-share real-time quote, use:
@@ -92,7 +93,11 @@ for each candidate.
 1. when the stock has clear exposure to rates, liquidity, currency, commodity,
    policy, country/index, or sector-level macro pressure, call
    `DataStore(action:"query_macro_factors", ...)` with structured target,
-   assets, regions, sectors, or family filters and cite returned provenance
+   assets, regions, sectors, or family filters and cite returned provenance.
+   For root-cause, attribution, or judgment-risk analysis, follow with
+   `DataStore(action:"query_macro_attribution", ...)` using the same filters
+   and use its confidence, missing evidence, contradictions, and invalidation
+   conditions as the macro attribution contract
 2. fetch missing quote / kline / fundamental / money-flow data when the user
    asked for deep analysis and the readback result explicitly says reusable
    rows are missing
@@ -111,7 +116,9 @@ lithium:
    local K-line is available.
 2. Add one macro/factor readback for the commodity or sector exposure:
    `DataStore(action:"query_macro_factors", target:"Copper", limit:10)` or the
-   equivalent structured target.
+   equivalent structured target. If the user asks what drives the stock or how
+   macro changes affect the judgment, also read
+   `DataStore(action:"query_macro_attribution", ...)` for that exposure.
 3. Do not call A-share quote/K-line/DataProcess actions for global futures, FX,
    or commodity symbols such as `HG=F`, `DXY=F`, `CL=F`, `GC=F`, or `BTC-USD`.
    Those are context symbols, not the stock being analyzed.

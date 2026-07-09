@@ -6,6 +6,7 @@ import SettingsPanel from './SettingsPanel'
 import DashboardManager from '../components/DashboardManager'
 import StrategyLibrary from '../components/StrategyLibrary'
 import DataPanel from './DataPanel'
+import MacroResearchPanel from '../components/MacroResearchPanel'
 
 export default function WorkspaceArea() {
   const t = useT()
@@ -73,6 +74,9 @@ export default function WorkspaceArea() {
         )}
         {active?.type === 'data-manager' && (
           <DataPanel />
+        )}
+        {active?.type === 'macro-research' && (
+          <MacroResearchPanel />
         )}
       </div>
     </div>

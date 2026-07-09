@@ -151,4 +151,19 @@ describe('file tool path conventions', () => {
     const grep = await new GrepTool().call('grep-1', { path: 'memory/pages', pattern: 'needle', output_mode: 'files_with_matches' }, ctx)
     expect(grep).toContain('alpha.html')
   })
+
+  it('blocks macro research artifact inspection through generic file tools', async () => {
+    const ctx = makeContext()
+    const macroDir = join(ctx.basePath, 'data', 'macro_research_content', 'goldman_sachs')
+    mkdirSync(macroDir, { recursive: true })
+    writeFileSync(join(macroDir, 'report.md'), 'macro artifact body', 'utf-8')
+
+    await expect(new FileReadTool().call('read-macro', {
+      file_path: 'data/macro_research_content/goldman_sachs/report.md',
+    }, ctx)).rejects.toThrow(/query_macro_research_content/)
+
+    await expect(new LSTool().call('ls-macro', {
+      path: 'data/macro_research_content',
+    }, ctx)).rejects.toThrow(/query_macro_research_content/)
+  })
 })

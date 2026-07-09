@@ -28,13 +28,18 @@ function queryGovernedCompanyInfo(
     defaultInfoType: string;
   },
 ): string {
-  const code = String(input.code ?? "");
-  if (!code) return toolError(`code required for ${opts.action}`);
+  const codes = String(input.code ?? input.codes ?? "")
+    .split(",")
+    .map((code) => code.trim())
+    .filter(Boolean)
+    .slice(0, 8);
+  if (codes.length === 0) return toolError(`code required for ${opts.action}`);
   const infoType = String(
     input.type ?? input.info_type ?? opts.defaultInfoType,
   );
-  let sql = "SELECT * FROM stock_company_info WHERE code = ? AND source = ?";
-  const params: unknown[] = [code, "Wind"];
+  const placeholders = codes.map(() => "?").join(",");
+  let sql = `SELECT * FROM stock_company_info WHERE code IN (${placeholders}) AND source = ?`;
+  const params: unknown[] = [...codes, "Wind"];
   if (infoType) {
     sql += " AND (info_type = ? OR info_type LIKE ?)";
     params.push(infoType, `${infoType}:%`);
@@ -43,10 +48,10 @@ function queryGovernedCompanyInfo(
   params.push(Number(input.limit ?? 20));
   const rows = ds.query<Record<string, unknown>>(sql, ...params);
   if (rows.length === 0) {
-    return `No governed ${opts.interfaceId} rows for ${code}. Check DataStore(action:"data_health", section:"gaps") or fetch the Wind route first.`;
+    return `No governed ${opts.interfaceId} rows for ${codes.join(",")}. Check DataStore(action:"data_health", section:"gaps") or fetch the Wind route first.`;
   }
   const output = formatRows(
-    `${code} ${opts.interfaceId}`,
+    `${codes.join(",")} ${opts.interfaceId}`,
     rows,
     (r) =>
       `${r.info_type} ${r.title}: ${String(r.content ?? "").slice(0, 160)}`,
@@ -59,7 +64,7 @@ function queryGovernedCompanyInfo(
   );
   if (opts.interfaceId !== "stock.risk_metrics") return output;
   return `${output}\nanalysisEvidence:${JSON.stringify(
-    stockRiskMetricsEvidence(code, rows, opts.action),
+    stockRiskMetricsEvidence(codes.join(","), rows, opts.action),
   )}`;
 }
 

@@ -2,6 +2,8 @@ import { existsSync, readFileSync } from 'fs'
 import { homedir } from 'os'
 import { join } from 'path'
 import type { DataStore } from '../agent/data/store/data-store'
+import { macroNumericSeriesCatalog } from '../agent/tools/data-store-tool-query-macro'
+import { MACRO_RESEARCH_SOURCES, type MacroResearchSource } from '../agent/tools/macro-research-source-catalog'
 import type { AppConfig } from './config'
 
 type FactorRow = Record<string, unknown>
@@ -24,6 +26,7 @@ export interface MacroFactorSourceStatus {
 export interface MacroFactorRadarResult {
   rows: FactorRow[]
   sources: MacroFactorSourceStatus[]
+  numericSeriesCatalog: Record<string, unknown>[]
   generatedAt: string
   error?: string
 }
@@ -36,24 +39,25 @@ export async function refreshMacroFactorRadar(
 ): Promise<MacroFactorRadarResult> {
   const generatedAt = new Date().toISOString()
   const rows: FactorRow[] = [...seedFactorRows(generatedAt)]
-  const sources: MacroFactorSourceStatus[] = [
-    { id: 'manual.msci', name: 'MSCI official/manual seed', state: 'fallback-only', detail: 'Seeded index-classification evidence until a specific public document URL is configured.' },
-    { id: 'manual.goldman-copper', name: 'Goldman/public research summary', state: 'fallback-only', detail: 'Seeded research-summary evidence; licensed reports must be supplied explicitly.' },
-  ]
+  const sources: MacroFactorSourceStatus[] = sourceRegistrySnapshot()
 
   const fredKey = configValue(config, 'FRED_API_KEY')
-  const fredRows = await fetchFredFactors(fredKey, generatedAt)
-  rows.push(...fredRows.rows)
-  sources.push(fredRows.source)
-
-  const blsRows = await fetchBlsFactors(generatedAt)
-  rows.push(...blsRows.rows)
-  sources.push(blsRows.source)
-
   const beaKey = configValue(config, 'BEA_API_KEY') || readBeaKeyFile()
-  const beaRows = await fetchBeaFactors(beaKey, generatedAt)
-  rows.push(...beaRows.rows)
-  sources.push(beaRows.source)
+  const eiaKey = configValue(config, 'EIA_API_KEY')
+  const officialResults = await Promise.all([
+    fetchFredFactors(fredKey, generatedAt),
+    fetchBlsFactors(generatedAt),
+    fetchBeaFactors(beaKey, generatedAt),
+    fetchWorldBankFactors(generatedAt),
+    fetchImfFactors(generatedAt),
+    fetchOecdFactors(generatedAt),
+    fetchEiaFactors(eiaKey, generatedAt),
+    fetchNbsChinaFactors(generatedAt),
+  ])
+  for (const result of officialResults) {
+    rows.push(...result.rows)
+    sources.push(result.source)
+  }
 
   const windRows = extractWindCachedFactors(ds, generatedAt, config)
   rows.push(...windRows.rows)
@@ -67,7 +71,17 @@ export async function refreshMacroFactorRadar(
   return {
     rows: ds.queryMarketMovingFactors({ limit: 80 }),
     sources,
+    numericSeriesCatalog: numericSeriesCatalogSnapshot(),
     generatedAt,
+  }
+}
+
+function numericSeriesCatalogSnapshot(): Record<string, unknown>[] {
+  try {
+    const parsed = JSON.parse(macroNumericSeriesCatalog({ limit: 80 }))
+    return Array.isArray(parsed?.rows) ? parsed.rows : []
+  } catch {
+    return []
   }
 }
 
@@ -191,6 +205,12 @@ function extractNewsCachedFactors(ds: DataStore, fetchedAt: string): { rows: Fac
         source_name: row.source ?? row.publisher ?? 'finance_news',
         source_url: row.url ?? null,
         source_type: 'cached_finance_news',
+        evidence_tier: 'linked_news_evidence',
+        limitations: [
+          'Finance news is a current-event clue, not an official macro fact.',
+          'Use official data or content-backed research before making a root-cause conclusion.',
+        ],
+        linked_macro_evidence_ids: [],
         source_published_at: row.published_at ?? null,
         fetched_at: fetchedAt,
         event_at: row.published_at ?? null,
@@ -203,7 +223,15 @@ function extractNewsCachedFactors(ds: DataStore, fetchedAt: string): { rows: Fac
         confidence: 'unassessed',
         status: 'watch',
         evidence_items: [{ label: title, source_url: row.url ?? null, retrieved_at: fetchedAt }],
-        macro_values: {},
+        macro_values: {
+          evidenceTier: 'linked_news_evidence',
+          limitation: 'news_clue_not_official_fact',
+          limitations: [
+            'Finance news is a current-event clue, not an official macro fact.',
+            'Use official data or content-backed research before making a root-cause conclusion.',
+          ],
+          publisher: row.publisher ?? row.source ?? null,
+        },
         retrieval_test: retrieval('finance_news', 'finance_news.cached_macro_readback', 'ok', null),
         raw_json: row,
       }
@@ -216,13 +244,19 @@ export function readMacroFactorRadar(ds: DataStore): MacroFactorRadarResult {
   const generatedAt = new Date().toISOString()
   const existing = ds.queryMarketMovingFactors({ limit: 80 })
   if (existing.length > 0) {
-    return { rows: existing, sources: sourceRegistrySnapshot(), generatedAt }
+    return {
+      rows: existing,
+      sources: sourceRegistrySnapshot(),
+      numericSeriesCatalog: numericSeriesCatalogSnapshot(),
+      generatedAt,
+    }
   }
   const seeds = seedFactorRows(generatedAt)
   ds.saveMarketMovingFactors(seeds)
   return {
     rows: ds.queryMarketMovingFactors({ limit: 80 }),
     sources: sourceRegistrySnapshot(),
+    numericSeriesCatalog: numericSeriesCatalogSnapshot(),
     generatedAt,
   }
 }
@@ -447,6 +481,304 @@ async function fetchBeaFactors(apiKey: string | null, fetchedAt: string): Promis
   }
 }
 
+async function fetchWorldBankFactors(fetchedAt: string): Promise<{ rows: FactorRow[]; source: MacroFactorSourceStatus }> {
+  const url = new URL('https://api.worldbank.org/v2/country/US/indicator/NY.GDP.MKTP.CD')
+  url.searchParams.set('format', 'json')
+  url.searchParams.set('per_page', '2')
+  try {
+    const json = await fetchJson(url.toString())
+    const metadata = Array.isArray(json) ? json[0] : null
+    const rows = Array.isArray(json) ? json[1] : null
+    const point = Array.isArray(rows) ? rows.find((row) => row?.value != null) ?? rows[0] : null
+    return {
+      rows: [{
+        factor_id: `world_bank:macro_series:NY.GDP.MKTP.CD:${point?.date ?? fetchedAt.slice(0, 10)}`,
+        family: 'macro_series',
+        title: 'US GDP current US$ World Bank observation',
+        summary: 'World Bank GDP current US$ is official numeric growth evidence for cross-country macro and broad equity/rates analysis.',
+        source_name: 'World Bank',
+        source_url: 'https://api.worldbank.org/v2/country/US/indicator/NY.GDP.MKTP.CD',
+        source_type: 'official_api',
+        source_published_at: metadata?.lastupdated ?? point?.date ?? null,
+        fetched_at: fetchedAt,
+        event_at: point?.date ?? null,
+        affected_assets: ['US equities', 'global equities', 'Treasury yields', 'USD', 'cyclical sectors'],
+        affected_regions: ['United States', 'Global'],
+        affected_sectors: ['Cyclicals'],
+        transmission_channels: ['growth level', 'earnings expectations', 'cross-country macro comparison'],
+        expected_direction: 'mixed',
+        severity: 'medium',
+        confidence: 'high',
+        status: 'active',
+        evidence_items: [{
+          label: `NY.GDP.MKTP.CD ${point?.date ?? '-'} = ${point?.value ?? '-'}`,
+          source_url: 'https://data.worldbank.org/indicator/NY.GDP.MKTP.CD?locations=US',
+          retrieved_at: fetchedAt,
+        }],
+        macro_values: {
+          actual: parseNumber(point?.value),
+          unit: 'current US$',
+          period: point?.date ?? null,
+          frequency: 'annual',
+          lastUpdated: metadata?.lastupdated ?? null,
+        },
+        retrieval_test: retrieval('world_bank', 'world_bank.indicator.NY.GDP.MKTP.CD', 'ok', null),
+        raw_json: point ?? {},
+      }],
+      source: { id: 'world_bank', name: 'World Bank API', state: 'ok', detail: 'US GDP current US$ latest row retrieved.' },
+    }
+  } catch (error) {
+    const message = error instanceof Error ? error.message : String(error)
+    return {
+      rows: [failureRow('world_bank:macro_series:NY.GDP.MKTP.CD:error', 'macro_series', 'World Bank GDP retrieval failed', 'World Bank', 'unknown', fetchedAt, message)],
+      source: { id: 'world_bank', name: 'World Bank API', state: 'unsupported', detail: message },
+    }
+  }
+}
+
+async function fetchImfFactors(fetchedAt: string): Promise<{ rows: FactorRow[]; source: MacroFactorSourceStatus }> {
+  const url = 'https://www.imf.org/external/datamapper/api/v1/NGDP_RPCH/USA'
+  try {
+    const json = await fetchJson(url)
+    const values = json?.values?.NGDP_RPCH?.USA
+    const point = latestNumericEntry(values)
+    return {
+      rows: [{
+        factor_id: `imf:macro_series:NGDP_RPCH:USA:${point?.period ?? fetchedAt.slice(0, 10)}`,
+        family: 'macro_series',
+        title: 'US real GDP growth IMF DataMapper observation',
+        summary: 'IMF real GDP growth is official numeric growth evidence for cross-country macro and broad asset-allocation analysis.',
+        source_name: 'IMF',
+        source_url: url,
+        source_type: 'official_api',
+        source_published_at: point?.period ?? null,
+        fetched_at: fetchedAt,
+        event_at: point?.period ?? null,
+        affected_assets: ['US equities', 'global equities', 'Treasury yields', 'USD', 'cyclical sectors'],
+        affected_regions: ['United States', 'Global'],
+        affected_sectors: ['Cyclicals'],
+        transmission_channels: ['growth momentum', 'cross-country macro comparison', 'policy expectation'],
+        expected_direction: 'mixed',
+        severity: 'medium',
+        confidence: 'high',
+        status: 'active',
+        evidence_items: [{
+          label: `NGDP_RPCH USA ${point?.period ?? '-'} = ${point?.value ?? '-'}`,
+          source_url: 'https://www.imf.org/external/datamapper/NGDP_RPCH@WEO/USA',
+          retrieved_at: fetchedAt,
+        }],
+        macro_values: {
+          actual: point?.value ?? null,
+          unit: 'percent change',
+          period: point?.period ?? null,
+          frequency: 'annual',
+        },
+        retrieval_test: retrieval('imf', 'imf.datamapper.NGDP_RPCH.USA', 'ok', null),
+        raw_json: { indicator: 'NGDP_RPCH', country: 'USA', period: point?.period ?? null, value: point?.value ?? null },
+      }],
+      source: { id: 'imf', name: 'IMF DataMapper API', state: 'ok', detail: 'US real GDP growth latest row retrieved.' },
+    }
+  } catch (error) {
+    const message = error instanceof Error ? error.message : String(error)
+    return {
+      rows: [failureRow('imf:macro_series:NGDP_RPCH:USA:error', 'macro_series', 'IMF real GDP growth retrieval failed', 'IMF', 'unknown', fetchedAt, message)],
+      source: { id: 'imf', name: 'IMF DataMapper API', state: 'unsupported', detail: message },
+    }
+  }
+}
+
+async function fetchOecdFactors(fetchedAt: string): Promise<{ rows: FactorRow[]; source: MacroFactorSourceStatus }> {
+  const url = new URL('https://sdmx.oecd.org/public/rest/v1/data/OECD.SDD.NAD,DSD_NAMAIN1@DF_QNA_EXPENDITURE_GROWTH_OECD')
+  url.searchParams.set('startPeriod', '2024-Q1')
+  url.searchParams.set('endPeriod', '2026-Q4')
+  url.searchParams.set('firstNObservations', '20')
+  try {
+    const json = await fetchJson(url.toString(), {
+      headers: {
+        Accept: 'application/vnd.sdmx.data+json; version=2.0',
+        'Accept-Language': 'en',
+        'User-Agent': 'Mozilla/5.0',
+      },
+    })
+    const point = extractOecdGrowthObservation(json)
+    if (!point) throw new Error('OECD SDMX response did not include the governed B1GQ OECD growth series.')
+    return {
+      rows: [{
+        factor_id: `oecd:macro_series:DF_QNA_EXPENDITURE_GROWTH_OECD:OECD:${point.period ?? fetchedAt.slice(0, 10)}`,
+        family: 'macro_series',
+        title: 'OECD quarterly real GDP growth observation',
+        summary: 'OECD quarterly real GDP growth is official numeric growth evidence for cross-country macro, country-risk, rates, FX, and equity analysis.',
+        source_name: 'OECD',
+        source_url: url.toString(),
+        source_type: 'official_api',
+        source_published_at: point.period,
+        fetched_at: fetchedAt,
+        event_at: point.period,
+        affected_assets: ['global equities', 'country risk', 'FX', 'rates'],
+        affected_regions: ['OECD', 'Global'],
+        affected_sectors: ['Cyclicals'],
+        transmission_channels: ['growth momentum', 'cross-country macro comparison', 'risk appetite'],
+        expected_direction: 'mixed',
+        severity: 'medium',
+        confidence: 'high',
+        status: 'active',
+        evidence_items: [{
+          label: `DF_QNA_EXPENDITURE_GROWTH_OECD B1GQ OECD ${point.period ?? '-'} = ${point.value ?? '-'}`,
+          source_url: url.toString(),
+          retrieved_at: fetchedAt,
+        }],
+        macro_values: {
+          actual: point.value,
+          unit: 'percent',
+          period: point.period,
+          frequency: 'quarterly',
+          transformation: 'GCM',
+          seriesId: 'DF_QNA_EXPENDITURE_GROWTH_OECD:B1GQ:OECD:GCM',
+        },
+        retrieval_test: retrieval('oecd', 'oecd.sdmx.DF_QNA_EXPENDITURE_GROWTH_OECD.B1GQ', 'ok', null),
+        raw_json: point.raw,
+      }],
+      source: { id: 'oecd', name: 'OECD SDMX API', state: 'ok', detail: 'OECD quarterly real GDP growth latest row retrieved from official SDMX JSON.' },
+    }
+  } catch (error) {
+    const message = error instanceof Error ? error.message : String(error)
+    return {
+      rows: [failureRow('oecd:macro_series:DF_QNA_EXPENDITURE_GROWTH_OECD:error', 'macro_series', 'OECD quarterly real GDP growth retrieval failed', 'OECD', 'unknown', fetchedAt, message)],
+      source: { id: 'oecd', name: 'OECD SDMX API', state: 'unsupported', detail: message },
+    }
+  }
+}
+
+async function fetchEiaFactors(apiKey: string | null, fetchedAt: string): Promise<{ rows: FactorRow[]; source: MacroFactorSourceStatus }> {
+  if (!apiKey) {
+    return {
+      rows: [failureRow('eia:macro_series:WCESTUS1:credential', 'macro_series', 'EIA API key missing', 'EIA', 'credential_missing', fetchedAt, 'EIA_API_KEY is required for official EIA v2 data calls.')],
+      source: { id: 'eia', name: 'EIA API', state: 'credential-gated', detail: 'EIA_API_KEY is required for official EIA v2 data calls.' },
+    }
+  }
+  const url = new URL('https://api.eia.gov/v2/petroleum/stoc/wstk/data/')
+  url.searchParams.set('api_key', apiKey)
+  url.searchParams.set('frequency', 'weekly')
+  url.searchParams.set('data[0]', 'value')
+  url.searchParams.set('facets[series][]', 'WCESTUS1')
+  url.searchParams.set('sort[0][column]', 'period')
+  url.searchParams.set('sort[0][direction]', 'desc')
+  url.searchParams.set('offset', '0')
+  url.searchParams.set('length', '1')
+  try {
+    const json = await fetchJson(url.toString())
+    const point = Array.isArray(json?.response?.data) ? json.response.data[0] : null
+    return {
+      rows: [{
+        factor_id: `eia:macro_series:WCESTUS1:${point?.period ?? fetchedAt.slice(0, 10)}`,
+        family: 'macro_series',
+        title: 'US commercial crude oil inventories EIA observation',
+        summary: 'EIA weekly petroleum stocks are official numeric energy inventory evidence for oil, inflation, energy equities, and commodity-sensitive macro analysis.',
+        source_name: 'EIA',
+        source_url: 'https://api.eia.gov/v2/petroleum/stoc/wstk/data/',
+        source_type: 'official_api',
+        source_published_at: point?.period ?? null,
+        fetched_at: fetchedAt,
+        event_at: point?.period ?? null,
+        affected_assets: ['oil', 'energy equities', 'inflation expectations', 'commodity currencies'],
+        affected_regions: ['United States', 'Global'],
+        affected_sectors: ['Energy'],
+        transmission_channels: ['energy inventory', 'oil supply demand', 'inflation input'],
+        expected_direction: 'mixed',
+        severity: 'medium',
+        confidence: 'high',
+        status: 'active',
+        evidence_items: [{
+          label: `WCESTUS1 ${point?.period ?? '-'} = ${point?.value ?? '-'}`,
+          source_url: 'https://www.eia.gov/dnav/pet/pet_stoc_wstk_dcu_nus_w.htm',
+          retrieved_at: fetchedAt,
+        }],
+        macro_values: {
+          actual: parseNumber(point?.value),
+          unit: point?.units ?? 'thousand barrels',
+          period: point?.period ?? null,
+          frequency: 'weekly',
+        },
+        retrieval_test: retrieval('eia', 'eia.petroleum.stoc.wstk.WCESTUS1', 'ok', null),
+        raw_json: point ?? {},
+      }],
+      source: { id: 'eia', name: 'EIA API', state: 'ok', detail: 'US weekly crude inventory latest row retrieved.' },
+    }
+  } catch (error) {
+    const message = error instanceof Error ? error.message : String(error)
+    return {
+      rows: [failureRow('eia:macro_series:WCESTUS1:error', 'macro_series', 'EIA weekly crude inventory retrieval failed', 'EIA', 'unknown', fetchedAt, message)],
+      source: { id: 'eia', name: 'EIA API', state: 'unsupported', detail: message },
+    }
+  }
+}
+
+function extractOecdGrowthObservation(json: any): { period: string | null; value: number | null; raw: Record<string, unknown> } | null {
+  const data = json?.data ?? json
+  const dataSet = Array.isArray(data?.dataSets) ? data.dataSets[0] : null
+  const structure = Array.isArray(data?.structures) ? data.structures[0] : null
+  const seriesDims = Array.isArray(structure?.dimensions?.series) ? structure.dimensions.series : []
+  const observationDims = Array.isArray(structure?.dimensions?.observation) ? structure.dimensions.observation : []
+  const timeValues = observationDims.find((dim: any) => dim?.id === 'TIME_PERIOD')?.values ?? observationDims[0]?.values ?? []
+  const seriesRows = dataSet?.series && typeof dataSet.series === 'object' ? Object.entries(dataSet.series) : []
+  for (const [key, series] of seriesRows) {
+    const ids = key.split(':').map((part, index) => seriesDims[index]?.values?.[Number(part)]?.id)
+    const byDim: Record<string, string | undefined> = {}
+    for (let i = 0; i < seriesDims.length; i += 1) byDim[String(seriesDims[i]?.id ?? i)] = ids[i]
+    if (
+      byDim.FREQ !== 'Q' ||
+      byDim.ADJUSTMENT !== 'Y' ||
+      byDim.REF_AREA !== 'OECD' ||
+      byDim.SECTOR !== 'S1' ||
+      byDim.COUNTERPART_SECTOR !== 'S1' ||
+      byDim.TRANSACTION !== 'B1GQ' ||
+      byDim.UNIT_MEASURE !== 'PC' ||
+      byDim.TRANSFORMATION !== 'GCM' ||
+      byDim.TABLE_IDENTIFIER !== 'T0102'
+    ) {
+      continue
+    }
+    const observations = (series as any)?.observations
+    if (!observations || typeof observations !== 'object') return null
+    const points = Object.entries(observations)
+      .map(([obsKey, value]) => {
+        const firstIndex = Number(obsKey.split(':')[0])
+        const period = timeValues[firstIndex]?.id ?? timeValues[firstIndex]?.name ?? null
+        const rawValue = Array.isArray(value) ? value[0] : value
+        return { period, value: parseNumber(rawValue), raw: { seriesKey: key, dimensions: byDim, observationKey: obsKey, value: rawValue } }
+      })
+      .filter((point) => point.period && point.value != null)
+      .sort((a, b) => String(a.period).localeCompare(String(b.period)))
+    return points.at(-1) ?? null
+  }
+  return null
+}
+
+async function fetchNbsChinaFactors(fetchedAt: string): Promise<{ rows: FactorRow[]; source: MacroFactorSourceStatus }> {
+  const message = 'NBS China official entry pages are validated, but current EasyQuery numeric API probes returned HTTP 403 UrlACL from this environment. Keep China official numeric series as browser/manual or future source-specific adapter evidence until a stable public table/API contract is verified.'
+  return {
+    rows: [failureRow(
+      'nbs_china:macro_series:easyquery:security_control',
+      'macro_series',
+      'NBS China official numeric series access requires source-specific validation',
+      'NBS China',
+      'security_control',
+      fetchedAt,
+      message,
+    )],
+    source: { id: 'nbs_china', name: 'National Bureau of Statistics of China', state: 'security-control', detail: message },
+  }
+}
+
+function latestNumericEntry(values: unknown): { period: string; value: number } | null {
+  if (!values || typeof values !== 'object') return null
+  const entries = Object.entries(values as Record<string, unknown>)
+    .map(([period, value]) => ({ period, value: Number(value) }))
+    .filter((entry) => Number.isFinite(entry.value))
+    .sort((a, b) => Number(a.period) - Number(b.period))
+  return entries.at(-1) ?? null
+}
+
 function failureRow(
   factorId: string,
   family: string,
@@ -503,13 +835,28 @@ async function fetchJson(url: string, init?: RequestInit): Promise<any> {
 }
 
 function sourceRegistrySnapshot(): MacroFactorSourceStatus[] {
-  return [
-    { id: 'fred', name: 'FRED API', state: 'credential-gated', detail: 'Uses FRED_API_KEY when configured.' },
-    { id: 'bls', name: 'BLS Public Data API', state: 'ok', detail: 'Public CPI/labor/price series path.' },
-    { id: 'bea', name: 'BEA API', state: 'credential-gated', detail: 'Uses BEA_API_KEY or local bea.txt fallback.' },
-    { id: 'manual.msci', name: 'MSCI official/manual seed', state: 'fallback-only', detail: 'Use configured official URL or manual seed before broad search.' },
-    { id: 'manual.goldman-copper', name: 'Goldman/public research summary', state: 'fallback-only', detail: 'Public/licensed summaries only.' },
-  ]
+  return MACRO_RESEARCH_SOURCES.map((source) => ({
+    id: source.id,
+    name: source.providerName,
+    state: sourceRegistryState(source),
+    detail: [
+      source.evidenceValue,
+      source.accessClass,
+      source.testedStatus,
+      source.nextAction,
+    ].filter(Boolean).join(' · '),
+  }))
+}
+
+function sourceRegistryState(source: MacroResearchSource): SourceState {
+  const access = source.accessClass
+  const tested = source.testedStatus
+  if (/security|blocked/i.test(access) || /security|blocked/i.test(tested)) return 'security-control'
+  if (/anti-bot|manual/i.test(access)) return 'permission-blocked'
+  if (/licensed/i.test(access) && !/public-summary/i.test(access)) return 'permission-blocked'
+  if (/needs-live-validation/i.test(tested)) return 'fallback-only'
+  if (/ok|readable/i.test(tested) || /official-api/i.test(access)) return 'ok'
+  return 'fallback-only'
 }
 
 function configValue(config: AppConfig, key: string): string | null {

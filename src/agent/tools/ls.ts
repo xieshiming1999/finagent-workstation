@@ -6,6 +6,10 @@ import { describeResolvedToolPath, describeToolPathContext, resolveToolPath } fr
 
 const SKIP_DIRS = new Set(['.git', '.svn', '.hg', 'node_modules', '__pycache__', '.DS_Store'])
 
+function isMacroResearchContentPath(filePath: string): boolean {
+  return filePath.replaceAll('\\', '/').includes('/data/macro_research_content')
+}
+
 export class LSTool implements Tool {
   name = 'LS'
   description = 'List directory contents as a recursive tree.'
@@ -25,6 +29,9 @@ export class LSTool implements Tool {
   async call(_id: string, input: Record<string, unknown>, ctx: ToolContext): Promise<string> {
     const raw = String(input.path ?? '.')
     const dirPath = resolveToolPath(raw, ctx)
+    if (isMacroResearchContentPath(dirPath)) {
+      return toolError('Macro research content artifact directories are diagnostic/source-maintenance storage. For normal macro analysis, use DataStore(action:"query_macro_research_content") and answer from contentEvidence instead of listing local artifact files.')
+    }
     if (!existsSync(dirPath)) {
       return toolError(raw !== dirPath
         ? `directory does not exist: ${describeResolvedToolPath(raw, dirPath, ctx)}`

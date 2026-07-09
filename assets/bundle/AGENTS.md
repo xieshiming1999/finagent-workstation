@@ -97,11 +97,148 @@ ambiguity.
 - Use returned `market_moving_factor_v1` rows as context with source time,
   fetched time, status, affected assets/regions/sectors, and transmission
   channel. Keep this section separate from quote/K-line/fundamental evidence.
+- When the workflow needs root-cause attribution, call
+  `DataStore(action:"query_macro_attribution", target:"<structured target>", family:"<optional family>", limit:10)`
+  after factor/evidence readback. Use the returned category, confidence,
+  missing evidence, invalidation condition, and next update action as
+  structured analysis evidence. Do not infer attribution by parsing the user
+  prompt.
+- For stock, fund, ETF, watchlist, or strategy questions, macro attribution
+  must not replace the base asset evidence. First read governed quote/K-line/
+  fundamental, fund NAV/yield/holding/performance, watchlist, or strategy
+  evidence as appropriate; then read macro factors and attribution; keep the
+  sections separate. If the asset evidence is missing, disclose that gap.
+- For first-pass market overview or root-cause answers, stop after governed
+  readbacks such as index/sector/flow plus `query_macro_factors` and
+  `query_macro_attribution`. Do not call `macro_research_extract`, broad
+  `Research`, `WebFetch`, or provider-page browsing only because evidence is
+  missing. Report the attribution missing/update fields as the data-quality
+  section, and use extraction/browser workflows only when the user explicitly
+  asks to refresh or validate macro sources.
+- When a claim needs an official numeric macro value, use numeric-series
+  readback instead of research prose:
+  `DataStore(action:"query_macro_numeric_series", provider:"<optional>", target:"GDP|CPI|DGS10", limit:5)`.
+  Cite seriesId, value, unit, sourceDataTime, fetchedAt, provider, and status.
+  Do not call numeric-series readback repeatedly for a first-pass
+  forward-looking answer that only asks what to watch. If numeric evidence is
+  missing, name the gap and continue with source/evidence rows.
 - If readback returns `status:"missing"`, state that the local factor layer has
   no matching evidence. Do not answer as if macro evidence was verified, and do
   not assume macro factors are irrelevant.
 - Macro/factor rows are analysis context only. They are not executable
   StrategySpec signals, trade triggers, or buy/sell approval.
+- Before retrieving macro research/event pages, inspect the source-specific
+  catalog:
+  `DataStore(action:"macro_research_sources", provider:"<optional>", category:"<optional>", priority:1)`.
+  Use returned `retrievalMethods`, `accessClass`, `automationPolicy`,
+  `testedStatus`, `limitation`, and `nextAction` to decide whether to use
+  WebView/browser retrieval, official API/data delivery, licensed/manual
+  evidence, or an alternate source. Do not retry providers marked anti-bot,
+  security-blocked, licensed-needed, manual-browser-only, or do-not-scrape as
+  if they were ordinary transient network failures.
+- If the coded macro path is missing or blocked, a first-pass analysis answer
+  should normally stop and report the missing source/update action. Missing
+  macro rows are not permission to browse. Choose a fallback source and use a
+  direct retrieval tool only when the user explicitly asks to refresh, validate,
+  broaden live sources, or inspect a source page. Source-family routing is:
+  PBOC/SAFE/NBS/CSRC/exchanges for China policy, liquidity, statistics,
+  securities rules, and local-market notices; MSCI/FTSE Russell/LSEG/S&P
+  DJI/STOXX/Nasdaq for index and passive flow events; FRED/BLS/BEA/IMF/OECD/
+  World Bank for official numeric facts; EIA/LME/IEA/OPEC/CME for energy,
+  metals, inventories, and futures context; Goldman Sachs/JPMorgan/BlackRock/
+  PIMCO/Vanguard/State Street for public research hypotheses about allocation,
+  credit, rates, inflation, and commodities. Use the official URL from
+  `macro_research_sources` where available, label any direct read as live
+  source inspection, and do not present it as reusable governed data until it is
+  normalized and read back.
+- Treat that source map as basic macro knowledge for fallback, not as a
+  provider bypass. If code-backed extraction fails, the agent may inspect one
+  source-family-appropriate official/public page only when the catalog permits
+  it, then report the URL, access method, retrieved time, limitation, and
+  whether the evidence was persisted.
+- Research/event source evidence must show provider, provider category,
+  source title or URL, source time when available, retrieved time, retrieval
+  method, access condition, and limitation. Keep this source evidence separate
+  from technical, fundamental, and trading sections.
+- For reusable macro research evidence, use
+  `DataStore(action:"macro_research_provenance")` to normalize catalog evidence
+  into governed rows, then use
+  `DataStore(action:"query_macro_research_evidence", provider:"<optional>", family:"<optional>")`
+  for readback. Treat `macro_source_retrieval_evidence` rows as access-policy
+  evidence; they do not mean blocked/manual/licensed source content was
+  retrieved.
+- After `macro_research_provenance`, call `query_macro_research_evidence`
+  before any direct source retrieval, local artifact inspection, `.tool_outputs`
+  reads, or generated content-file reads. The macro research readback actions
+  are the normal evidence surface for the first answer.
+- Before saying a specific research report or article "says" something, use
+  content-backed evidence:
+  `DataStore(action:"macro_research_extraction_status")` to inspect extraction
+  support, `DataStore(action:"macro_research_extract", provider:"<provider>")`
+  for allowed public/API/browser-compatible sources, then
+  `DataStore(action:"query_macro_research_content", provider:"<provider>")` for
+  readback. Use `contentEvidence` from that readback for title, source date,
+  retrieved time, key claims, source URL, and body preview. The artifact path is
+  for audit/source-maintenance only; do not use `Glob`, `Read`, `LS`, or local
+  file inspection to open macro content files in normal first-pass macro
+  answers. If a source is
+  anti-bot, licensed, manual-browser-only, or do-not-scrape, report the
+  limitation instead of retrying it as a normal fetch.
+- Direct `WebFetch`, `WebView`, or `Research` is not the normal first path for
+  macro research providers already represented in the source catalog. Use those
+  tools only after the catalog/extraction status says a browser/API/manual path
+  is required, or when the user explicitly asks for manual browsing. Do not use
+  repeated ad hoc browsing to replace `macro_research_extract` and
+  `query_macro_research_content`.
+- Prefer category/family filters over provider-by-provider loops. Commodity or
+  copper first pass should use `macro_research_sources` with
+  `category:"commodity_research"` and read back
+  `family:"commodity_research"` evidence/content. Index/passive-flow first pass
+  should use `category:"index"` and `family:"index_classification"`. Choose one
+  follow-up extraction only if content is missing for the most relevant source.
+- If evidence/content readback returns rows for the requested commodity or
+  index family, answer from those rows. Do not call extraction status, repeat
+  extraction, numeric series, or adjacent target queries in the same first pass
+  unless the user explicitly asks for current numbers or article-level
+  extraction. Missing price, inventory, PMI, or policy rows belong in the
+  evidence-gap section.
+- When source catalog, provenance, evidence, and content readback already
+  identify the relevant provider/source, answer from those rows. Do not use
+  `Research(search)` to look for one more date or confirmation in a first-pass
+  governed macro answer. If exact timing is absent from governed content, state
+  it as missing or uncertain evidence.
+- For the first forward-looking macro answer, stop after governed factor
+  readback, source catalog/status, one or two allowed extraction attempts, and
+  content/evidence readback. Answer with watch factors, available evidence,
+  missing or blocked evidence, invalidation conditions, and what would justify
+  follow-up retrieval. Do not expand into generic search, direct browsing,
+  additional providers, or unrelated macro APIs just to make the first answer
+  broader.
+- Keep the first-pass provider path short: one catalog read, provenance/readback
+  once, evidence readback for one or two relevant providers, at most one
+  blocked official-source attempt plus one content extraction if content is
+  missing, then `query_macro_research_content` and answer. Do not iterate
+  across a long provider list before answering.
+- For first-pass macro workflows, do not use WebView, ReportDownload, Bash,
+  Script, or Research after governed factor/content/evidence readback is
+  available. If the catalog says a source needs browser, manual download,
+  credential, or licensed access, report that boundary and answer from governed
+  evidence/readback instead of chasing it with browser or script tools.
+- Do not inspect `.tool_outputs`, generated artifact files, or local raw files
+  with LS, Grep, Read, or Glob to complete a first-pass macro answer after
+  governed evidence/content readback exists. Those files are diagnostics; the
+  answer surface is `query_macro_research_evidence` and
+  `query_macro_research_content`.
+- Macro research providers are data sources, not skills. Do not call
+  `Skill("blackrock")`, `Skill("pimco")`, `Skill("msci")`, or another provider
+  name unless that exact bundled skill exists in the skill index. Use
+  `macro-data`, `fund`, or the relevant finance skill, then use `DataStore`
+  provider parameters for provider-specific macro evidence.
+- When a stock, fund, watchlist, or strategy prompt explicitly asks how macro
+  factors could change the judgment, complete the macro evidence phase before
+  candidate selection. Keep the first pass to one or two representative
+  candidates and include macro invalidation conditions; do not spend the data
+  budget on broad stock selection before source/evidence readback.
 - Fund comparison prompts that mention rates or liquidity must not be answered
   as generic education only. Load the `fund` skill, use governed fund readbacks
   where possible, and call

@@ -24,7 +24,11 @@ export function queryIndexQuote(
   ds: DataStore,
   input: Record<string, unknown>,
 ): string {
-  return queryQuoteReadbackMany(ds, input, "query_index_quote");
+  const codes = codeListInput(input);
+  const next = codes.length === 0 && !input.code
+    ? { ...input, codes: "000001,399001,399006,000300" }
+    : input;
+  return queryQuoteReadbackMany(ds, next, "query_index_quote");
 }
 
 export function queryEtfQuote(

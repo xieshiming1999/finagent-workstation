@@ -8,6 +8,10 @@ import { describeResolvedToolPath, describeToolPathContext, resolveToolPath } fr
 
 const IMAGE_EXTENSIONS = new Set(['.png', '.jpg', '.jpeg', '.gif', '.webp', '.bmp', '.svg'])
 
+function isMacroResearchContentPath(filePath: string): boolean {
+  return filePath.replaceAll('\\', '/').includes('/data/macro_research_content/')
+}
+
 export class FileReadTool implements Tool {
   name = 'Read'
   description = 'Read the contents of a file from the local filesystem. Supports text files and images (PNG/JPG/GIF/WEBP).'
@@ -34,6 +38,9 @@ export class FileReadTool implements Tool {
   async call(_id: string, input: Record<string, unknown>, ctx: ToolContext): Promise<string> {
     const rawPath = String(input.file_path)
     let filePath = resolveToolPath(rawPath, ctx)
+    if (isMacroResearchContentPath(filePath)) {
+      return toolError('Macro research content artifacts are diagnostic/source-maintenance files. For normal macro analysis, use DataStore(action:"query_macro_research_content") and answer from contentEvidence, keyClaims, sourceDataTime, fetchedAt, and contentHash instead of reading local artifact files.')
+    }
     if (!existsSync(filePath)) {
       return toolError(rawPath !== filePath
         ? `file does not exist: ${describeResolvedToolPath(rawPath, filePath, ctx)}`

@@ -231,7 +231,33 @@ export function queryExTableEntries(store: StoreDeps, opts: { code?: string; cat
 }
 
 export function searchStock(store: StoreDeps, query: string): StockInfo[] {
-  return store.query<StockInfo>('SELECT * FROM stock_list WHERE code LIKE ? OR name LIKE ? LIMIT 20', `%${query}%`, `%${query}%`)
+  const terms = stockSearchTerms(query)
+  const clauses = terms.map(() => '(code LIKE ? OR name LIKE ? OR industry LIKE ?)').join(' OR ')
+  const params = terms.flatMap((term) => [`%${term}%`, `%${term}%`, `%${term}%`])
+  return store.query<StockInfo>(
+    `SELECT * FROM stock_list WHERE ${clauses} LIMIT 20`,
+    ...params,
+  )
+}
+
+function stockSearchTerms(query: string): string[] {
+  const raw = query.trim()
+  if (!raw) return ['']
+  const terms = new Set<string>([raw])
+  for (const term of raw.split(/[\s,，;；、/|()（）:：]+/).map((item) => item.trim()).filter(Boolean)) {
+    if (/^\d{6}$/.test(term) || (term.length >= 2 && term.length <= 24)) terms.add(term)
+  }
+  const normalized = raw.toLowerCase()
+  const aliases: Array<[RegExp, string[]]> = [
+    [/\bbaijiu\b/, ['白酒']],
+    [/\bmoutai\b|\bkweichow\s+moutai\b|\bguizhou\s+moutai\b/, ['茅台', '贵州茅台', '白酒']],
+  ]
+  for (const [pattern, mappedTerms] of aliases) {
+    if (pattern.test(normalized)) {
+      for (const term of mappedTerms) terms.add(term)
+    }
+  }
+  return [...terms]
 }
 
 export function queryFundamental(store: StoreDeps, code: string, limit = 8): FundamentalRow[] {

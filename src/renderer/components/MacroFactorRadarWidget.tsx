@@ -1,5 +1,6 @@
-import { useEffect, useMemo, useState } from 'react'
+import { useCallback, useEffect, useMemo, useRef, useState, type ReactNode } from 'react'
 import { sidebarPanelContract } from '../panels/sidebar-panel-contract'
+import { usePanelStore } from '../store/usePanelStore'
 import { useT } from '../store/useLanguageStore'
 
 const POLL_INTERVAL_MS = sidebarPanelContract('factor-radar').pollIntervalMs ?? 300000
@@ -10,23 +11,14 @@ interface FactorRow {
   title?: string
   summary?: string
   source_name?: string
-  source_url?: string
   source_type?: string
-  source_published_at?: string
   fetched_at?: string
+  source_published_at?: string
   event_at?: string
-  next_catalyst_at?: string
   affected_assets?: string[]
-  affected_regions?: string[]
-  affected_sectors?: string[]
-  transmission_channels?: string[]
-  expected_direction?: string
   severity?: string
-  confidence?: string
   status?: string
   failure_class?: string | null
-  evidence_items?: Array<Record<string, unknown>>
-  retrieval_test?: Record<string, unknown> | null
 }
 
 interface SourceStatus {
@@ -45,14 +37,17 @@ interface FactorResult {
 
 export default function MacroFactorRadarWidget() {
   const t = useT()
+  const addPanel = usePanelStore((s) => s.addPanel)
+  const setActivePanel = usePanelStore((s) => s.setActive)
   const [rows, setRows] = useState<FactorRow[]>([])
   const [sources, setSources] = useState<SourceStatus[]>([])
   const [generatedAt, setGeneratedAt] = useState<string | null>(null)
   const [loading, setLoading] = useState(true)
   const [refreshing, setRefreshing] = useState(false)
   const [error, setError] = useState<string | null>(null)
+  const timerRef = useRef<ReturnType<typeof setInterval> | null>(null)
 
-  const load = async () => {
+  const load = useCallback(async () => {
     try {
       const result = await (window as any).electron?.ipcRenderer?.invoke('data:macro-factors') as FactorResult
       setRows(Array.isArray(result?.rows) ? result.rows : [])
@@ -64,7 +59,7 @@ export default function MacroFactorRadarWidget() {
     } finally {
       setLoading(false)
     }
-  }
+  }, [])
 
   const refresh = async () => {
     setRefreshing(true)
@@ -84,35 +79,16 @@ export default function MacroFactorRadarWidget() {
 
   useEffect(() => {
     load()
-    const timer = setInterval(load, POLL_INTERVAL_MS)
-    return () => clearInterval(timer)
-  }, [])
+    timerRef.current = setInterval(load, POLL_INTERVAL_MS)
+    return () => { if (timerRef.current) clearInterval(timerRef.current) }
+  }, [load])
 
   const summary = useMemo(() => summarize(rows), [rows])
+  const sourceSummary = useMemo(() => summarizeSources(sources), [sources])
 
-  const sendToAgent = async (row: FactorRow) => {
-    await window.agent?.send([
-      'Use this macro factor as visible analysis evidence. Do not treat it as a trading signal.',
-      `Title: ${row.title ?? '-'}`,
-      `Family: ${row.family ?? '-'}`,
-      `Source: ${row.source_name ?? '-'} (${row.source_type ?? '-'})`,
-      `Source time: ${row.source_published_at ?? row.event_at ?? '-'}`,
-      `Fetched at: ${row.fetched_at ?? '-'}`,
-      `Affected: ${asList(row.affected_assets).join(', ') || '-'}`,
-      `Status: ${row.status ?? '-'} / ${row.failure_class ?? 'ok'}`,
-      row.summary ? `Summary: ${row.summary}` : '',
-    ].filter(Boolean).join('\n'))
-  }
-
-  const copy = async (row: FactorRow) => {
-    await navigator.clipboard?.writeText(factorTooltip(row))
-  }
-
-  const openSource = (row: FactorRow) => {
-    if (!row.source_url) return
-    window.agent?.openExternal(row.source_url).catch(() => {
-      window.open(row.source_url, '_blank', 'noopener,noreferrer')
-    })
+  const openFullView = () => {
+    addPanel({ id: 'macro-research', type: 'macro-research' as any, title: t('factorRadar'), closable: true })
+    setActivePanel('macro-research')
   }
 
   if (loading && rows.length === 0) {
@@ -120,93 +96,97 @@ export default function MacroFactorRadarWidget() {
   }
 
   return (
-    <div className="flex flex-col h-full theme-bg theme-text-secondary">
-      <div className="px-3 py-2 border-b theme-border space-y-2">
-        <div className="flex items-start justify-between gap-2">
-          <div>
-            <div className="text-xs theme-text font-medium">{t('factorRadar')}</div>
-            <div className="text-[10px] theme-text-tertiary">
-              {summary.active} {t('macroFactorActive')} · {summary.blocked} {t('macroFactorBlocked')}
-              {generatedAt ? ` · ${new Date(generatedAt).toLocaleTimeString()}` : ''}
-            </div>
+    <div className="h-full overflow-y-auto p-3 space-y-3 theme-bg theme-text-secondary">
+      <div className="flex items-start justify-between gap-2">
+        <div className="min-w-0">
+          <div className="text-xs theme-text font-medium">{t('factorRadar')}</div>
+          <div className="text-[10px] theme-text-tertiary">
+            {generatedAt ? `${t('macroResearchGenerated')}: ${new Date(generatedAt).toLocaleTimeString()}` : t('macroFactorLoading')}
           </div>
-          <button
-            onClick={refresh}
-            disabled={refreshing}
-            className="h-7 px-2 rounded border theme-border theme-bg-secondary text-[10px] theme-text-tertiary hover:theme-accent disabled:opacity-60"
-          >
+        </div>
+        <div className="flex items-center gap-1">
+          <button onClick={openFullView} className="text-[10px] theme-text-tertiary hover:theme-accent px-1">{t('fullView')}</button>
+          <button onClick={refresh} disabled={refreshing} className="text-[10px] theme-text-tertiary hover:theme-accent px-1 disabled:opacity-60">
             {refreshing ? t('fetching') : t('refresh')}
           </button>
         </div>
-        <div className="grid grid-cols-3 gap-1 text-[10px]">
-          <Metric label={t('macroFactorSources')} value={sources.length} />
-          <Metric label={t('macroFactorRows')} value={rows.length} />
-          <Metric label={t('macroFactorSchema')} value="v1" />
-        </div>
       </div>
 
-      {error && (
-        <div className="m-3 rounded border theme-border px-2 py-1 text-[10px] theme-red whitespace-pre-wrap">
-          {error}
-        </div>
-      )}
+      {error && <div className="rounded border theme-border px-2 py-1 text-[10px] theme-red whitespace-pre-wrap">{error}</div>}
 
-      <div className="flex-1 overflow-y-auto">
-        {rows.length === 0 && !error && (
-          <div className="p-4 text-xs theme-text-tertiary text-center">{t('macroFactorEmpty')}</div>
-        )}
-        {rows.map((row, index) => (
-          <div key={`${row.factor_id ?? row.title}-${index}`} className="px-3 py-2 border-b theme-border/30 hover:theme-bg-secondary">
-            <div className="flex items-start gap-2">
-              <span className={`mt-0.5 h-2 w-2 rounded-full shrink-0 ${severityClass(row.severity, row.failure_class)}`} />
-              <div className="min-w-0 flex-1">
-                <div className="text-xs theme-text leading-tight">{row.title ?? '-'}</div>
-                <div className="text-[10px] theme-text-secondary mt-1 whitespace-pre-wrap line-clamp-3">{row.summary ?? '-'}</div>
-              </div>
+      <div className="grid grid-cols-2 gap-1 text-[10px]">
+        <Metric label={t('macroResearchActiveEvidence')} value={summary.active} />
+        <Metric label={t('macroResearchBlockedEvidence')} value={summary.blocked} tone={summary.blocked > 0 ? 'warn' : 'neutral'} />
+        <Metric label={t('macroFactorSources')} value={sources.length} />
+        <Metric label={t('macroFactorRows')} value={rows.length} />
+      </div>
+
+      <Section title={t('macroResearchSources')}>
+        <div className="grid grid-cols-3 gap-1 text-[10px]">
+          <Metric label="ready" value={sourceSummary.ready} />
+          <Metric label="blocked" value={sourceSummary.blocked} tone={sourceSummary.blocked > 0 ? 'warn' : 'neutral'} />
+          <Metric label="fallback" value={sourceSummary.fallback} />
+        </div>
+        {sources.slice(0, 4).map((source) => (
+          <div key={source.id} className="rounded border theme-border/60 px-2 py-1 text-[10px]">
+            <div className="flex items-center justify-between gap-2">
+              <span className="theme-text truncate">{source.name}</span>
+              <span className="theme-text-tertiary shrink-0">{source.state}</span>
             </div>
-            <div className="mt-1 flex flex-wrap gap-1 text-[9px] theme-text-tertiary">
-              <Chip value={row.family} />
-              <Chip value={row.source_name} />
-              <Chip value={row.source_type} />
-              <Chip value={row.status} />
-              {row.failure_class ? <Chip value={row.failure_class} /> : null}
-            </div>
-            <div className="mt-1 text-[10px] theme-text-tertiary">
-              <span className="relative group/macro-time font-mono">
-                {t('sourceTimeLabel')}: {shortTime(row.source_published_at ?? row.event_at)}
-                <span className="pointer-events-none absolute left-0 top-full mt-1 z-50 min-w-[20rem] max-w-[34rem] whitespace-pre-line rounded border theme-border theme-bg px-2 py-1 text-[10px] font-mono theme-text shadow-lg opacity-0 group-hover/macro-time:opacity-100">
-                  {factorTooltip(row)}
-                </span>
-              </span>
-              <span className="ml-2 font-mono">{t('provenanceFetched')}: {shortTime(row.fetched_at)}</span>
-            </div>
-            <div className="mt-1 text-[10px] theme-text-tertiary truncate">
-              {t('macroFactorAffected')}: {asList(row.affected_assets).join(', ') || '-'}
-            </div>
-            <div className="mt-1 flex items-center gap-2 text-[10px] theme-text-tertiary">
-              <button onClick={() => sendToAgent(row)} className="hover:theme-accent">{t('macroFactorSendToAgent')}</button>
-              <button onClick={() => copy(row)} className="hover:theme-accent">{t('copyNews')}</button>
-              {row.source_url && <button onClick={() => openSource(row)} className="hover:theme-accent">{t('openNews')}</button>}
-            </div>
+            <div className="theme-text-tertiary line-clamp-2">{source.detail}</div>
           </div>
         ))}
+      </Section>
+
+      <Section title={t('macroResearchEvidence')}>
+        {rows.length === 0 ? (
+          <div className="text-[10px] theme-text-tertiary">{t('macroFactorEmpty')}</div>
+        ) : rows.slice(0, 5).map((row) => (
+          <EvidencePreview key={row.factor_id ?? `${row.title}-${row.fetched_at}`} row={row} />
+        ))}
+        {rows.length > 5 && (
+          <button onClick={openFullView} className="text-[10px] theme-text-tertiary hover:theme-accent">
+            {t('fullView')} · {rows.length - 5} more
+          </button>
+        )}
+      </Section>
+    </div>
+  )
+}
+
+function EvidencePreview({ row }: { row: FactorRow }) {
+  return (
+    <div className="rounded border theme-border/60 px-2 py-1.5 text-[10px]">
+      <div className="flex items-start gap-2">
+        <span className={`mt-1 h-2 w-2 rounded-full shrink-0 ${severityClass(row.severity, row.failure_class)}`} />
+        <div className="min-w-0">
+          <div className="theme-text truncate">{row.title ?? '-'}</div>
+          <div className="theme-text-tertiary line-clamp-2">{row.summary ?? '-'}</div>
+          <div className="mt-1 theme-text-tertiary">
+            {row.source_name ?? '-'} · {row.status ?? '-'} · {shortTime(row.source_published_at ?? row.event_at ?? row.fetched_at)}
+          </div>
+        </div>
       </div>
     </div>
   )
 }
 
-function Metric({ label, value }: { label: string; value: string | number }) {
+function Section({ title, children }: { title: string; children: ReactNode }) {
+  return (
+    <section className="space-y-2">
+      <div className="text-[10px] uppercase theme-text-tertiary">{title}</div>
+      {children}
+    </section>
+  )
+}
+
+function Metric({ label, value, tone = 'neutral' }: { label: string; value: string | number; tone?: 'neutral' | 'warn' }) {
   return (
     <div className="rounded border theme-border px-2 py-1">
-      <div className="font-mono theme-text">{value}</div>
+      <div className={tone === 'warn' ? 'font-mono text-amber-600' : 'font-mono theme-text'}>{value}</div>
       <div className="theme-text-tertiary truncate">{label}</div>
     </div>
   )
-}
-
-function Chip({ value }: { value?: string | null }) {
-  if (!value) return null
-  return <span className="rounded theme-bg-secondary px-1 py-0.5">{value}</span>
 }
 
 function summarize(rows: FactorRow[]): { active: number; blocked: number } {
@@ -216,8 +196,12 @@ function summarize(rows: FactorRow[]): { active: number; blocked: number } {
   }
 }
 
-function asList(value: unknown): string[] {
-  return Array.isArray(value) ? value.map((item) => String(item)) : []
+function summarizeSources(sources: SourceStatus[]): { ready: number; blocked: number; fallback: number } {
+  return {
+    ready: sources.filter((source) => /ready|available|ok|public|configured/i.test(source.state)).length,
+    blocked: sources.filter((source) => /blocked|manual|licensed|credential|anti|unavailable/i.test(source.state)).length,
+    fallback: sources.filter((source) => /fallback|diagnostic|partial/i.test(source.state)).length,
+  }
 }
 
 function shortTime(value?: string | null): string {
@@ -232,19 +216,4 @@ function severityClass(severity?: string | null, failure?: string | null): strin
   if (severity === 'high' || severity === 'critical') return 'bg-red-500'
   if (severity === 'medium') return 'bg-blue-500'
   return 'bg-gray-400'
-}
-
-function factorTooltip(row: FactorRow): string {
-  const retrieval = row.retrieval_test ?? {}
-  return [
-    `interface: ${String(retrieval.interface_id ?? 'macro.factor_radar')}`,
-    `schema: market_moving_factor_v1`,
-    `family: ${row.family ?? '-'}`,
-    `source: ${row.source_name ?? '-'} / ${row.source_type ?? '-'}`,
-    `source time: ${row.source_published_at ?? row.event_at ?? '-'}`,
-    `fetched at: ${row.fetched_at ?? '-'}`,
-    `status: ${row.status ?? '-'} / ${row.failure_class ?? 'ok'}`,
-    `affected: ${asList(row.affected_assets).join(', ') || '-'}`,
-    `channels: ${asList(row.transmission_channels).join(', ') || '-'}`,
-  ].join('\n')
 }

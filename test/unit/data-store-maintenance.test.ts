@@ -64,6 +64,68 @@ describe('DataStore maintenance feed defaults', () => {
     expect(providerOrder('indexKline', {}, indexPriority)).toEqual(['tdx', 'eastmoneyDirect'])
   })
 
+  it('searches stock identity by industry as well as code and name', () => {
+    store.run(
+      `INSERT INTO stock_list (code,name,market,industry,stock_type,updated_at)
+       VALUES (?,?,?,?,?,?)`,
+      [
+        '600519',
+        '贵州茅台',
+        'SH',
+        '白酒',
+        'stock',
+        '2026-07-09T00:00:00.000Z',
+      ],
+    )
+
+    const rows = store.searchStock('白酒')
+
+    expect(rows).toEqual([
+      expect.objectContaining({
+        code: '600519',
+        name: '贵州茅台',
+        industry: '白酒',
+      }),
+    ])
+  })
+
+  it('searches stock identity through governed English aliases for translated macro targets', () => {
+    store.run(
+      `INSERT INTO stock_list (code,name,market,industry,stock_type,updated_at)
+       VALUES (?,?,?,?,?,?)`,
+      [
+        '600519',
+        '贵州茅台',
+        'SH',
+        '白酒',
+        'stock',
+        '2026-07-09T00:00:00.000Z',
+      ],
+    )
+
+    expect(store.searchStock('Guizhou Moutai')).toEqual([
+      expect.objectContaining({
+        code: '600519',
+        name: '贵州茅台',
+        industry: '白酒',
+      }),
+    ])
+    expect(store.searchStock('Baijiu')).toEqual([
+      expect.objectContaining({
+        code: '600519',
+        name: '贵州茅台',
+        industry: '白酒',
+      }),
+    ])
+    expect(store.searchStock('白酒 贵州茅台 政策 新闻 2026')).toEqual([
+      expect.objectContaining({
+        code: '600519',
+        name: '贵州茅台',
+        industry: '白酒',
+      }),
+    ])
+  })
+
   it('repairs existing weekly identity feed configs to daily', () => {
     store.getFeedConfigs()
     store.updateFeedConfig('stock_list', { update_frequency: 'weekly', source_priority: '["eastmoney"]' } as any)

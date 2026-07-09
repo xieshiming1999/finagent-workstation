@@ -54,6 +54,7 @@ index/passive-flow questions, read the governed factor layer before concluding:
 DataStore(action: "query_macro_factors", target: "A-shares", limit: 10)
 DataStore(action: "query_macro_factors", family: "rates_liquidity", limit: 10)
 DataStore(action: "query_macro_factors", regions: "Indonesia", family: "index_classification", limit: 10)
+DataStore(action: "query_macro_attribution", target: "A-shares", limit: 10)
 ```
 
 Keep this evidence separate from index, sector, flow, and technical evidence.
@@ -61,6 +62,17 @@ Use the row source time, fetched time, affected assets, status, and
 transmission channel. If the readback returns `status:"missing"`, state that
 the current factor layer has no matching macro evidence instead of assuming no
 macro driver exists.
+For root-cause, market-cause, attribution, or "why did it move" analysis, read
+`query_macro_attribution` after the factor readback with the same structured
+filters. Use its category, evidence, confidence, missing evidence,
+contradictions, invalidation condition, and next update action. Do not make a
+macro root-cause claim from factor rows alone when the attribution readback is
+available; if attribution rows are missing, state that as an evidence gap.
+In a first-pass market overview, do not continue into
+`macro_research_extract`, broad `Research`, `WebFetch`, or provider-page
+browsing just because macro evidence is missing. Report the update action from
+`query_macro_attribution` and ask for or wait for an explicit refresh/source
+validation workflow before spending extraction/browser calls.
 
 ## Workflow
 
@@ -99,7 +111,13 @@ For market-wide unusual-activity discovery intent, keep the first answer bounded
 3. Use `query_flow_rank` / `flow_rank` for broad capital-flow ranking. Use
    single-stock `flow` only with an explicit stock code.
 4. Use `DataStore(action:"query_macro_factors", ...)` when macro/rates/country/
-   commodity/index/passive-flow context may explain the move.
-5. Use Yahoo Finance for global-market context when needed.
-6. Use TradingView Scanner for technical sentiment and breadth when needed.
-7. Present the result with a dashboard or `showTable`.
+   commodity/index/passive-flow context may explain the move. For root-cause
+   analysis, follow it with `DataStore(action:"query_macro_attribution", ...)`
+   using the same structured filters.
+5. Do not call `macro_research_extract`, broad `Research`, `WebFetch`, or
+   provider-page browsing in the first market overview pass unless the user
+   explicitly asks to refresh or validate macro sources. Use the attribution
+   readback's missing/update fields as the data-quality section.
+6. Use Yahoo Finance for global-market context when needed.
+7. Use TradingView Scanner for technical sentiment and breadth when needed.
+8. Present the result with a dashboard or `showTable`.

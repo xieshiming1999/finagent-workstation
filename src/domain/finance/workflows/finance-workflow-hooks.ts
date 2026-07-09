@@ -21,6 +21,7 @@ import {
 import { maybeBuildFundCandidateDiscoveryAnswer } from './finance-fund-candidate-summary'
 import { maybeBuildFundMonitorReviewSummary } from './finance-fund-monitor-summary'
 import { maybeBuildFundStrategyWatchAnswer } from './finance-fund-watch-summary'
+import { maybeBuildMacroEvidenceAnswer } from './finance-macro-evidence-summary'
 import { maybeBuildPortfolioMonitorReviewSummary } from './finance-portfolio-monitor-summary'
 import { maybeBuildPositionSizingAnswer } from './finance-position-sizing-summary'
 import { maybeBuildPriorAnalysisValidationAnswer } from './finance-prior-analysis-validation-summary'
@@ -279,6 +280,35 @@ export function maybeInterceptFinanceToolCalls(
   messages: Message[],
   proposedToolCalls: ToolUse[],
 ): DomainToolInterception | null {
+  const macroEvidenceCalls = maybeCompleteMacroEvidenceCalls(messages, proposedToolCalls)
+  if (macroEvidenceCalls) {
+    return {
+      skippedReason:
+        'Skipped: macro evidence was proposed without the complete governed macro/news readback set; adding attribution, source evidence, and finance-news readbacks before synthesis.',
+      answer: null,
+      autoToolCalls: macroEvidenceCalls,
+    }
+  }
+
+  const macroStockEvidenceCalls = buildMacroStockQuoteRecovery(messages)
+  if (macroStockEvidenceCalls) {
+    return {
+      skippedReason:
+        'Skipped: named-stock macro/news workflow is missing governed stock identity or quote evidence; executing local stock evidence before synthesis or generic fallback.',
+      answer: null,
+      autoToolCalls: macroStockEvidenceCalls,
+    }
+  }
+
+  const macroExternalFallbackAnswer = maybeBuildMacroExternalFallbackAnswer(messages, proposedToolCalls)
+  if (macroExternalFallbackAnswer) {
+    return {
+      skippedReason:
+        'Skipped: governed macro evidence exists; first-pass macro workflow must answer before generic search or web fetch fallback.',
+      answer: macroExternalFallbackAnswer,
+    }
+  }
+
   const budgetAnswerProbe = maybeBuildFinanceBudgetProbeAnswer(messages, proposedToolCalls)
   if (budgetAnswerProbe) {
     return {
@@ -491,6 +521,10 @@ export function maybeBuildFinanceBoundedAnswer(messages: Message[]): string | nu
   if (priorAnalysisValidationAnswer) return priorAnalysisValidationAnswer
   const investmentEvidenceReviewAnswer = maybeBuildInvestmentEvidenceReviewAnswer(messages)
   if (investmentEvidenceReviewAnswer) return investmentEvidenceReviewAnswer
+  const macroEvidenceAnswer = maybeBuildMacroEvidenceAnswer(messages.slice(lastUserIndex), {
+    failureSummary: '本轮已使用结构化宏观 readback 和来源证据；如需刷新来源，应进入显式 macro source update / extraction workflow。',
+  })
+  if (macroEvidenceAnswer && !requiresMacroStockQuoteRecovery(messages.slice(lastUserIndex))) return macroEvidenceAnswer
   const customStrategySaveRunBoundaryAnswer = maybeBuildCustomStrategySaveRunBoundaryAnswer(messages.slice(lastUserIndex))
   if (customStrategySaveRunBoundaryAnswer) return customStrategySaveRunBoundaryAnswer
   const customStrategyRunComparisonAnswer = maybeBuildCustomStrategyRunComparisonAnswer(messages.slice(lastUserIndex))
@@ -544,6 +578,14 @@ export function buildFinanceRecovery(messages: Message[]): DomainRecovery | null
     }
   }
 
+  const macroStockRecovery = buildMacroStockQuoteRecovery(messages)
+  if (macroStockRecovery) {
+    return {
+      toolCalls: macroStockRecovery,
+      answerAfterTools: maybeBuildFinanceBoundedAnswer,
+    }
+  }
+
   return null
 }
 
@@ -567,13 +609,285 @@ function maybeBuildFinanceBudgetProbeAnswer(messages: Message[], proposedToolCal
   return maybeBuildFinanceBoundedAnswer(messages)
 }
 
+function maybeBuildMacroExternalFallbackAnswer(
+  messages: Message[],
+  proposedToolCalls: ToolUse[],
+): string | null {
+  if (!proposedToolCalls.some((call) => call.name === 'Research' || call.name === 'WebFetch')) return null
+  const lastUserIndex = findLastIndex(messages, (message) => message.role === Role.User)
+  if (lastUserIndex < 0) return null
+  return maybeBuildMacroEvidenceAnswer(messages.slice(lastUserIndex), {
+    failureSummary:
+      '模型尝试追加通用 Research/WebFetch，但本轮已经有受治理宏观 evidence/readback；first-pass attribution 必须先基于这些证据完成。',
+    suffix:
+      '如果用户明确要求更新来源或验证网页可达性，再进入 macro_research_sources / macro_research_extract / source validation workflow。',
+  })
+}
+
+function buildMacroStockQuoteRecovery(messages: Message[]): ToolUse[] | null {
+  const lastUserIndex = findLastIndex(messages, (message) => message.role === Role.User)
+  if (lastUserIndex < 0) return null
+  const turnMessages = messages.slice(lastUserIndex)
+  const workflowState = latestFinanceWorkflowState(turnMessages)
+  if (workflowState?.workflowKind !== 'macro_factor_lookup') return null
+  const searchTerm = latestMacroStockSubject(turnMessages)
+  if (!searchTerm || hasMacroStockQuoteEvidence(turnMessages, searchTerm)) return null
+  const identity = latestStockIdentityFromToolResults(turnMessages, searchTerm)
+  if (identity?.code) {
+    return [{
+      id: `auto-macro-stock-quote-${Date.now()}`,
+      name: 'DataStore',
+      input: { action: 'query_quote', code: identity.code, limit: 1 },
+    }]
+  }
+  if (hasStockIdentitySearch(turnMessages, searchTerm)) return null
+  return [{
+    id: `auto-macro-stock-search-${Date.now()}`,
+    name: 'DataStore',
+    input: { action: 'query_stock_list', keyword: searchTerm, limit: 5 },
+  }]
+}
+
+function requiresMacroStockQuoteRecovery(turnMessages: Message[]): boolean {
+  const searchTerm = latestMacroStockSubject(turnMessages)
+  return Boolean(searchTerm &&
+    !hasMacroStockQuoteEvidence(turnMessages, searchTerm) &&
+    !hasStockIdentitySearch(turnMessages, searchTerm))
+}
+
+function latestMacroStockSubject(messages: Message[]): string | null {
+  const state = latestFinanceWorkflowState(messages)
+  if (state?.assetClass === 'stock') {
+    const subject = normalizeStockSubject(state.subject)
+    if (subject) return subject
+    for (const candidate of state.subjects ?? []) {
+      const normalized = normalizeStockSubject(candidate)
+      if (normalized) return normalized
+    }
+  }
+  for (let index = messages.length - 1; index >= 0; index--) {
+    const uses = messages[index].toolUses ?? []
+    for (let useIndex = uses.length - 1; useIndex >= 0; useIndex--) {
+      const call = uses[useIndex]
+      const action = String(call.input.action ?? '')
+      if ((call.name === 'DataStore' || call.name === 'MarketData') && action.includes('macro')) {
+        for (const key of ['code', 'symbol', 'stockCode', 'stockName', 'subject']) {
+          const subject = normalizeStockSubject(call.input[key])
+          if (subject) return subject
+        }
+      }
+    }
+  }
+  return null
+}
+
+function normalizeStockSubject(value: unknown): string | null {
+  const subject = String(value ?? '').trim()
+  if (!subject) return null
+  const qualifiedCode = subject.match(/^(\d{6})\.(?:SH|SZ)$/i)
+  return qualifiedCode?.[1] ?? subject
+}
+
+function hasMacroStockQuoteEvidence(messages: Message[], searchTerm: string): boolean {
+  const identity = latestStockIdentityFromToolResults(messages, searchTerm)
+  const successfulIds = new Set(messages
+    .map((message) => message.toolResult)
+    .filter((result): result is NonNullable<Message['toolResult']> => Boolean(result && !result.isError))
+    .map((result) => result.toolUseId))
+  for (const message of messages) {
+    for (const call of message.toolUses ?? []) {
+      if (!successfulIds.has(call.id)) continue
+      if ((call.name !== 'DataStore' && call.name !== 'MarketData') ||
+          (call.input.action !== 'query_quote' && call.input.action !== 'quote')) continue
+      const code = String(call.input.code ?? call.input.symbol ?? '').trim()
+      if (code && code === (identity?.code ?? searchTerm)) return true
+    }
+  }
+  return false
+}
+
+function hasStockIdentitySearch(messages: Message[], searchTerm: string): boolean {
+  return messages.some((message) => {
+    if (message.role !== Role.Assistant) return false
+    return (message.toolUses ?? []).some((call) =>
+      (call.name === 'DataStore' || call.name === 'MarketData') &&
+      call.input.action === 'query_stock_list' &&
+      String(call.input.keyword ?? call.input.query ?? '') === searchTerm
+    )
+  })
+}
+
+function latestStockIdentityFromToolResults(
+  messages: Message[],
+  searchTerm: string,
+): { code: string; name: string } | null {
+  for (let index = messages.length - 1; index >= 0; index--) {
+    const result = messages[index].toolResult
+    if (!result || result.isError) continue
+    const payload = parseToolResultObject(result.content)
+    if (payload?.action !== 'query_stock_list') continue
+    if (String(payload.keyword ?? '') !== searchTerm) continue
+    const rows = Array.isArray(payload.data) ? payload.data : []
+    for (const row of rows) {
+      if (!row || typeof row !== 'object') continue
+      const record = row as Record<string, unknown>
+      const code = String(record.code ?? record.symbol ?? '').trim()
+      const name = String(record.name ?? '').trim()
+      if (code && name) return { code, name }
+    }
+  }
+  return null
+}
+
+function parseToolResultObject(content: string): Record<string, unknown> | null {
+  const trimmed = content.trim()
+  if (!trimmed.startsWith('{')) return null
+  try {
+    const decoded = JSON.parse(trimmed)
+    return decoded && typeof decoded === 'object' && !Array.isArray(decoded)
+      ? decoded as Record<string, unknown>
+      : null
+  } catch {
+    return null
+  }
+}
+
+function toolResultAction(content: string): string | null {
+  const trimmed = content.trim()
+  if (!trimmed.startsWith('{')) return null
+  try {
+    const decoded = JSON.parse(trimmed)
+    return typeof decoded?.action === 'string' ? decoded.action : null
+  } catch {
+    return null
+  }
+}
+
+function maybeCompleteMacroEvidenceCalls(
+  messages: Message[],
+  proposedToolCalls: ToolUse[],
+): ToolUse[] | null {
+  const macroCalls = proposedToolCalls.filter((call) =>
+    (call.name === 'DataStore' || call.name === 'MarketData') &&
+    String(call.input.action ?? '').includes('macro')
+  )
+  const priorCalls = collectExecutedToolCalls(messages)
+  const priorMacroCalls = priorCalls.filter((call) =>
+    (call.name === 'DataStore' || call.name === 'MarketData') &&
+    String(call.input.action ?? '').includes('macro')
+  )
+  if (macroCalls.length === 0 && priorMacroCalls.length === 0) return null
+  const combinedCalls = [...priorCalls, ...proposedToolCalls]
+  const hasAction = (action: string) => combinedCalls.some((call) =>
+    (call.name === 'DataStore' || call.name === 'MarketData') &&
+    call.input.action === action
+  )
+  const hasMacroSourceCatalog = combinedCalls.some((call) =>
+    (call.name === 'DataStore' || call.name === 'MarketData') &&
+    call.input.action === 'macro_research_sources'
+  )
+  const hasFinanceNewsReadback = combinedCalls.some((call) =>
+    (call.name === 'DataStore' || call.name === 'MarketData') &&
+    call.input.action === 'query_finance_news'
+  )
+  const proposedFinanceNewsRefresh = proposedToolCalls.some((call) =>
+    (call.name === 'DataStore' || call.name === 'MarketData') &&
+    call.input.action === 'finance_news'
+  )
+  const additions: ToolUse[] = []
+  const attributionBaseCalls = macroCalls.length > 0 ? macroCalls : priorMacroCalls
+  const target = attributionBaseCalls
+    .map((call) => String(call.input.target ?? '').trim())
+    .find(Boolean) ?? 'A-shares'
+  const toolName = attributionBaseCalls[0].name
+  if (!hasAction('query_macro_factors') || proposedFinanceNewsRefresh) {
+    additions.push({
+      id: `auto-macro-factors-${Date.now()}`,
+      name: toolName,
+      input: {
+        action: 'query_macro_factors',
+        target,
+        limit: 10,
+      },
+    })
+  }
+  if (!hasAction('query_macro_attribution')) {
+    additions.push({
+      id: `auto-macro-attribution-${Date.now()}`,
+      name: toolName,
+      input: {
+        action: 'query_macro_attribution',
+        target,
+        limit: 10,
+      },
+    })
+  }
+  if (hasMacroSourceCatalog && !hasAction('query_macro_research_evidence')) {
+    additions.push({
+      id: `auto-macro-research-evidence-${Date.now()}`,
+      name: toolName,
+      input: {
+        action: 'query_macro_research_evidence',
+        target,
+        limit: 10,
+      },
+    })
+  }
+  if (hasMacroSourceCatalog && hasFinanceNewsReadback && !hasAction('finance_news')) {
+    additions.push({
+      id: `auto-macro-finance-news-refresh-${Date.now()}`,
+      name: toolName,
+      input: {
+        action: 'finance_news',
+        query: target,
+        limit: 20,
+      },
+    })
+  }
+  if (!hasAction('query_finance_news') || proposedFinanceNewsRefresh) {
+    additions.push({
+      id: `auto-macro-finance-news-${Date.now()}`,
+      name: toolName,
+      input: {
+        action: 'query_finance_news',
+        query: target,
+        limit: 10,
+      },
+    })
+  }
+  if (additions.length === 0) return null
+  const shouldSuppressGenericExternal = proposedToolCalls.some((call) => call.name === 'Research' || call.name === 'WebFetch')
+  const retainedCalls = shouldSuppressGenericExternal
+    ? []
+    : additions.some((call) => call.input.action === 'finance_news')
+      ? proposedToolCalls.filter((call) => call.input.action !== 'query_finance_news')
+      : proposedToolCalls
+  const deferredReadbacks = shouldSuppressGenericExternal
+    ? []
+    : additions.some((call) => call.input.action === 'finance_news')
+      ? proposedToolCalls.filter((call) => call.input.action === 'query_finance_news')
+      : []
+  return [
+    ...cloneInterceptedToolCalls(retainedCalls),
+    ...additions,
+    ...cloneInterceptedToolCalls(deferredReadbacks),
+  ]
+}
+
+function cloneInterceptedToolCalls(calls: ToolUse[]): ToolUse[] {
+  return calls.map((call, index) => ({
+    ...call,
+    id: `auto-retained-${Date.now()}-${index}-${call.id}`,
+  }))
+}
+
 function maybeBuildBudgetedFinanceToolCalls(
   messages: Message[],
   proposedToolCalls: ToolUse[],
 ): ToolUse[] | null {
   const proposedEvidenceCalls = proposedToolCalls.filter((call) => isFinanceEvidenceTool(call.name))
   if (proposedEvidenceCalls.length === 0) return null
-  const currentEvidenceCalls = collectToolCalls(messages).filter((call) => isFinanceEvidenceTool(call.name)).length
+  const currentEvidenceCalls = collectExecutedToolCalls(messages).filter((call) => isFinanceEvidenceTool(call.name)).length
   const remaining = MAX_FINANCE_EVIDENCE_TOOL_CALLS - currentEvidenceCalls
   if (remaining >= proposedEvidenceCalls.length) return null
 
@@ -597,14 +911,68 @@ function maybeBuildBudgetedFinanceToolCalls(
     }
   }
 
-  return proposedEvidenceCalls.slice(0, remaining).map((call, index) => ({
-    ...call,
+  const selectedCalls = prioritizeBudgetedFinanceCalls(proposedEvidenceCalls, remaining)
+  return selectedCalls.map((call, index) => ({
+    ...repairBudgetedFinanceCall(call),
     id: `auto-budget-${index}-${call.id}`,
   }))
 }
 
+function repairBudgetedFinanceCall(call: ToolUse): ToolUse {
+  if (
+    call.name === 'DataStore' &&
+    call.input.action === 'query_index_quote' &&
+    !call.input.code &&
+    !call.input.codes
+  ) {
+    return {
+      ...call,
+      input: {
+        ...call.input,
+        codes: '000001,399001,399006,000300',
+      },
+    }
+  }
+  return call
+}
+
+function prioritizeBudgetedFinanceCalls(proposedEvidenceCalls: ToolUse[], remaining: number): ToolUse[] {
+  const selected = proposedEvidenceCalls.slice(0, remaining)
+  const requiredAttribution = proposedEvidenceCalls.find((call) =>
+    (call.name === 'DataStore' || call.name === 'MarketData') &&
+    call.input.action === 'query_macro_attribution'
+  )
+  if (!requiredAttribution || selected.some((call) => call === requiredAttribution)) return selected
+  const replaceIndex = findLastIndex(selected, (call) =>
+    (call.name === 'DataStore' || call.name === 'MarketData') &&
+    String(call.input.action ?? '').includes('macro')
+  )
+  if (replaceIndex >= 0) {
+    selected[replaceIndex] = requiredAttribution
+    return selected
+  }
+  selected[selected.length - 1] = requiredAttribution
+  return selected
+}
+
 function collectToolCalls(messages: Message[]): ToolUse[] {
   return messages.flatMap((message) => message.role === Role.Assistant ? message.toolUses ?? [] : [])
+}
+
+function collectExecutedToolCalls(messages: Message[]): ToolUse[] {
+  const executedIds = executedToolUseIds(messages)
+  return collectToolCalls(messages).filter((call) => executedIds.has(call.id))
+}
+
+function executedToolUseIds(messages: Message[]): Set<string> {
+  const ids = new Set<string>()
+  for (const message of messages) {
+    if (message.role !== Role.Tool || !message.toolResult || message.toolResult.isError) continue
+    const content = message.toolResult.content.trim()
+    if (content.startsWith('Skipped:')) continue
+    ids.add(message.toolResult.toolUseId)
+  }
+  return ids
 }
 
 function isStockCandidateWorkflow(state: FinanceWorkflowState | null): boolean {
@@ -628,6 +996,7 @@ function maybeBuildDeduplicatedFinanceToolCalls(
   const priorMessages = messagesWithoutCurrentProposedAssistant(messages, proposedToolCalls)
   const existingKeys = new Set(
     collectToolCalls(priorMessages)
+      .filter((call) => executedToolUseIds(priorMessages).has(call.id))
       .filter((call) => isFinanceEvidenceTool(call.name))
       .map(financeToolKey),
   )

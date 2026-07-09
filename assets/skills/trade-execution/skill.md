@@ -176,6 +176,12 @@ create observation monitors after selecting the symbol. This is app-internal
 observation state, not broker execution, so do not stop with a generic
 confirmation question unless required fields are genuinely missing.
 
+If the setup depends on macro, policy, commodity, or index-provider evidence,
+read governed macro evidence first and keep it as rationale or invalidation
+context. Do not encode macro research prose as a price/change monitor or a
+trade trigger. Use concrete price, change, or supported structured monitor
+fields for executable monitoring.
+
 Use `Watchlist(add)` for the selected symbol first, then create one or more
 template monitors:
 

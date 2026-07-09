@@ -12,6 +12,11 @@ import {
 } from "./data-store-tool-interface-discovery";
 import { HELP_TEXT } from "./data-store-tool-help";
 import {
+  macroResearchExtract,
+  macroResearchExtractionStatus,
+  queryMacroResearchContent,
+} from "./macro-research-extraction";
+import {
   coverage,
   queryAlphaFactors,
   fundList,
@@ -75,7 +80,13 @@ import {
   queryIndustryMap,
   queryKline,
   queryLimitPool,
+  macroNumericSeriesCatalog,
+  macroResearchSources,
+  macroResearchProvenance,
+  queryMacroAttribution,
   queryMacroFactors,
+  queryMacroNumericSeries,
+  queryMacroResearchEvidence,
   queryMarginTrading,
   queryMarketScreening,
   queryMomentum,
@@ -216,6 +227,15 @@ export class DataStoreTool implements Tool {
           "query_finance_news",
           "query_market_screening",
           "query_macro_factors",
+          "query_macro_attribution",
+          "query_macro_numeric_series",
+          "macro_numeric_series_catalog",
+          "macro_research_sources",
+          "macro_research_provenance",
+          "macro_research_extract",
+          "macro_research_extraction_status",
+          "query_macro_research_content",
+          "query_macro_research_evidence",
           "query_margin_trading",
           "query_technical_indicator",
           "query_alpha_factors",
@@ -546,7 +566,17 @@ export class DataStoreTool implements Tool {
       target: {
         type: "string",
         description:
-          "For query_macro_factors: structured target already identified by the agent, such as Copper, Indonesia equities, US Treasury, A-shares, bond funds, or a sector/theme.",
+          "For query_macro_factors/query_macro_numeric_series: structured target already identified by the agent, such as Copper, Indonesia equities, US Treasury, A-shares, bond funds, GDP, CPI, or a sector/theme. Do not loop through numeric targets for first-pass watch-factor answers; state missing numeric evidence as a gap.",
+      },
+      seriesId: {
+        type: "string",
+        description:
+          "For query_macro_numeric_series/macro_numeric_series_catalog: official series id or provider-specific metric id.",
+      },
+      metric: {
+        type: "string",
+        description:
+          "For query_macro_numeric_series: metric name filter such as GDP, CPI, DGS10, or liquidity. Use this only when an official numeric value is required.",
       },
       assets: {
         type: "string",
@@ -731,6 +761,24 @@ export class DataStoreTool implements Tool {
         return queryMarketScreening(ds, input);
       case "query_macro_factors":
         return queryMacroFactors(ds, input);
+      case "query_macro_attribution":
+        return queryMacroAttribution(ds, input);
+      case "query_macro_numeric_series":
+        return queryMacroNumericSeries(ds, input);
+      case "macro_numeric_series_catalog":
+        return macroNumericSeriesCatalog(input);
+      case "macro_research_sources":
+        return macroResearchSources(input);
+      case "macro_research_provenance":
+        return macroResearchProvenance(ds, input);
+      case "macro_research_extract":
+        return macroResearchExtract(ds, input, ctx.basePath);
+      case "macro_research_extraction_status":
+        return macroResearchExtractionStatus(input);
+      case "query_macro_research_content":
+        return queryMacroResearchContent(ds, input);
+      case "query_macro_research_evidence":
+        return queryMacroResearchEvidence(ds, input);
       case "query_margin_trading":
         return queryMarginTrading(ds, input);
       case "query_technical_indicator":
