@@ -26,6 +26,12 @@ export interface FinanceNewsRouteResult {
   data: NewsRow[]
   source: string
   cacheStatus: 'cache-hit' | 'provider-hit'
+  sourceHealth: {
+    status: 'live' | 'cached'
+    provider: string
+    lastSuccessfulFetch?: string
+    nextRetryPolicy: string
+  }
   provenance: {
     interfaceId: string
     capabilityId: string
@@ -104,6 +110,7 @@ export class FinanceNewsDataApiService {
       data: routed.data,
       source: routed.source,
       cacheStatus: routed.cacheStatus,
+      sourceHealth: newsSourceHealth(routed.cacheStatus, routed.provider, routed.data),
       provenance: {
         interfaceId: routed.interfaceId,
         capabilityId: routed.capabilityId,
@@ -153,7 +160,7 @@ export class FinanceNewsDataApiService {
       limit,
       minFetchedAt: fetchedAt,
     })
-    await recordNewsApiCall(ctx, capability, startedAt, reread.length > 0, reread.length > 0 ? undefined : 'provider refresh persisted no queryable finance_news rows')
+    await assertNewsReadbackUsable(ctx, capability, startedAt, reread, 'AkShare refresh returned empty finance_news readback rows')
     return reread
   }
 
@@ -177,7 +184,7 @@ export class FinanceNewsDataApiService {
         limit,
         minFetchedAt: fetchedAt,
       })
-      await recordNewsApiCall(ctx, capability, startedAt, reread.length > 0, reread.length > 0 ? undefined : 'Wind refresh persisted no queryable finance_news rows')
+      await assertNewsReadbackUsable(ctx, capability, startedAt, reread, 'Wind refresh returned empty finance_news readback rows')
       return reread
     } catch (error) {
       await recordNewsApiCall(ctx, capability, startedAt, false, error)
@@ -224,7 +231,7 @@ export class FinanceNewsDataApiService {
         limit,
         minFetchedAt: fetchedAt,
       })
-      await recordNewsApiCall(ctx, capability, startedAt, reread.length > 0, reread.length > 0 ? undefined : 'Sina refresh persisted no queryable finance_news rows')
+      await assertNewsReadbackUsable(ctx, capability, startedAt, reread, 'Sina refresh returned empty finance_news readback rows')
       return reread
     } catch (error) {
       await recordNewsApiCall(ctx, capability, startedAt, false, error)
@@ -260,6 +267,49 @@ async function readFinanceNewsRows(
       return Number.isFinite(parsed) && parsed >= cutoff
     })
     .map(newsRowForUi), options.priorityKeyword)
+}
+
+async function assertNewsReadbackUsable(
+  ctx: ToolContext,
+  capability: DataApiProviderCapability,
+  startedAt: number,
+  rows: NewsRow[],
+  message: string,
+): Promise<void> {
+  if (rows.length > 0) {
+    await recordNewsApiCall(ctx, capability, startedAt, true)
+    return
+  }
+  const error = `source-health:empty-result:${message}; use cached/readback finance_news rows if available and do not retry this provider again in the same workflow turn`
+  await recordNewsApiCall(ctx, capability, startedAt, false, error)
+  throw new Error(error)
+}
+
+function newsSourceHealth(
+  cacheStatus: 'cache-hit' | 'provider-hit',
+  provider: string,
+  rows: NewsRow[],
+): FinanceNewsRouteResult['sourceHealth'] {
+  return {
+    status: cacheStatus === 'cache-hit' ? 'cached' : 'live',
+    provider,
+    lastSuccessfulFetch: latestString(rows, ['fetched_at', 'fetchedAt']),
+    nextRetryPolicy: cacheStatus === 'cache-hit'
+      ? 'use-cache-first; refresh only when the user asks for live news or cache freshness is insufficient'
+      : 'live rows were queryable; normal cache-first reuse is allowed',
+  }
+}
+
+function latestString(rows: NewsRow[], keys: string[]): string | undefined {
+  let latest: string | undefined
+  for (const row of rows) {
+    for (const key of keys) {
+      const value = cleanString(row[key])
+      if (!value) continue
+      if (!latest || value > latest) latest = value
+    }
+  }
+  return latest
 }
 
 async function callWindFinanceNews(

@@ -94,6 +94,24 @@ function normalizeStrategyRules(input: Record<string, unknown>): Record<string, 
   return Object.keys(rules).length > 0 ? rules : undefined
 }
 
+function normalizeWatchItemType(value: unknown): string {
+  const type = String(value ?? 'stock').trim().toLowerCase()
+  if (type === 'macro_condition' || type === 'macro' || type === 'macro-risk') return 'macro-condition'
+  return type || 'stock'
+}
+
+function macroConditionSymbol(input: Record<string, unknown>): string {
+  const explicit = String(input.symbol ?? input.conditionId ?? '').trim()
+  if (explicit) return explicit
+  const basis = String(input.name ?? input.entryCondition ?? input.source ?? 'macro-condition').trim() || 'macro-condition'
+  const slug = basis
+    .toLowerCase()
+    .replace(/[^a-z0-9\u4e00-\u9fa5]+/gi, '-')
+    .replace(/^-+|-+$/g, '')
+    .slice(0, 48)
+  return `macro:${slug || 'condition'}`
+}
+
 function monitorSuggestionFor(item: WatchItem): Record<string, unknown> | undefined {
   if (!item.strategyId && !item.strategyRules) return undefined
   if (item.type.toLowerCase() === 'fund' || item.type.toLowerCase() === 'etf') {
@@ -139,7 +157,7 @@ export class WatchlistTool implements Tool {
     properties: {
       action: { type: 'string', enum: ['create_group', 'list_groups', 'delete_group', 'add', 'remove', 'update', 'list', 'enter', 'exit', 'summary', 'help'] },
       name: { type: 'string' },
-      type: { type: 'string', description: 'stock/fund/etf/index' },
+      type: { type: 'string', description: 'stock/fund/etf/index/macro-condition' },
       groupId: { type: 'string' },
       symbol: { type: 'string' },
       tags: { type: 'array', items: { type: 'string' } },
@@ -222,9 +240,11 @@ export class WatchlistTool implements Tool {
       }
 
       case 'add': {
-        const symbol = input.symbol as string | undefined
+        const itemType = normalizeWatchItemType(input.type)
+        const symbol = itemType === 'macro-condition'
+          ? macroConditionSymbol(input)
+          : input.symbol as string | undefined
         if (!symbol) return toolError('symbol required')
-        const itemType = String(input.type ?? 'stock')
         const groupId = (input.groupId as string) ?? data.groups.find((g) => g.type === itemType)?.id ?? data.groups[0]?.id ?? 'default'
         const tag = typeof input.tag === 'string' ? input.tag.trim() : ''
         const tags = Array.isArray(input.tags) ? input.tags.map((value) => String(value)) : []
@@ -233,11 +253,14 @@ export class WatchlistTool implements Tool {
         if (['fund', 'etf'].includes(itemType.toLowerCase()) && !inferredName) {
           return toolError('name required for fund/etf watchlist items; tag is classification metadata, not display name')
         }
+        if (itemType === 'macro-condition' && !inferredName && !input.entryCondition) {
+          return toolError('name or entryCondition required for macro-condition watchlist items; macro conditions are observation context, not tradable instruments')
+        }
         const item: WatchItem = {
           id: genId(),
           groupId,
           symbol,
-          name: inferredName,
+          name: inferredName || String(input.entryCondition ?? 'Macro condition'),
           type: itemType,
           status: 'watching',
           source: String(input.source ?? 'agent'),
@@ -323,7 +346,7 @@ export class WatchlistTool implements Tool {
 
         const list = results.map((i) => ({
           id: i.id, symbol: i.symbol, name: i.name, type: i.type,
-          status: i.status, tags: i.tags,
+          status: i.status, source: i.source, tags: i.tags,
           addedAt: i.addedAt,
           priceAtAdd: i.priceAtAdd,
           currentPrice: i.currentPrice,

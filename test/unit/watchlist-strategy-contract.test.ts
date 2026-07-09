@@ -39,7 +39,14 @@ describe('watchlist strategy contract', () => {
         tradeBoundary: 'Requires confirmation before any order.',
       },
     }, ctx)
-    expect(add).toContain('Added')
+    expect(JSON.parse(add)).toMatchObject({
+      action: 'add',
+      status: 'added',
+      item: {
+        symbol: '600519',
+        strategyId: 'custom_rsi_volume_rebound_v1',
+      },
+    })
 
     const listed = JSON.parse(await tool.call('list-1', {
       action: 'list',
@@ -113,5 +120,56 @@ describe('watchlist strategy contract', () => {
       strategyId: 'custom_20_v1',
       strategyRules: { id: 'custom_20_v1', symbol: '600519' },
     })
+  })
+
+  it('supports macro-condition rows without pretending they are fund or ETF instruments', async () => {
+    const basePath = mkdtempSync(join(tmpdir(), 'fin-watchlist-macro-'))
+    const tool = new WatchlistTool()
+    const ctx = { basePath } as any
+
+    const add = JSON.parse(await tool.call('add-macro', {
+      action: 'add',
+      type: 'macro-condition',
+      name: '利率上行风险观察',
+      entryCondition: '10Y收益率继续上行且信用利差扩大',
+      source: 'macro-reliability',
+      tags: ['macro', 'risk'],
+      strategyRules: {
+        evidenceTier: 'official numeric fact + research view',
+        invalidation: '利率回落且信用利差收窄',
+      },
+    }, ctx))
+
+    expect(add.item).toMatchObject({
+      type: 'macro-condition',
+      name: '利率上行风险观察',
+      entryCondition: '10Y收益率继续上行且信用利差扩大',
+    })
+    expect(String(add.item.symbol)).toMatch(/^macro:/)
+
+    const listed = JSON.parse(await tool.call('list-macro', {
+      action: 'list',
+      type: 'macro-condition',
+      status: 'watching',
+    }, ctx))
+    expect(listed.count).toBe(1)
+    expect(listed.items[0]).toMatchObject({
+      type: 'macro-condition',
+      source: 'macro-reliability',
+      tags: ['macro', 'risk'],
+    })
+  })
+
+  it('keeps fund and ETF identity strict instead of accepting placeholder rows', async () => {
+    const basePath = mkdtempSync(join(tmpdir(), 'fin-watchlist-fund-validation-'))
+    const tool = new WatchlistTool()
+    const ctx = { basePath } as any
+
+    await expect(tool.call('add-invalid-fund', {
+      action: 'add',
+      symbol: '110022',
+      type: 'fund',
+      tag: 'macro',
+    }, ctx)).rejects.toThrow('name required for fund/etf watchlist items')
   })
 })

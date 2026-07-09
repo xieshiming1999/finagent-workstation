@@ -41,13 +41,15 @@ describe('FinanceNewsDataApiService', () => {
 
       const result = await service.readNewsFeed(toolContext(basePath), { query: '美联储' })
       expect(result).toMatchObject({
-        source: 'local',
         cacheStatus: 'cache-hit',
+        sourceHealth: {
+          status: 'cached',
+          nextRetryPolicy: expect.stringContaining('use-cache-first'),
+        },
       })
       expect(result.provenance).toMatchObject({
         interfaceId: 'news.finance_feed',
         capabilityId: 'local.cache',
-        provider: 'local',
         canonicalTable: 'finance_news',
       })
       expect(result.data).toHaveLength(1)
@@ -89,6 +91,11 @@ describe('FinanceNewsDataApiService', () => {
         cacheMode: 'live-only',
       })
       expect(result.cacheStatus).toBe('provider-hit')
+      expect(result.sourceHealth).toMatchObject({
+        status: 'live',
+        provider: 'wind',
+        nextRetryPolicy: expect.stringContaining('normal cache-first reuse'),
+      })
       expect(result.provenance).toMatchObject({
         interfaceId: 'news.finance_feed',
         capabilityId: 'wind.news.finance_feed',
@@ -219,6 +226,34 @@ describe('FinanceNewsDataApiService', () => {
       expect(result.cacheStatus).toBe('provider-hit')
       expect(result.data).toHaveLength(1)
       expect(result.data[0].title).toContain('A股市场')
+    } finally {
+      closeDb()
+      rmSync(basePath, { recursive: true, force: true })
+    }
+  })
+
+  it('classifies empty live provider refreshes as source-health failures', async () => {
+    const basePath = createStoreBase('finance-news-empty-')
+    try {
+      const service = new FinanceNewsDataApiService(
+        {
+          readIndexQuotes: async () => null,
+          callSidecarRoute: async () => ({ data: [] }),
+          callGotdxRoute: async () => {
+            throw new Error('gotdx not used')
+          },
+        },
+        async () => {
+          throw new Error('Wind should not be called for strict akshare')
+        },
+      )
+
+      await expect(service.readNewsFeed(toolContext(basePath), {
+        query: '不存在的新闻主题',
+        provider: 'akshare',
+        providerMode: 'strict',
+        cacheMode: 'live-only',
+      })).rejects.toThrow('source-health:empty-result')
     } finally {
       closeDb()
       rmSync(basePath, { recursive: true, force: true })
