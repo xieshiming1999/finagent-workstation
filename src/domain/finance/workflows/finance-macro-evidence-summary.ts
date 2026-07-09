@@ -11,6 +11,9 @@ interface MacroEvidence {
   evidenceLines: string[]
   newsLines: string[]
   missingLines: string[]
+  reliabilityLines: string[]
+  assetImpactLines: string[]
+  decisionLines: string[]
 }
 
 export function maybeBuildMacroEvidenceAnswer(
@@ -54,6 +57,9 @@ export function collectMacroEvidence(messages: Message[]): MacroEvidence {
   const evidenceLines: string[] = []
   const newsLines: string[] = []
   const missingLines: string[] = []
+  const reliabilityLines: string[] = []
+  const assetImpactLines: string[] = []
+  const decisionLines: string[] = []
   const contextLines: string[] = []
   const nonMacroLines: string[] = []
   let sawMacroAction = false
@@ -85,6 +91,9 @@ export function collectMacroEvidence(messages: Message[]): MacroEvidence {
     if (action === 'query_finance_news') {
       const line = financeNewsPayloadLine(decoded)
       if (line) newsLines.push(line)
+      reliabilityLines.push(...reliabilityRows(decoded, 'linked_news_evidence'))
+      assetImpactLines.push(...assetImpactRows(decoded))
+      decisionLines.push(...decisionRows(decoded, 'linked_news_evidence'))
       continue
     }
     if (!action.includes('macro')) {
@@ -97,6 +106,9 @@ export function collectMacroEvidence(messages: Message[]): MacroEvidence {
       const reason = text(decoded.missingReason)
       if (reason) missingLines.push(`${action}: ${reason}`)
     }
+    reliabilityLines.push(...reliabilityRows(decoded))
+    assetImpactLines.push(...assetImpactRows(decoded))
+    decisionLines.push(...decisionRows(decoded))
     switch (action) {
       case 'query_macro_factors':
         factorLines.push(...factorRows(decoded))
@@ -131,6 +143,9 @@ export function collectMacroEvidence(messages: Message[]): MacroEvidence {
     evidenceLines: dedupe(evidenceLines),
     newsLines: dedupe(newsLines),
     missingLines: dedupe(missingLines),
+    reliabilityLines: dedupe(reliabilityLines),
+    assetImpactLines: dedupe(assetImpactLines),
+    decisionLines: dedupe(decisionLines),
   }
 }
 
@@ -189,6 +204,15 @@ function buildMacroEvidenceSection(evidence: MacroEvidence): string[] {
   }
   if (evidence.missingLines.length > 0) {
     lines.push(`- 不确定性/数据缺口：${evidence.missingLines.slice(0, 4).join('；')}。`)
+  }
+  if (evidence.reliabilityLines.length > 0) {
+    lines.push(`- 可靠性：${evidence.reliabilityLines.slice(0, 5).join('；')}。`)
+  }
+  if (evidence.assetImpactLines.length > 0) {
+    lines.push(`- 资产影响：${evidence.assetImpactLines.slice(0, 5).join('；')}。`)
+  }
+  if (evidence.decisionLines.length > 0) {
+    lines.push(`- 置信度/下一步：${evidence.decisionLines.slice(0, 5).join('；')}。`)
   }
   lines.push(
     '',
@@ -395,6 +419,192 @@ function evidenceRows(payload: Record<string, unknown>): string[] {
   const extracted = text(payload.extracted)
   if (extracted) lines.push(`${text(payload.action)}: extracted=${extracted}`)
   return lines
+}
+
+function reliabilityRows(payload: Record<string, unknown>, fallbackTier = ''): string[] {
+  return evidenceCandidateRows(payload).map((row) => {
+    const tier = text(row.evidenceTier ?? row.evidence_tier) || fallbackTier || tierForRow(row)
+    const sourceType = text(row.sourceType ?? row.source_type) || sourceTypeForTier(tier)
+    const source = text(row.sourceName ?? row.source_name ?? row.provider ?? row.source) || 'macro'
+    const sourceTime = text(row.sourceDataTime ?? row.source_data_time ?? row.sourceDate ?? row.source_date ?? row.published_at)
+    const fetchedAt = text(row.fetchedAt ?? row.fetched_at)
+    const access = accessStatus(row)
+    const freshness = freshnessStatus(sourceTime, fetchedAt, access)
+    const confidence = text(row.confidence ?? row.reliability) || confidenceForTier(tier, access, freshness)
+    const limitation = text(row.limitations ?? row.limitation ?? row.missingReason ?? row.failureClass ?? row.failure_class)
+    return [
+      source,
+      `tier=${tier}`,
+      sourceType ? `type=${sourceType}` : '',
+      `freshness=${freshness}`,
+      `access=${access}`,
+      `confidence=${confidence}`,
+      limitation ? `limit=${compact(limitation, 80)}` : '',
+    ].filter(Boolean).join(' / ')
+  }).filter(Boolean)
+}
+
+function assetImpactRows(payload: Record<string, unknown>): string[] {
+  return evidenceCandidateRows(payload).map((row) => {
+    const title = text(row.title ?? row.factor_name ?? row.factorId ?? row.provider ?? row.sourceName)
+    const family = text(row.family)
+    const assets = listValues(row.affectedAssets ?? row.affected_assets ?? row.assetClasses ?? row.asset_classes ?? row.assets)
+    const regions = listValues(row.regions ?? row.marketRegions ?? row.market_regions ?? row.region)
+    const sectors = listValues(row.sectors ?? row.themes ?? row.theme)
+    const fundTypes = listValues(row.fundTypes ?? row.fund_types)
+    const channels = listValues(row.transmissionChannels ?? row.transmission_channels ?? row.strategyImpact ?? row.strategy_impact)
+    const direction = impactDirection(row)
+    const target = [
+      assets.length ? `asset=${assets.slice(0, 4).join(',')}` : '',
+      regions.length ? `region=${regions.slice(0, 3).join(',')}` : '',
+      sectors.length ? `sector=${sectors.slice(0, 4).join(',')}` : '',
+      fundTypes.length ? `fund=${fundTypes.slice(0, 3).join(',')}` : '',
+      channels.length ? `channel=${channels.slice(0, 4).join(',')}` : '',
+    ].filter(Boolean).join(' / ')
+    return [title || family || 'macro', `impact=${direction}`, target || 'target=needs-linking'].filter(Boolean).join(' / ')
+  }).filter(Boolean)
+}
+
+function decisionRows(payload: Record<string, unknown>, fallbackTier = ''): string[] {
+  return evidenceCandidateRows(payload).map((row) => {
+    const title = text(row.title ?? row.factor_name ?? row.factorId ?? row.provider ?? row.sourceName) || 'macro'
+    const tier = text(row.evidenceTier ?? row.evidence_tier) || fallbackTier || tierForRow(row)
+    const access = accessStatus(row)
+    const sourceTime = text(row.sourceDataTime ?? row.source_data_time ?? row.sourceDate ?? row.source_date ?? row.published_at)
+    const fetchedAt = text(row.fetchedAt ?? row.fetched_at)
+    const freshness = freshnessStatus(sourceTime, fetchedAt, access)
+    const confidenceEffect = text(row.confidenceEffect ?? row.confidence_effect) || confidenceEffectFor(tier, access, freshness, row)
+    const missing = text(row.missingEvidence ?? row.missing_evidence ?? row.missingReason ?? row.failureClass ?? row.failure_class)
+    const conflict = text(row.conflictingEvidence ?? row.conflicting_evidence)
+    const next = text(row.nextEvidenceAction ?? row.next_evidence_action ?? row.nextAction) || nextEvidenceAction(access, freshness, missing)
+    return [
+      title,
+      `confidenceEffect=${confidenceEffect}`,
+      missing ? `missing=${compact(missing, 80)}` : '',
+      conflict ? `conflict=${compact(conflict, 80)}` : '',
+      `next=${next}`,
+    ].filter(Boolean).join(' / ')
+  }).filter(Boolean)
+}
+
+function evidenceCandidateRows(payload: Record<string, unknown>): Array<Record<string, unknown>> {
+  const candidates = [
+    ...rows(payload),
+    ...rows(payload, 'contentEvidence'),
+    ...rows(payload, 'data').map((row) => ({
+      ...row,
+      evidenceTier: 'linked_news_evidence',
+      sourceType: 'news',
+      sourceDataTime: row.published_at ?? payload.sourceDataTime,
+      fetchedAt: payload.fetchedAt,
+      sourceName: row.source ?? payload.provider ?? 'finance_news',
+      limitations: 'news_clue_not_official_fact',
+    })),
+  ]
+  if (candidates.length > 0) return candidates
+  const action = text(payload.action)
+  if (!action) return []
+  return [{
+    provider: text(payload.provider ?? payload.source ?? action),
+    sourceDataTime: payload.sourceDataTime,
+    fetchedAt: payload.fetchedAt,
+    status: payload.status,
+    missingReason: payload.missingReason,
+    evidenceTier: action === 'query_finance_news' ? 'linked_news_evidence' : '',
+  }]
+}
+
+function tierForRow(row: Record<string, unknown>): string {
+  const family = text(row.family).toLowerCase()
+  const sourceType = text(row.sourceType ?? row.source_type).toLowerCase()
+  const status = text(row.status ?? row.failureClass ?? row.failure_class).toLowerCase()
+  if (/(blocked|gated|missing|failed|unsupported|manual|licensed)/.test(status)) return 'blocked/gated/missing'
+  if (/official.*series|macro_official_series|numeric/.test(family)) return 'official_numeric_fact'
+  if (/official|policy|regulation|index_event|event|document/.test(family) || /official/.test(sourceType)) return 'official_event_document'
+  if (/research|content|document|asset_manager/.test(family) || /research/.test(sourceType)) return 'content-backed_research'
+  if (/news/.test(family) || /news/.test(sourceType)) return 'linked_news_evidence'
+  if (/retrieval|provenance|extract/.test(family) || /retrieval/.test(sourceType)) return 'retrieval_evidence'
+  return 'content-backed_research'
+}
+
+function sourceTypeForTier(tier: string): string {
+  if (tier.includes('official_numeric')) return 'official_data'
+  if (tier.includes('official_event')) return 'official_event'
+  if (tier.includes('research')) return 'research'
+  if (tier.includes('news')) return 'news'
+  if (tier.includes('retrieval')) return 'retrieval-only'
+  if (tier.includes('blocked') || tier.includes('missing')) return 'blocked_or_missing'
+  return ''
+}
+
+function accessStatus(row: Record<string, unknown>): string {
+  const value = text(row.accessStatus ?? row.access_status ?? row.accessClass ?? row.automationPolicy ?? row.status ?? row.failureClass ?? row.failure_class).toLowerCase()
+  if (!value) return 'public'
+  if (value.includes('api-key')) return 'api-key-required'
+  if (value.includes('credential') || value.includes('quota')) return 'credential-gated'
+  if (value.includes('manual')) return 'manual-browser'
+  if (value.includes('anti-bot')) return 'anti-bot'
+  if (value.includes('security') || value.includes('blocked')) return 'security-blocked'
+  if (value.includes('do-not-scrape')) return 'do-not-scrape'
+  if (value.includes('licensed') || value.includes('paywall')) return 'licensed-needed'
+  return 'public'
+}
+
+function freshnessStatus(sourceTime: string, fetchedAt: string, access: string): string {
+  if (/(blocked|manual|anti-bot|licensed|do-not-scrape|security)/.test(access)) return 'blocked'
+  const sourceDate = parseDate(sourceTime)
+  const fetchedDate = parseDate(fetchedAt)
+  if (!sourceDate && !fetchedDate) return 'missing'
+  if (!sourceDate || !fetchedDate) return 'acceptable'
+  const days = Math.abs(fetchedDate.getTime() - sourceDate.getTime()) / 86_400_000
+  if (days <= 7) return 'fresh'
+  if (days <= 60) return 'acceptable'
+  return 'stale'
+}
+
+function confidenceForTier(tier: string, access: string, freshness: string): string {
+  if (tier.includes('blocked') || access !== 'public' || freshness === 'blocked' || freshness === 'missing') return 'low'
+  if (tier.includes('official') && freshness !== 'stale') return 'high'
+  if (tier.includes('research') || tier.includes('news')) return 'medium'
+  return 'low'
+}
+
+function impactDirection(row: Record<string, unknown>): string {
+  const value = text(row.expectedDirection ?? row.expected_direction ?? row.impact ?? row.direction).toLowerCase()
+  if (/(positive|tailwind|利好|上行)/.test(value)) return 'positive tailwind'
+  if (/(negative|headwind|利空|下行)/.test(value)) return 'negative headwind'
+  if (/(mixed|分化|双向)/.test(value)) return 'mixed'
+  if (/(watch|monitor|观察)/.test(value)) return 'watch-only'
+  return 'watch-only'
+}
+
+function confidenceEffectFor(tier: string, access: string, freshness: string, row: Record<string, unknown>): string {
+  const status = text(row.status ?? row.failureClass ?? row.failure_class).toLowerCase()
+  if (status.includes('missing') || status.includes('failed') || freshness === 'missing') return 'insufficient evidence'
+  if (access !== 'public' || freshness === 'blocked' || freshness === 'stale') return 'lowers confidence'
+  if (tier.includes('official') && freshness === 'fresh') return 'raises confidence'
+  if (tier.includes('news')) return 'neutral'
+  return 'mixed'
+}
+
+function nextEvidenceAction(access: string, freshness: string, missing: string): string {
+  if (missing) return 'refresh or request higher-tier evidence'
+  if (/(manual|anti-bot|licensed|do-not-scrape|security)/.test(access)) return 'manual-browser evidence or do not retry'
+  if (access === 'credential-gated' || access === 'api-key-required') return 'configure credential then serial probe'
+  if (freshness === 'stale' || freshness === 'missing') return 'refresh allowed source then readback'
+  return 'use cache/readback'
+}
+
+function parseDate(value: string): Date | null {
+  if (!value) return null
+  const date = new Date(value)
+  return Number.isNaN(date.getTime()) ? null : date
+}
+
+function listValues(value: unknown): string[] {
+  if (Array.isArray(value)) return value.map(text).filter(Boolean)
+  const stringValue = text(value)
+  return stringValue ? stringValue.split(/[;,，、]/).map((item) => item.trim()).filter(Boolean) : []
 }
 
 function financeNewsResultLine(content: string): string {
