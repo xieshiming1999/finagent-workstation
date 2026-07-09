@@ -291,6 +291,20 @@ export class WatchlistTool implements Tool {
             next: monitorSuggestion,
           }, null, 2)
         }
+        if (itemType === 'macro-condition') {
+          return JSON.stringify({
+            action: 'add',
+            status: 'added',
+            item,
+            groupId,
+            groupItemCount: groupItems.length,
+            readbackAction: {
+              tool: 'Watchlist',
+              input: { action: 'list', type: 'macro-condition', status: 'watching' },
+            },
+            boundary: 'macro/news context is observation evidence, not an executable buy/sell trigger',
+          }, null, 2)
+        }
         return `Added ${item.name || symbol} to watchlist (id: ${item.id}, group: ${groupId}, ${groupItems.length} items in group)`
       }
 

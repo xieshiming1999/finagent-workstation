@@ -66,6 +66,13 @@ Watchlist(action:"list", status:"watching", groupId:"default")
 Watchlist(action:"list", symbol:"600519", strategyId:"custom_20_v1", status:"watching")
 ```
 
+```text
+Watchlist(action:"add", type:"macro-condition", name:"流动性风险观察",
+  status:"watching",
+  entryCondition:"如果政策利率、资金利率或期限利差与当前假设相反，则重新评估股票/基金/策略结论。",
+  source:"evidenceTier=...; refreshPolicy=...; missingEvidence=...; macro/news context is not a buy/sell trigger")
+```
+
 ## Boundaries
 
 - Do not use `Write`, `FileWrite`, or manual JSON editing for normal watchlist
@@ -76,6 +83,9 @@ Watchlist(action:"list", symbol:"600519", strategyId:"custom_20_v1", status:"wat
   `entryCondition` or the final answer as explanation.
 - For fund watchlists, preserve the fund code/type and do not mix ordinary NAV
   signals with money-fund yield signals.
+- For macro-condition watch rows, do not provide a stock/fund symbol unless the
+  condition is explicitly attached to that asset. Keep the row as observation
+  context, not an executable trade trigger.
 - For trade workflows, watchlist state is not an executed order. Use
   `XueqiuTrade` or paper/simulation tools only when the user explicitly asks for
   a trading action and the required approval/credentials are available.

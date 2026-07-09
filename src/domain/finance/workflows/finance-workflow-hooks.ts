@@ -524,7 +524,13 @@ export function maybeBuildFinanceBoundedAnswer(messages: Message[]): string | nu
   const macroEvidenceAnswer = maybeBuildMacroEvidenceAnswer(messages.slice(lastUserIndex), {
     failureSummary: '本轮已使用结构化宏观 readback 和来源证据；如需刷新来源，应进入显式 macro source update / extraction workflow。',
   })
-  if (macroEvidenceAnswer && !requiresMacroStockQuoteRecovery(messages.slice(lastUserIndex))) return macroEvidenceAnswer
+  if (
+    macroEvidenceAnswer &&
+    !requiresMacroStockQuoteRecovery(messages.slice(lastUserIndex)) &&
+    !hasPendingWatchlistStateWorkflow(messages.slice(lastUserIndex))
+  ) {
+    return macroEvidenceAnswer
+  }
   const customStrategySaveRunBoundaryAnswer = maybeBuildCustomStrategySaveRunBoundaryAnswer(messages.slice(lastUserIndex))
   if (customStrategySaveRunBoundaryAnswer) return customStrategySaveRunBoundaryAnswer
   const customStrategyRunComparisonAnswer = maybeBuildCustomStrategyRunComparisonAnswer(messages.slice(lastUserIndex))
@@ -607,6 +613,51 @@ function findLastIndex<T>(items: T[], predicate: (item: T) => boolean): number {
 function maybeBuildFinanceBudgetProbeAnswer(messages: Message[], proposedToolCalls: ToolUse[]): string | null {
   if (!proposedToolCalls.some((call) => call.id === 'auto-finance-budget-answer-probe')) return null
   return maybeBuildFinanceBoundedAnswer(messages)
+}
+
+function hasPendingWatchlistStateWorkflow(turnMessages: Message[]): boolean {
+  const loadedWatchlistSkill = turnMessages.some((message) =>
+    message.role === Role.Assistant &&
+    (message.toolUses ?? []).some((call) =>
+      call.name === 'Skill' && String(call.input.skill ?? '') === 'watchlist'
+    )
+  )
+  const inspectedWatchlistHelp = turnMessages.some((message) =>
+    message.role === Role.Assistant &&
+    (message.toolUses ?? []).some((call) =>
+      call.name === 'Watchlist' && call.input.action === 'help'
+    )
+  )
+  if (!loadedWatchlistSkill && !inspectedWatchlistHelp) return false
+  const successfulToolIds = successfulToolResultIds(turnMessages)
+  const hasMacroConditionWrite = turnMessages.some((message) =>
+    message.role === Role.Assistant &&
+    (message.toolUses ?? []).some((call) =>
+      call.name === 'Watchlist' &&
+      call.input.action === 'add' &&
+      call.input.type === 'macro-condition' &&
+      successfulToolIds.has(call.id)
+    )
+  )
+  const hasMacroConditionReadback = turnMessages.some((message) =>
+    message.role === Role.Assistant &&
+    (message.toolUses ?? []).some((call) =>
+      call.name === 'Watchlist' &&
+      call.input.action === 'list' &&
+      (call.input.type === 'macro-condition' || call.input.groupType === 'macro-condition') &&
+      successfulToolIds.has(call.id)
+    )
+  )
+  if (hasMacroConditionWrite && !hasMacroConditionReadback) return true
+  const hasWatchlistStateCall = turnMessages.some((message) =>
+    message.role === Role.Assistant &&
+    (message.toolUses ?? []).some((call) =>
+      call.name === 'Watchlist' &&
+      (call.input.action === 'add' || call.input.action === 'update' || call.input.action === 'list') &&
+      successfulToolIds.has(call.id)
+    )
+  )
+  return !hasWatchlistStateCall
 }
 
 function maybeBuildMacroExternalFallbackAnswer(

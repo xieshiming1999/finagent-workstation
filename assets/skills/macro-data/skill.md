@@ -4,6 +4,25 @@ when_to_use: User asks about macroeconomics, rates, inflation, CPI, GDP, FX, the
 ---
 # Macro Data
 
+## Macro Watchlist Writes
+
+If the user explicitly asks to write macro risk, policy, rate, liquidity,
+commodity, or research conditions into a watchlist or observation list, this is
+a state-changing watchlist workflow, not an explanation-only macro answer.
+
+1. Read the governed macro evidence first with the relevant
+   `query_macro_factors`, `query_macro_attribution`, and news/source readback.
+2. Load `Skill(skill:"watchlist")`.
+3. Call `Watchlist(action:"add", type:"macro-condition", name:"...",
+   entryCondition:"...", source:"...")`.
+4. Read back with `Watchlist(action:"list", type:"macro-condition",
+   status:"watching")`.
+5. In the final answer, state the created/read-back ids and that macro/news
+   context is observation evidence, not an executable buy/sell trigger.
+
+The `source` field should preserve evidence tier or source quality, refresh
+policy, missing evidence, and data/source time when available.
+
 ## Source overview
 
 | Source | Coverage | Auth | Notes |
@@ -425,6 +444,14 @@ work, finish the macro evidence phase first. Then use a narrow candidate pass
 and attach macro invalidation conditions to the candidate or strategy
 assumption. Do not use broad selection, local artifact reads, or direct web
 retrieval as a substitute for `query_macro_research_evidence`.
+
+If the user explicitly asks to write macro risk conditions into a watchlist or
+observation list, store them as non-trading observation rows after the governed
+macro evidence phase. Use `Watchlist(action:"add", type:"macro-condition",
+name:"...", entryCondition:"...", source:"...")`, then read back the macro
+condition rows. The stored condition must include evidence tier or source
+quality, refresh policy, missing evidence, and the statement that macro/news
+context is not an executable buy/sell trigger.
 
 ### A. Current Macro Regime
 
