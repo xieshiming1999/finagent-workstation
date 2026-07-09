@@ -148,6 +148,9 @@ export default function MacroResearchPanel() {
       `Fetched at: ${row.fetched_at ?? '-'}`,
       `Affected: ${asList(row.affected_assets).join(', ') || '-'}`,
       `Status: ${row.status ?? '-'} / ${row.failure_class ?? 'ok'}`,
+      `Reliability: ${reliabilityLine(row)}`,
+      `Asset impact: ${assetImpactLine(row)}`,
+      `Decision support: ${decisionSupportLine(row)}`,
       row.summary ? `Summary: ${row.summary}` : '',
     ].filter(Boolean).join('\n'))
   }
@@ -389,6 +392,16 @@ function EvidenceRow({
               ]}
             />
             <DetailBlock
+              title={t('macroResearchReliability')}
+              lines={[
+                `tier: ${evidenceTier(row)}`,
+                `source type: ${sourceType(row)}`,
+                `freshness: ${freshnessStatus(row)}`,
+                `access: ${accessStatus(row)}`,
+                `confidence: ${confidenceLevel(row)}`,
+              ]}
+            />
+            <DetailBlock
               title={t('macroResearchOverview')}
               lines={[
                 `${t('macroResearchDirection')}: ${row.expected_direction ?? '-'}`,
@@ -406,6 +419,14 @@ function EvidenceRow({
               ]}
             />
             <DetailBlock
+              title={t('macroResearchAssetImpact')}
+              lines={[
+                `impact: ${impactDirection(row)}`,
+                `strategy/fund channel: ${asList(row.transmission_channels).join(', ') || 'needs-linking'}`,
+                `linked evidence: ${asList(row.linked_macro_evidence_ids).join(', ') || '-'}`,
+              ]}
+            />
+            <DetailBlock
               title={t('macroResearchChannels')}
               lines={[
                 asList(row.transmission_channels).join(', ') || '-',
@@ -413,6 +434,14 @@ function EvidenceRow({
                 linkedEvidenceLine(row),
                 row.source_url ? row.source_url : '',
               ].filter(Boolean)}
+            />
+            <DetailBlock
+              title={t('macroResearchDecisionSupport')}
+              lines={[
+                `confidence effect: ${confidenceEffect(row)}`,
+                `missing evidence: ${missingEvidence(row)}`,
+                `next action: ${nextEvidenceAction(row)}`,
+              ]}
             />
           </div>
           <div className="flex flex-wrap gap-1 text-[9px] theme-text-tertiary">
@@ -622,11 +651,46 @@ function factorTooltip(row: FactorRow): string {
     `fetched at: ${row.fetched_at ?? '-'}`,
     `status: ${row.status ?? '-'} / ${row.failure_class ?? 'ok'}`,
     `retrieval: ${retrievalMode(row)}`,
+    `freshness: ${freshnessStatus(row)}`,
+    `access: ${accessStatus(row)}`,
+    `confidence: ${confidenceLevel(row)}`,
+    `confidence effect: ${confidenceEffect(row)}`,
+    `next action: ${nextEvidenceAction(row)}`,
     `affected: ${asList(row.affected_assets).join(', ') || '-'}`,
+    `asset impact: ${impactDirection(row)}`,
     `channels: ${asList(row.transmission_channels).join(', ') || '-'}`,
+    `missing evidence: ${missingEvidence(row)}`,
     `limitations: ${asList(row.limitations).join('; ') || '-'}`,
     `linked macro evidence: ${asList(row.linked_macro_evidence_ids).join(', ') || '-'}`,
   ].join('\n')
+}
+
+function reliabilityLine(row: FactorRow): string {
+  return [
+    `tier=${evidenceTier(row)}`,
+    `sourceType=${sourceType(row)}`,
+    `freshness=${freshnessStatus(row)}`,
+    `access=${accessStatus(row)}`,
+    `confidence=${confidenceLevel(row)}`,
+  ].join(' / ')
+}
+
+function assetImpactLine(row: FactorRow): string {
+  return [
+    `impact=${impactDirection(row)}`,
+    `assets=${asList(row.affected_assets).join(', ') || '-'}`,
+    `regions=${asList(row.affected_regions).join(', ') || '-'}`,
+    `sectors=${asList(row.affected_sectors).join(', ') || '-'}`,
+    `channels=${asList(row.transmission_channels).join(', ') || '-'}`,
+  ].join(' / ')
+}
+
+function decisionSupportLine(row: FactorRow): string {
+  return [
+    `confidenceEffect=${confidenceEffect(row)}`,
+    `missing=${missingEvidence(row)}`,
+    `next=${nextEvidenceAction(row)}`,
+  ].join(' / ')
 }
 
 function evidenceTier(row: FactorRow): string {
@@ -639,6 +703,106 @@ function evidenceTier(row: FactorRow): string {
   if (/manual|licensed|fallback/.test(sourceType)) return 'retrieval_or_manual_evidence'
   if (row.failure_class) return 'missing_or_blocked'
   return 'governed_macro_evidence'
+}
+
+function sourceType(row: FactorRow): string {
+  const value = String(row.source_type ?? '').trim()
+  if (value) return value
+  const tier = evidenceTier(row)
+  if (tier.includes('official_numeric')) return 'official_data'
+  if (tier.includes('official')) return 'official_event'
+  if (tier.includes('research')) return 'research'
+  if (tier.includes('news')) return 'news'
+  if (tier.includes('retrieval')) return 'retrieval-only'
+  return 'macro'
+}
+
+function accessStatus(row: FactorRow): string {
+  const retrieval = row.retrieval_test ?? {}
+  const value = String(retrieval.accessStatus ?? retrieval.access_class ?? retrieval.status ?? row.failure_class ?? row.status ?? '').toLowerCase()
+  if (!value) return 'public'
+  if (value.includes('api-key')) return 'api-key-required'
+  if (value.includes('credential') || value.includes('quota')) return 'credential-gated'
+  if (value.includes('manual')) return 'manual-browser'
+  if (value.includes('anti-bot')) return 'anti-bot'
+  if (value.includes('security') || value.includes('blocked')) return 'security-blocked'
+  if (value.includes('do-not-scrape')) return 'do-not-scrape'
+  if (value.includes('licensed') || value.includes('paywall')) return 'licensed-needed'
+  if (row.failure_class) return 'security-blocked'
+  return 'public'
+}
+
+function freshnessStatus(row: FactorRow): string {
+  const access = accessStatus(row)
+  if (/(blocked|manual|anti-bot|licensed|do-not-scrape|security)/.test(access)) return 'blocked'
+  const source = parseDate(row.source_published_at ?? row.event_at ?? '')
+  const fetched = parseDate(row.fetched_at ?? '')
+  if (!source && !fetched) return 'missing'
+  if (!source || !fetched) return 'acceptable'
+  const days = Math.abs(fetched.getTime() - source.getTime()) / 86_400_000
+  if (days <= 7) return 'fresh'
+  if (days <= 60) return 'acceptable'
+  return 'stale'
+}
+
+function confidenceLevel(row: FactorRow): string {
+  if (row.confidence) return row.confidence
+  const tier = evidenceTier(row)
+  const access = accessStatus(row)
+  const freshness = freshnessStatus(row)
+  if (tier.includes('missing') || access !== 'public' || freshness === 'blocked' || freshness === 'missing') return 'low'
+  if (tier.includes('official') && freshness !== 'stale') return 'high'
+  if (tier.includes('research') || tier.includes('news')) return 'medium'
+  return 'low'
+}
+
+function impactDirection(row: FactorRow): string {
+  const value = String(row.expected_direction ?? '').toLowerCase()
+  if (/(positive|tailwind|利好|上行)/.test(value)) return 'positive tailwind'
+  if (/(negative|headwind|利空|下行)/.test(value)) return 'negative headwind'
+  if (/(mixed|分化|双向)/.test(value)) return 'mixed'
+  if (/(watch|monitor|观察)/.test(value)) return 'watch-only'
+  return asList(row.affected_assets).length > 0 ? 'watch-only' : 'no direct relevance'
+}
+
+function confidenceEffect(row: FactorRow): string {
+  const retrieval = row.retrieval_test ?? {}
+  const explicit = String(retrieval.confidenceEffect ?? '').trim()
+  if (explicit) return explicit
+  const freshness = freshnessStatus(row)
+  const access = accessStatus(row)
+  if (row.failure_class || freshness === 'missing') return 'insufficient evidence'
+  if (access !== 'public' || freshness === 'blocked' || freshness === 'stale') return 'lowers confidence'
+  if (evidenceTier(row).includes('official') && freshness === 'fresh') return 'raises confidence'
+  if (evidenceTier(row).includes('news')) return 'neutral'
+  return 'mixed'
+}
+
+function missingEvidence(row: FactorRow): string {
+  const retrieval = row.retrieval_test ?? {}
+  const value = String(retrieval.missingEvidence ?? '').trim()
+  if (value) return value
+  if (row.failure_class) return row.failure_class
+  const limitations = asList(row.limitations).join('; ')
+  return limitations || '-'
+}
+
+function nextEvidenceAction(row: FactorRow): string {
+  const retrieval = row.retrieval_test ?? {}
+  const explicit = String(retrieval.nextAction ?? retrieval.next_action ?? '').trim()
+  if (explicit) return explicit
+  const access = accessStatus(row)
+  const freshness = freshnessStatus(row)
+  if (row.failure_class) return 'do not retry automatically; inspect source boundary'
+  if (/(manual|anti-bot|licensed|do-not-scrape|security)/.test(access)) return 'manual-browser evidence or do not retry'
+  if (access === 'credential-gated' || access === 'api-key-required') return 'configure credential then serial probe'
+  if (freshness === 'stale' || freshness === 'missing') return 'refresh allowed source then readback'
+  return 'use cache/readback'
+}
+
+function parseDate(value: string): Date | null {
+  const date = value ? new Date(value) : null
+  return date && !Number.isNaN(date.getTime()) ? date : null
 }
 
 function linkedEvidenceLine(row: FactorRow): string {
