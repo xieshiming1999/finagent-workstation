@@ -335,6 +335,75 @@ describe('MarketDataResolveService', () => {
     expect(result.reason).toContain('after stale')
     expect(result.bars[0].date).toBe(dateDaysAgo(0))
   })
+
+  it('normalizes core index K-line requests to unadjusted governed index readback', async () => {
+    const saveKline = vi.fn()
+    vi.doMock('../../src/domain/market/repositories/local-market-data-repository', () => ({
+      LocalMarketDataRepository: class {
+        saveQuotes = vi.fn()
+        saveKline = saveKline
+      },
+    }))
+    const { MarketDataResolveService } = await import('../../src/domain/market/services/market-data-resolve-service')
+    const readService = {
+      readKline: vi.fn(() => ({
+        bars: [],
+        source: 'local',
+        period: 'daily',
+        adjust: 'none',
+        status: 'miss',
+        reason: 'no local index kline rows',
+        coverage: { rowCount: 0, requiredRows: 10 },
+      })),
+    }
+    const fetchService = {
+      readKline: vi.fn(async () => ({
+        bars: [{
+          date: '2026-06-11',
+          open: 4000,
+          close: 4050,
+          high: 4100,
+          low: 3990,
+          volume: 1000,
+          amount: 2000,
+          changePct: 1.2,
+          turnoverRate: 0.1,
+        }],
+        source: 'tdx',
+        provenance: {
+          interfaceId: 'index.daily_kline',
+          capabilityId: 'tdx.index.daily_kline',
+          provider: 'tdx',
+          canonicalSchema: 'kline_daily',
+          canonicalTable: 'kline_daily',
+          cacheStatus: 'provider-hit',
+        },
+      })),
+    }
+    const service = new MarketDataResolveService(readService as any, fetchService as any)
+    const result = await service.readKline({ basePath: '/tmp' } as any, '000300', {
+      period: 'daily',
+      adjust: 'qfq',
+      limit: 60,
+    })
+
+    expect(readService.readKline).toHaveBeenCalledWith(
+      { basePath: '/tmp' },
+      '000300',
+      expect.objectContaining({ period: 'daily', adjust: 'none', limit: 60 }),
+    )
+    expect(fetchService.readKline).toHaveBeenCalledWith('000300', {
+      period: 'daily',
+      adjust: 'none',
+      limit: 60,
+    })
+    expect(saveKline).toHaveBeenCalledWith(
+      { basePath: '/tmp' },
+      [expect.objectContaining({ code: '000300', adjust: 'none', source: 'tdx' })],
+    )
+    expect(result.adjust).toBe('none')
+    expect(result.provenance).toMatchObject({ interfaceId: 'index.daily_kline' })
+  })
 })
 
 function dateDaysAgo(days: number): string {

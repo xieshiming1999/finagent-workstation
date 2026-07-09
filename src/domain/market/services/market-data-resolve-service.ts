@@ -2,6 +2,7 @@ import type { ToolContext } from '../../../agent/tool'
 import type { KlineRow } from '../../../agent/data/store/data-store'
 import { cachePolicyFor, shouldFetchAfterMiss, shouldReadCache, type CachePolicy } from '../../../agent/data/cache-policy'
 import { LocalMarketDataRepository } from '../repositories/local-market-data-repository'
+import { isCoreCnMarketIndexCode } from '../market-index-universe'
 import { MarketDataFetchService } from './market-data-fetch-service'
 import { MarketDataReadService, type KlineReadResult, type QuoteReadResult } from './market-data-read-service'
 
@@ -41,7 +42,8 @@ export class MarketDataResolveService {
     options: { period?: string; adjust?: string; limit?: number; policy?: Partial<CachePolicy> } = {},
   ): Promise<KlineReadResult> {
     const period = options.period ?? 'daily'
-    const adjust = options.adjust ?? 'qfq'
+    const requestedAdjust = options.adjust ?? 'qfq'
+    const adjust = period === 'daily' && isCoreCnMarketIndexCode(code) ? 'none' : requestedAdjust
     const limit = options.limit ?? 60
     const resolvedPolicy = cachePolicyFor(period === 'daily' ? 'kline' : 'intradayTick', options.policy ?? {})
     const cached = shouldReadCache(resolvedPolicy)

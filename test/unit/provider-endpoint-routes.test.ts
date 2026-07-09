@@ -72,6 +72,32 @@ describe('provider endpoint routing contracts', () => {
     expect(result.data[0]).toMatchObject({ code: '399001', close: 4050, source: 'eastmoney' })
   })
 
+  it('routes default market provider core index K-line through the governed index interface', async () => {
+    const calls: string[] = []
+    vi.stubGlobal('fetch', vi.fn(async (input: string | URL) => {
+      const url = String(input)
+      calls.push(url)
+      return jsonResponse({
+        List: [
+          { DateTime: '2026-06-11 15:00:00', Open: 4000, High: 4100, Low: 3990, Close: 4050, Vol: 1000, Amount: 2000 },
+        ],
+      })
+    }))
+
+    const { DefaultMarketDataProvider } = await import('../../src/domain/market/providers/market-data-provider')
+    const result = await new DefaultMarketDataProvider().readPreferredDailyKline('000300', { adjust: 'qfq', limit: 20 })
+
+    expect(result?.bars).toHaveLength(1)
+    expect(calls).toHaveLength(1)
+    expect(calls[0]).toContain('127.0.0.1:19801/index_bars')
+    expect(calls[0]).toContain('code=000300')
+    expect(result?.provenance).toMatchObject({
+      interfaceId: 'index.daily_kline',
+      canonicalSchema: 'kline_daily',
+      canonicalTable: 'kline_daily',
+    })
+  })
+
   it('falls back to push2delay ulist snapshot when single-stock money-flow history is blocked', async () => {
     const calls: string[] = []
     vi.stubGlobal('fetch', vi.fn(async (input: string | URL) => {

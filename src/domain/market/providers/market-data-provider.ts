@@ -1,7 +1,9 @@
 import type * as dm from '../../../agent/data/data-manager'
 import type { FetchProvenance } from '../../../agent/data/fetchers/base-fetcher'
 import { fetchKlineDaily as fetchPreferredKlineDaily } from '../../../agent/data/fetchers/fetcher-kline-daily'
+import { fetchIndexKline } from '../../../agent/data/fetchers/fetcher-index-kline'
 import { getPreferredQuotes } from '../../../agent/tools/market-data-utils'
+import { isCoreCnMarketIndexCode } from '../market-index-universe'
 
 export interface QuoteProviderResult {
   batches: Array<{
@@ -49,6 +51,24 @@ export class DefaultMarketDataProvider implements MarketDataProvider {
     code: string,
     options: { adjust: string; limit: number },
   ): Promise<KlineProviderResult | null> {
+    if (isCoreCnMarketIndexCode(code)) {
+      const preferred = await fetchIndexKline(code)
+      return {
+        bars: preferred.data.slice(-options.limit).map((bar) => ({
+          date: bar.date,
+          open: bar.open,
+          close: bar.close,
+          high: bar.high,
+          low: bar.low,
+          volume: bar.volume ?? 0,
+          amount: bar.amount ?? 0,
+          changePct: bar.change_pct,
+          turnoverRate: bar.turnover_rate,
+        })),
+        source: preferred.source,
+        provenance: preferred.provenance,
+      }
+    }
     const preferred = await fetchPreferredKlineDaily(code, { adjust: options.adjust })
     if (!preferred) return null
     return {
