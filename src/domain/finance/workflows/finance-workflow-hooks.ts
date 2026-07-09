@@ -280,6 +280,16 @@ export function maybeInterceptFinanceToolCalls(
   messages: Message[],
   proposedToolCalls: ToolUse[],
 ): DomainToolInterception | null {
+  const macroConditionReadbackCalls = buildMacroConditionWatchlistReadbackCalls(messages, proposedToolCalls)
+  if (macroConditionReadbackCalls) {
+    return {
+      skippedReason:
+        'Skipped: macro-condition watchlist writes require immediate readback before more evidence collection or final synthesis.',
+      answer: null,
+      autoToolCalls: macroConditionReadbackCalls,
+    }
+  }
+
   const macroEvidenceCalls = maybeCompleteMacroEvidenceCalls(messages, proposedToolCalls)
   if (macroEvidenceCalls) {
     return {
@@ -613,6 +623,59 @@ function findLastIndex<T>(items: T[], predicate: (item: T) => boolean): number {
 function maybeBuildFinanceBudgetProbeAnswer(messages: Message[], proposedToolCalls: ToolUse[]): string | null {
   if (!proposedToolCalls.some((call) => call.id === 'auto-finance-budget-answer-probe')) return null
   return maybeBuildFinanceBoundedAnswer(messages)
+}
+
+function buildMacroConditionWatchlistReadbackCalls(
+  messages: Message[],
+  proposedToolCalls: ToolUse[],
+): ToolUse[] | null {
+  const lastUserIndex = findLastIndex(messages, (message) => message.role === Role.User)
+  if (lastUserIndex < 0) return null
+  const turnMessages = messages.slice(lastUserIndex + 1)
+  const proposedMacroWrites = proposedToolCalls.filter((call) =>
+    call.name === 'Watchlist' &&
+    call.input.action === 'add' &&
+    call.input.type === 'macro-condition'
+  )
+  const proposedMacroReadback = proposedToolCalls.some((call) =>
+    call.name === 'Watchlist' &&
+    call.input.action === 'list' &&
+    (call.input.type === 'macro-condition' || call.input.groupType === 'macro-condition')
+  )
+  if (proposedMacroWrites.length > 0 && !proposedMacroReadback) {
+    return [...proposedMacroWrites, macroConditionWatchlistReadbackCall()]
+  }
+  const successfulToolIds = successfulToolResultIds(turnMessages)
+  const hasMacroConditionWrite = turnMessages.some((message) =>
+    message.role === Role.Assistant &&
+    (message.toolUses ?? []).some((call) =>
+      call.name === 'Watchlist' &&
+      call.input.action === 'add' &&
+      call.input.type === 'macro-condition' &&
+      successfulToolIds.has(call.id)
+    )
+  )
+  if (!hasMacroConditionWrite) return null
+  const hasMacroConditionReadback = [...turnMessages.flatMap((message) => message.toolUses ?? []), ...proposedToolCalls]
+    .some((call) =>
+      call.name === 'Watchlist' &&
+      call.input.action === 'list' &&
+      (call.input.type === 'macro-condition' || call.input.groupType === 'macro-condition')
+    )
+  if (hasMacroConditionReadback) return null
+  return [macroConditionWatchlistReadbackCall()]
+}
+
+function macroConditionWatchlistReadbackCall(): ToolUse {
+  return {
+    id: `auto-macro-condition-watchlist-readback-${Date.now()}`,
+    name: 'Watchlist',
+    input: {
+      action: 'list',
+      type: 'macro-condition',
+      status: 'watching',
+    },
+  }
 }
 
 function hasPendingWatchlistStateWorkflow(turnMessages: Message[]): boolean {
