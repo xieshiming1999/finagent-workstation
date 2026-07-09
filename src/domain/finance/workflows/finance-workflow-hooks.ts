@@ -53,13 +53,15 @@ import { isFinanceEvidenceTool } from './finance-workflow-policy'
 import {
   financeWorkflowStateFromUserContent,
   isStrategyState,
+  latestFinanceWorkflowState,
   type FinanceWorkflowState,
 } from './finance-workflow-state'
 
 const MAX_FINANCE_EVIDENCE_TOOL_CALLS = 12
 
 export function buildFinancePreflightToolCalls(messages: Message[]): ToolUse[] | null {
-  return buildFundMonitorReviewPreflightToolCalls(messages) ??
+  return buildMacroConditionWatchlistPreflightToolCalls(messages) ??
+    buildFundMonitorReviewPreflightToolCalls(messages) ??
     buildPortfolioMonitorReviewPreflightToolCalls(messages) ??
     buildInvestmentEvidenceReviewSearchToolCalls(messages) ??
     buildTradeSizingPreflightToolCalls(messages) ??
@@ -537,6 +539,7 @@ export function maybeBuildFinanceBoundedAnswer(messages: Message[]): string | nu
   if (
     macroEvidenceAnswer &&
     !requiresMacroStockQuoteRecovery(messages.slice(lastUserIndex)) &&
+    !hasPendingMacroConditionWatchlistWorkflow(messages.slice(lastUserIndex), workflowState) &&
     !hasPendingWatchlistStateWorkflow(messages.slice(lastUserIndex))
   ) {
     return macroEvidenceAnswer
@@ -666,6 +669,15 @@ function buildMacroConditionWatchlistReadbackCalls(
   return [macroConditionWatchlistReadbackCall()]
 }
 
+function buildMacroConditionWatchlistPreflightToolCalls(messages: Message[]): ToolUse[] | null {
+  const lastUserIndex = findLastIndex(messages, (message) => message.role === Role.User)
+  if (lastUserIndex < 0) return null
+  const turnMessages = messages.slice(lastUserIndex)
+  const state = latestFinanceWorkflowState(messages, lastUserIndex)
+  if (!hasPendingMacroConditionWatchlistWorkflow(turnMessages, state)) return null
+  return [macroConditionWatchlistReadbackCall()]
+}
+
 function macroConditionWatchlistReadbackCall(): ToolUse {
   return {
     id: `auto-macro-condition-watchlist-readback-${Date.now()}`,
@@ -676,6 +688,31 @@ function macroConditionWatchlistReadbackCall(): ToolUse {
       status: 'watching',
     },
   }
+}
+
+function hasPendingMacroConditionWatchlistWorkflow(
+  turnMessages: Message[],
+  state: FinanceWorkflowState | null,
+): boolean {
+  if (!isMacroConditionWatchlistWorkflow(state)) return false
+  const successfulToolIds = successfulToolResultIds(turnMessages)
+  const hasMacroConditionReadback = turnMessages.some((message) =>
+    message.role === Role.Assistant &&
+    (message.toolUses ?? []).some((call) =>
+      call.name === 'Watchlist' &&
+      call.input.action === 'list' &&
+      (call.input.type === 'macro-condition' || call.input.groupType === 'macro-condition') &&
+      successfulToolIds.has(call.id)
+    )
+  )
+  return !hasMacroConditionReadback
+}
+
+function isMacroConditionWatchlistWorkflow(state: FinanceWorkflowState | null): boolean {
+  return state?.contract === 'finance-workflow-state-v1' &&
+    state.workflowKind === 'monitor_review' &&
+    state.intentMode === 'observe' &&
+    state.evidenceRefs.includes('macro-condition-watchlist')
 }
 
 function hasPendingWatchlistStateWorkflow(turnMessages: Message[]): boolean {

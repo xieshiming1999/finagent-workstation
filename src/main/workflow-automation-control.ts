@@ -59,6 +59,7 @@ export interface WorkflowAutomationRunResult {
 export interface WorkflowAutomationScenario {
   id: string;
   prompt: string;
+  workflowState?: unknown;
   expectTools?: string[];
   expectToolActions?: string[];
   expectToolErrors?: string[];
@@ -82,6 +83,7 @@ export interface WorkflowAutomationScenario {
 export interface WorkflowAutomationScenarioTurn {
   id?: string;
   prompt: string;
+  workflowState?: unknown;
   expectTools?: string[];
   expectToolActions?: string[];
   expectToolErrors?: string[];
@@ -113,6 +115,13 @@ export interface WorkflowAutomationScenarioResult {
     actual?: unknown;
   }>;
   scenarioReportPath?: string;
+}
+
+function promptWithWorkflowState(prompt: string, workflowState: unknown): string {
+  if (!workflowState || typeof workflowState !== "object" || Array.isArray(workflowState)) {
+    return prompt;
+  }
+  return `${prompt}\n\ndata: ${JSON.stringify({ workflowState })}`;
 }
 
 export interface WorkflowAutomationMultiTurnScenario {
@@ -405,7 +414,7 @@ export class WorkflowAutomationControl {
     if (!this.enabled()) throw new Error("WORKFLOW_AUTOMATION_DISABLED");
     const id = String(scenario.id ?? "").trim();
     if (!id) throw new Error("WORKFLOW_AUTOMATION_SCENARIO_ID_REQUIRED");
-    const run = await this.sendPrompt(scenario.prompt, {
+    const run = await this.sendPrompt(promptWithWorkflowState(scenario.prompt, scenario.workflowState), {
       timeoutMs: scenario.timeoutMs,
       timeoutReason: `scenario ${id}`,
       maxToolCalls: scenario.maxToolCalls,
@@ -440,7 +449,7 @@ export class WorkflowAutomationControl {
     for (let i = 0; i < scenario.turns.length; i++) {
       const turn = scenario.turns[i];
       const turnId = String(turn.id ?? `turn-${i + 1}`);
-      const run = await this.sendPrompt(turn.prompt, {
+      const run = await this.sendPrompt(promptWithWorkflowState(turn.prompt, turn.workflowState), {
         timeoutMs: turn.timeoutMs,
         timeoutReason: `scenario ${id}:${turnId}`,
         maxToolCalls: turn.maxToolCalls,
@@ -1110,6 +1119,7 @@ async function handleRequest(
         () => control.runScenario({
           id: String(body.id ?? ""),
           prompt: String(body.prompt ?? ""),
+          workflowState: body.workflowState,
           expectTools: asStringArray(body.expectTools),
           expectToolActions: asStringArray(body.expectToolActions),
           expectToolErrors: asStringArray(body.expectToolErrors),
@@ -1149,6 +1159,7 @@ async function handleRequest(
           turns: turns.map((turn: any) => ({
             id: turn.id != null ? String(turn.id) : undefined,
             prompt: String(turn.prompt ?? ""),
+            workflowState: turn.workflowState,
             expectTools: asStringArray(turn.expectTools),
             expectToolActions: asStringArray(turn.expectToolActions),
             expectToolErrors: asStringArray(turn.expectToolErrors),
