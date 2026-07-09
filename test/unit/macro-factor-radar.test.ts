@@ -56,6 +56,13 @@ describe('macro factor radar persistence', () => {
     })
     expect(msci?.affected_assets).toContain('Indonesia equities')
     expect(msci?.transmission_channels).toContain('passive benchmark flow')
+    expect(msci).toMatchObject({
+      access_status: 'public',
+      freshness_status: 'acceptable',
+      confidence_effect: 'mixed',
+      next_evidence_action: 'use cache/readback',
+      asset_impact: 'mixed',
+    })
     expect(msci?.retrieval_test).toMatchObject({
       interface_id: 'macro.factor_radar',
       candidate_schema: 'market_moving_factor_v1',
@@ -141,6 +148,9 @@ describe('macro factor radar persistence', () => {
       source_name: 'EIA',
       status: 'unsupported',
       failure_class: 'credential_missing',
+      access_status: 'credential-gated',
+      freshness_status: 'acceptable',
+      confidence_effect: 'insufficient evidence',
     })
     const nbs = result.rows.find((item) => `${item.factor_id}` === 'nbs_china:macro_series:easyquery:security_control')
     expect(nbs).toMatchObject({
@@ -148,6 +158,9 @@ describe('macro factor radar persistence', () => {
       source_name: 'NBS China',
       status: 'unsupported',
       failure_class: 'security_control',
+      access_status: 'security-blocked',
+      freshness_status: 'blocked',
+      next_evidence_action: 'do not retry automatically; inspect source boundary',
     })
 
     const nbsReadback = JSON.parse(queryMacroNumericSeries(store, { provider: 'nbs_china', limit: 5 }))

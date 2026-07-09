@@ -23,6 +23,12 @@ interface FactorRow {
   expected_direction?: string
   severity?: string
   confidence?: string
+  access_status?: string
+  freshness_status?: string
+  confidence_effect?: string
+  missing_evidence?: string
+  next_evidence_action?: string
+  asset_impact?: string
   status?: string
   failure_class?: string | null
   evidence_tier?: string | null
@@ -718,6 +724,7 @@ function sourceType(row: FactorRow): string {
 }
 
 function accessStatus(row: FactorRow): string {
+  if (row.access_status) return row.access_status
   const retrieval = row.retrieval_test ?? {}
   const value = String(retrieval.accessStatus ?? retrieval.access_class ?? retrieval.status ?? row.failure_class ?? row.status ?? '').toLowerCase()
   if (!value) return 'public'
@@ -733,6 +740,7 @@ function accessStatus(row: FactorRow): string {
 }
 
 function freshnessStatus(row: FactorRow): string {
+  if (row.freshness_status) return row.freshness_status
   const access = accessStatus(row)
   if (/(blocked|manual|anti-bot|licensed|do-not-scrape|security)/.test(access)) return 'blocked'
   const source = parseDate(row.source_published_at ?? row.event_at ?? '')
@@ -757,6 +765,7 @@ function confidenceLevel(row: FactorRow): string {
 }
 
 function impactDirection(row: FactorRow): string {
+  if (row.asset_impact) return row.asset_impact
   const value = String(row.expected_direction ?? '').toLowerCase()
   if (/(positive|tailwind|利好|上行)/.test(value)) return 'positive tailwind'
   if (/(negative|headwind|利空|下行)/.test(value)) return 'negative headwind'
@@ -766,6 +775,7 @@ function impactDirection(row: FactorRow): string {
 }
 
 function confidenceEffect(row: FactorRow): string {
+  if (row.confidence_effect) return row.confidence_effect
   const retrieval = row.retrieval_test ?? {}
   const explicit = String(retrieval.confidenceEffect ?? '').trim()
   if (explicit) return explicit
@@ -779,6 +789,7 @@ function confidenceEffect(row: FactorRow): string {
 }
 
 function missingEvidence(row: FactorRow): string {
+  if (row.missing_evidence) return row.missing_evidence
   const retrieval = row.retrieval_test ?? {}
   const value = String(retrieval.missingEvidence ?? '').trim()
   if (value) return value
@@ -788,6 +799,7 @@ function missingEvidence(row: FactorRow): string {
 }
 
 function nextEvidenceAction(row: FactorRow): string {
+  if (row.next_evidence_action) return row.next_evidence_action
   const retrieval = row.retrieval_test ?? {}
   const explicit = String(retrieval.nextAction ?? retrieval.next_action ?? '').trim()
   if (explicit) return explicit
