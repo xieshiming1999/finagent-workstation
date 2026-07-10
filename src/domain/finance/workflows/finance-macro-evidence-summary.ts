@@ -111,6 +111,7 @@ export function collectMacroEvidence(messages: Message[]): MacroEvidence {
     decisionLines.push(...decisionRows(decoded))
     switch (action) {
       case 'query_macro_factors':
+      case 'query_macro_numeric_series':
         factorLines.push(...factorRows(decoded))
         break
       case 'macro_research_sources':
@@ -355,12 +356,14 @@ function hasFundContext(evidence: MacroEvidence): boolean {
 }
 
 function factorRows(payload: Record<string, unknown>): string[] {
-  return rows(payload).map((row) => {
-    const title = text(row.title ?? row.factor_name ?? row.factorId)
+  return macroRows(payload).map((row) => {
+    const title = text(row.title ?? row.factor_name ?? row.factorId ?? row.metricName ?? row.seriesId)
     const family = text(row.family)
     const source = text(row.source ?? row.provider)
     const time = text(row.sourceDataTime ?? row.source_time)
-    return [title, family, source, time].filter(Boolean).join(' / ')
+    const value = text(row.value)
+    const unit = text(row.unit)
+    return [title, family, source, time, value ? `value=${value}${unit ? ` ${unit}` : ''}` : ''].filter(Boolean).join(' / ')
   }).filter(Boolean)
 }
 
@@ -516,7 +519,7 @@ function decisionRows(payload: Record<string, unknown>, fallbackTier = ''): stri
 
 function evidenceCandidateRows(payload: Record<string, unknown>): Array<Record<string, unknown>> {
   const candidates = [
-    ...rows(payload),
+    ...macroRows(payload),
     ...rows(payload, 'contentEvidence'),
     ...rows(payload, 'data').map((row) => ({
       ...row,
@@ -539,6 +542,10 @@ function evidenceCandidateRows(payload: Record<string, unknown>): Array<Record<s
     missingReason: payload.missingReason,
     evidenceTier: action === 'query_finance_news' ? 'linked_news_evidence' : '',
   }]
+}
+
+function macroRows(payload: Record<string, unknown>): Array<Record<string, unknown>> {
+  return [...rows(payload), ...rows(payload, 'series')]
 }
 
 function tierForRow(row: Record<string, unknown>): string {

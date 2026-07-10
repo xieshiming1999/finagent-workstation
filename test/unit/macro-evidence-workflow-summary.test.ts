@@ -151,6 +151,123 @@ describe('macro evidence workflow summary', () => {
     expect(interception?.answer).toContain('Research/WebFetch')
   })
 
+  it('cites EIA numeric evidence for oil-market A-share sector risk', () => {
+    const answer = maybeBuildFinanceBoundedAnswer([
+      userMessage('EIA oil inventory macro sector risk'),
+      assistantMessage('', [
+        { id: 'eia', name: 'DataStore', input: { action: 'query_macro_numeric_series', provider: 'eia', seriesId: 'WCESTUS1', target: 'A-shares' } },
+      ]),
+      toolMessage('eia', JSON.stringify({
+        action: 'query_macro_numeric_series',
+        status: 'ok',
+        series: [{
+          seriesId: 'WCESTUS1',
+          metricName: 'WCESTUS1 US commercial crude oil inventories',
+          provider: 'eia',
+          sourceName: 'EIA',
+          value: 420000,
+          unit: 'MBBL',
+          sourceDataTime: '2026-07-03',
+          fetchedAt: '2026-07-10T02:20:00.000Z',
+          affectedAssets: ['oil', 'energy equities', 'A-shares'],
+          affectedSectors: ['Energy', 'Transport', 'Materials'],
+          transmissionChannels: ['energy inventory', 'inflation input'],
+          expectedDirection: 'mixed',
+          evidenceTier: 'official_numeric_fact',
+          accessStatus: 'public',
+          confidenceEffect: 'mixed',
+          nextEvidenceAction: 'use cache/readback',
+        }],
+      })),
+    ])
+
+    expect(answer).toContain('US commercial crude oil inventories')
+    expect(answer).toContain('EIA')
+    expect(answer).toContain('WCESTUS1')
+    expect(answer).toContain('value=420000 MBBL')
+    expect(answer).toContain('能源')
+    expect(answer).toContain('商品/能源')
+    expect(answer).toContain('不能直接编译成可执行交易信号')
+  })
+
+  it('uses EIA only as stock and fund macro context alongside instrument evidence', () => {
+    const answer = maybeBuildFinanceBoundedAnswer([
+      userMessage('stock and fund macro context with EIA'),
+      assistantMessage('', [
+        { id: 'quote', name: 'DataStore', input: { action: 'query_quote', code: '601857' } },
+        { id: 'fund', name: 'DataStore', input: { action: 'query_fund_nav', code: '162411' } },
+        { id: 'eia', name: 'DataStore', input: { action: 'query_macro_numeric_series', provider: 'eia', seriesId: 'WCESTUS1', assets: 'funds' } },
+      ]),
+      toolMessage('quote', JSON.stringify({ action: 'query_quote', status: 'ok', rows: [{ code: '601857', name: '中国石油', source: 'local' }] })),
+      toolMessage('fund', JSON.stringify({ action: 'query_fund_nav', status: 'ok', code: '162411', source: 'local', count: 1 })),
+      toolMessage('eia', JSON.stringify({
+        action: 'query_macro_numeric_series',
+        status: 'ok',
+        series: [{
+          seriesId: 'WCESTUS1',
+          metricName: 'US commercial crude oil inventories',
+          provider: 'eia',
+          sourceName: 'EIA',
+          value: 420000,
+          unit: 'MBBL',
+          sourceDataTime: '2026-07-03',
+          fetchedAt: '2026-07-10T02:20:00.000Z',
+          affectedAssets: ['oil', 'energy equities', 'funds'],
+          affectedSectors: ['Energy'],
+          transmissionChannels: ['energy inventory', 'oil supply demand'],
+          expectedDirection: 'mixed',
+          evidenceTier: 'official_numeric_fact',
+          accessStatus: 'public',
+        }],
+      })),
+    ])
+
+    expect(answer).toContain('个股行情')
+    expect(answer).toContain('基金净值')
+    expect(answer).toContain('US commercial crude oil inventories')
+    expect(answer).toContain('基金')
+    expect(answer).toContain('不能直接编译成可执行交易信号')
+    expect(answer).toContain('本轮没有执行下单')
+  })
+
+  it('keeps EIA strategy/watchlist use as observation and invalidation context', () => {
+    const answer = maybeBuildFinanceBoundedAnswer([
+      userMessage('strategy watch with EIA macro observation'),
+      assistantMessage('', [
+        { id: 'watch', name: 'Watchlist', input: { action: 'list', type: 'macro-condition' } },
+        { id: 'eia', name: 'DataStore', input: { action: 'query_macro_numeric_series', provider: 'eia', seriesId: 'WCESTUS1', assets: 'strategy' } },
+      ]),
+      toolMessage('eia', JSON.stringify({
+        action: 'query_macro_numeric_series',
+        status: 'ok',
+        series: [{
+          seriesId: 'WCESTUS1',
+          metricName: 'US commercial crude oil inventories',
+          provider: 'eia',
+          sourceName: 'EIA',
+          value: 420000,
+          unit: 'MBBL',
+          sourceDataTime: '2026-07-03',
+          fetchedAt: '2026-07-10T02:20:00.000Z',
+          affectedAssets: ['strategy', 'oil', 'energy equities'],
+          affectedSectors: ['Energy'],
+          transmissionChannels: ['energy inventory'],
+          expectedDirection: 'mixed',
+          evidenceTier: 'official_numeric_fact',
+          accessStatus: 'public',
+          nextEvidenceAction: 'use cache/readback',
+        }],
+      })),
+    ])
+
+    expect(answer).toContain('自选股')
+    expect(answer).toContain('策略')
+    expect(answer).toContain('观察条件')
+    expect(answer).toContain('失效条件')
+    expect(answer).toContain('本轮没有执行下单、保存策略')
+    expect(answer).toContain('不能直接编译成可执行交易信号')
+  })
+
   it('adds attribution readback from prior macro evidence before generic fallback', () => {
     const messages = [
       userMessage('macro analysis'),
@@ -197,16 +314,11 @@ describe('macro evidence workflow summary', () => {
     expect(actions).toEqual([
       'macro_research_sources',
       'query_macro_factors',
+      'query_finance_news',
       'query_macro_attribution',
       'query_macro_research_evidence',
-      'finance_news',
-      'query_finance_news',
     ])
-    expect(interception?.autoToolCalls?.find((call) => call.input.action === 'finance_news')?.input).toEqual({
-      action: 'finance_news',
-      query: 'A-shares',
-      limit: 20,
-    })
+    expect(actions?.filter((action) => action === 'finance_news')).toHaveLength(0)
   })
 
   it('adds fresh macro and news readbacks after a governed finance news refresh', () => {
@@ -229,9 +341,7 @@ describe('macro evidence workflow summary', () => {
     ])
 
     expect(interception?.autoToolCalls?.map((call) => call.input.action)).toEqual([
-      'finance_news',
       'macro_research_provenance',
-      'query_macro_factors',
       'query_macro_attribution',
       'query_finance_news',
     ])
