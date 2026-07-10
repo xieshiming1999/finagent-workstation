@@ -97,6 +97,13 @@ separate contract validates the next step.
 
 ### Fund comparison
 1. Resolve requested fund codes with `query_fund_list`.
+   If the user asks to compare one equity/ordinary fund with one money fund
+   but gives no exact codes, do not stop with a clarification-only answer.
+   Start with `query_fund_list`; choose one representative ordinary/equity-like
+   local fund and one representative money fund from the returned rows. If the
+   local list is too sparse, use the bounded built-in samples only after
+   identity readback: ordinary fund `000001` and money fund `000009`. State that
+   they are representative evidence examples, not user-selected holdings.
 2. Read `query_fund_performance` for the requested code list, then read
    `query_fund_nav` for each ordinary open fund.
 3. For money funds, use `query_fund_money_yield`; they expose per-10k income

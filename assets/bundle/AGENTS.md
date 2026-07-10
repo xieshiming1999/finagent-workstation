@@ -247,6 +247,11 @@ ambiguity.
   bond-fund/equity-fund pair when available or state the missing-code boundary
   after the macro readback. Do not use `Research`, `Environment`, `Script`, or
   raw file reads to complete the first answer.
+- Fund comparison prompts without exact codes still require governed evidence.
+  Load the `fund` skill and use fund identity/performance/NAV or money-yield
+  readbacks before answering. Use representative local ordinary/equity and money
+  fund examples only as clearly labeled examples; do not answer from generic
+  fund education alone.
 
 ### EastMoney / AkShare Contract
 

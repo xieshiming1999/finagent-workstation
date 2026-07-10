@@ -1,4 +1,4 @@
-import { Role, type Message } from '../../../agent/message'
+import { Role, type Message, type ToolUse } from '../../../agent/message'
 
 interface MacroEvidence {
   hasMacroEvidence: boolean

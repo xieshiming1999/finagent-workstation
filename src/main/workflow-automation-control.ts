@@ -71,6 +71,7 @@ export interface WorkflowAutomationScenario {
   expectUiArtifactKinds?: string[];
   disallowTools?: string[];
   maxToolActionCounts?: Record<string, number>;
+  minToolCalls?: number;
   maxToolCalls?: number;
   maxDataToolCalls?: number;
   timeoutMs?: number;
@@ -95,6 +96,7 @@ export interface WorkflowAutomationScenarioTurn {
   expectUiArtifactKinds?: string[];
   disallowTools?: string[];
   maxToolActionCounts?: Record<string, number>;
+  minToolCalls?: number;
   maxToolCalls?: number;
   maxDataToolCalls?: number;
   timeoutMs?: number;
@@ -230,6 +232,7 @@ export class WorkflowAutomationControl {
     options: {
       timeoutMs?: number;
       timeoutReason?: string;
+      minToolCalls?: number;
       maxToolCalls?: number;
       maxDataToolCalls?: number;
       maxToolActionCounts?: Record<string, number>;
@@ -417,6 +420,7 @@ export class WorkflowAutomationControl {
     const run = await this.sendPrompt(promptWithWorkflowState(scenario.prompt, scenario.workflowState), {
       timeoutMs: scenario.timeoutMs,
       timeoutReason: `scenario ${id}`,
+      minToolCalls: scenario.minToolCalls,
       maxToolCalls: scenario.maxToolCalls,
       maxDataToolCalls: scenario.maxDataToolCalls,
       maxToolActionCounts: scenario.maxToolActionCounts,
@@ -452,6 +456,7 @@ export class WorkflowAutomationControl {
       const run = await this.sendPrompt(promptWithWorkflowState(turn.prompt, turn.workflowState), {
         timeoutMs: turn.timeoutMs,
         timeoutReason: `scenario ${id}:${turnId}`,
+        minToolCalls: turn.minToolCalls,
         maxToolCalls: turn.maxToolCalls,
         maxDataToolCalls: turn.maxDataToolCalls,
         maxToolActionCounts: turn.maxToolActionCounts,
@@ -475,6 +480,7 @@ export class WorkflowAutomationControl {
           expectUiArtifactKinds: turn.expectUiArtifactKinds,
           disallowTools: turn.disallowTools,
           maxToolActionCounts: turn.maxToolActionCounts,
+          minToolCalls: turn.minToolCalls,
           maxToolCalls: turn.maxToolCalls,
           maxDataToolCalls: turn.maxDataToolCalls,
           disallowRawHtml: turn.disallowRawHtml,
@@ -648,6 +654,7 @@ export class WorkflowAutomationControl {
     action: string;
     strategyId?: string;
     timeoutMs?: number;
+    minToolCalls?: number;
     maxToolCalls?: number;
     maxDataToolCalls?: number;
     maxToolActionCounts?: Record<string, number>;
@@ -671,6 +678,7 @@ export class WorkflowAutomationControl {
     const run = await this.sendPrompt(prompt, {
       timeoutMs: input.timeoutMs,
       timeoutReason: `strategy-library-action:${action}`,
+      minToolCalls: input.minToolCalls,
       maxToolCalls: input.maxToolCalls,
       maxDataToolCalls: input.maxDataToolCalls,
       expectTools: input.expectTools,
@@ -1081,6 +1089,7 @@ async function handleRequest(
             strategyId:
               body.strategyId == null ? undefined : String(body.strategyId),
             timeoutMs: asOptionalNumber(body.timeoutMs),
+            minToolCalls: asOptionalNumber(body.minToolCalls),
             maxToolCalls: asOptionalNumber(body.maxToolCalls),
             maxDataToolCalls: asOptionalNumber(body.maxDataToolCalls),
             disallowTools: asStringArray(body.disallowTools),
@@ -1131,6 +1140,7 @@ async function handleRequest(
           expectUiArtifactKinds: asStringArray(body.expectUiArtifactKinds),
           disallowTools: asStringArray(body.disallowTools),
           maxToolActionCounts: asNumberMap(body.maxToolActionCounts),
+          minToolCalls: asOptionalNumber(body.minToolCalls),
           maxToolCalls: asOptionalNumber(body.maxToolCalls),
           maxDataToolCalls: asOptionalNumber(body.maxDataToolCalls),
           timeoutMs: asOptionalNumber(body.timeoutMs),
@@ -1171,6 +1181,7 @@ async function handleRequest(
             expectUiArtifactKinds: asStringArray(turn.expectUiArtifactKinds),
             disallowTools: asStringArray(turn.disallowTools),
             maxToolActionCounts: asNumberMap(turn.maxToolActionCounts),
+            minToolCalls: asOptionalNumber(turn.minToolCalls),
             maxToolCalls: asOptionalNumber(turn.maxToolCalls),
             maxDataToolCalls: asOptionalNumber(turn.maxDataToolCalls),
             timeoutMs: asOptionalNumber(turn.timeoutMs),
@@ -1389,6 +1400,14 @@ function evaluateScenario(
       name: `maxToolCalls.${scenario.maxToolCalls}`,
       ok: toolNames.length <= scenario.maxToolCalls,
       expected: `<= ${scenario.maxToolCalls}`,
+      actual: toolNames.length,
+    });
+  }
+  if (scenario.minToolCalls != null) {
+    assertions.push({
+      name: `minToolCalls.${scenario.minToolCalls}`,
+      ok: toolNames.length >= scenario.minToolCalls,
+      expected: `>= ${scenario.minToolCalls}`,
       actual: toolNames.length,
     });
   }
@@ -1875,6 +1894,7 @@ function normalizeStrategyLibraryAction(
 function buildWorkflowPrompt(
   prompt: string,
   options: {
+    minToolCalls?: number;
     maxToolCalls?: number;
     maxDataToolCalls?: number;
     maxToolActionCounts?: Record<string, number>;
@@ -1894,6 +1914,7 @@ function buildWorkflowPrompt(
     expected.length > 0 ||
     disallowed.length > 0 ||
     options.maxToolCalls != null ||
+    options.minToolCalls != null ||
     options.maxDataToolCalls != null ||
     Object.keys(options.maxToolActionCounts ?? {}).length > 0 ||
     options.allowPendingUserQuestion;
@@ -1908,6 +1929,9 @@ function buildWorkflowPrompt(
   }
   if (options.maxToolCalls != null) {
     lines.push(`Keep the workflow within ${options.maxToolCalls} total tool calls.`);
+  }
+  if (options.minToolCalls != null) {
+    lines.push(`This workflow requires at least ${options.minToolCalls} observable tool calls before the final answer.`);
   }
   if (options.maxDataToolCalls != null) {
     lines.push(`Keep the workflow within ${options.maxDataToolCalls} finance/data workflow tool calls.`);
