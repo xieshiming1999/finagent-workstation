@@ -667,6 +667,10 @@ function buildMacroConditionWatchlistReadbackCalls(
     call.input.action === 'add' &&
     call.input.type === 'macro-condition'
   )
+  if (proposedMacroWrites.length > 0) {
+    const missingEvidence = requiredMacroEvidenceReadbackCalls(turnMessages, 'DataStore')
+    if (missingEvidence.length > 0) return missingEvidence
+  }
   const proposedMacroReadback = proposedToolCalls.some((call) =>
     call.name === 'Watchlist' &&
     call.input.action === 'list' &&
