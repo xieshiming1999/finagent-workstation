@@ -71,6 +71,62 @@ describe('macro factor radar persistence', () => {
   })
 
   it('promotes cached finance news as unclassified narrative observations', async () => {
+    vi.stubGlobal('fetch', async (url: string | URL) => {
+      const text = String(url)
+      if (text.includes('api.bls.gov/publicAPI/v2/timeseries/data')) {
+        return new Response(JSON.stringify({
+          Results: {
+            series: [{
+              data: [{ year: '2026', period: 'M06', periodName: 'June', value: '321.0' }],
+            }],
+          },
+        }), { status: 200, headers: { 'content-type': 'application/json' } })
+      }
+      if (text.includes('api.worldbank.org/v2/country/US/indicator/NY.GDP.MKTP.CD')) {
+        return new Response(JSON.stringify([
+          { lastupdated: '2026-07-01' },
+          [{ date: '2025', value: 30769700000000 }],
+        ]), { status: 200, headers: { 'content-type': 'application/json' } })
+      }
+      if (text.includes('imf.org/external/datamapper/api/v1/NGDP_RPCH/USA')) {
+        return new Response(JSON.stringify({
+          values: { NGDP_RPCH: { USA: { '2030': 1.7, '2031': 1.8 } } },
+        }), { status: 200, headers: { 'content-type': 'application/json' } })
+      }
+      if (text.includes('sdmx.oecd.org/public/rest/v1/data/OECD.SDD.NAD')) {
+        return new Response(JSON.stringify({
+          dataSets: [{
+            series: {
+              '0:0:0:0:0:0:0:0:0': {
+                observations: { '0': [1.2] },
+              },
+            },
+          }],
+          structures: [{
+            dimensions: {
+              series: [
+                { id: 'FREQ', values: [{ id: 'Q' }] },
+                { id: 'ADJUSTMENT', values: [{ id: 'Y' }] },
+                { id: 'REF_AREA', values: [{ id: 'OECD' }] },
+                { id: 'SECTOR', values: [{ id: 'S1' }] },
+                { id: 'COUNTERPART_SECTOR', values: [{ id: 'S1' }] },
+                { id: 'TRANSACTION', values: [{ id: 'B1GQ' }] },
+                { id: 'UNIT_MEASURE', values: [{ id: 'PC' }] },
+                { id: 'TRANSFORMATION', values: [{ id: 'GCM' }] },
+                { id: 'TABLE_IDENTIFIER', values: [{ id: 'T0102' }] },
+              ],
+              observation: [
+                { id: 'TIME_PERIOD', values: [{ id: '2026-Q1' }] },
+              ],
+            },
+          }],
+        }), { status: 200, headers: { 'content-type': 'application/json' } })
+      }
+      return new Response(JSON.stringify({ error: 'unexpected test URL' }), {
+        status: 404,
+        headers: { 'content-type': 'application/json' },
+      })
+    })
     store.saveFinanceNews([
       {
         news_id: 'macro-copper-news',
@@ -82,7 +138,12 @@ describe('macro factor radar persistence', () => {
       },
     ])
 
-    const result = await refreshMacroFactorRadar(store, { apiKeys: {} } as any)
+    let result
+    try {
+      result = await refreshMacroFactorRadar(store, { apiKeys: {} } as any)
+    } finally {
+      vi.unstubAllGlobals()
+    }
     const row = result.rows.find((item) => item.factor_id?.toString().startsWith('news:cached:'))
     expect(row).toMatchObject({
       family: 'narrative_attention',
@@ -441,6 +502,74 @@ describe('macro factor radar persistence', () => {
       unit: 'thousand barrels',
       sourceDataTime: '2026-07-03',
     })
+  })
+
+  it('refreshes configured EIA into governed numeric readback rows', async () => {
+    vi.stubGlobal('fetch', async (url: string | URL) => {
+      const text = String(url)
+      if (text.includes('api.eia.gov/v2/petroleum/stoc/wstk/data')) {
+        return new Response(JSON.stringify({
+          response: {
+            data: [{
+              period: '2026-07-03',
+              series: 'WCESTUS1',
+              value: '420000',
+              units: 'MBBL',
+              'series-description': 'Weekly U.S. Ending Stocks of Crude Oil',
+            }],
+          },
+        }), { status: 200, headers: { 'content-type': 'application/json' } })
+      }
+      return new Response(JSON.stringify({ error: 'provider not needed for this test' }), {
+        status: 500,
+        headers: { 'content-type': 'application/json' },
+      })
+    })
+    try {
+      const refreshed = await refreshMacroFactorRadar(store, {
+        apiKeys: { EIA_API_KEY: 'test-eia-key' },
+      } as any)
+      const eiaRow = refreshed.rows.find((row) => row.factor_id === 'eia:macro_series:WCESTUS1:2026-07-03')
+      expect(eiaRow).toMatchObject({
+        family: 'macro_series',
+        source_name: 'EIA',
+        source_type: 'official_api',
+        status: 'active',
+        access_status: 'public',
+        freshness_status: 'acceptable',
+        confidence_effect: 'mixed',
+        macro_values: {
+          actual: 420000,
+          unit: 'MBBL',
+          period: '2026-07-03',
+          frequency: 'weekly',
+        },
+        retrieval_test: {
+          provider: 'eia',
+          status: 'ok',
+        },
+      })
+
+      const readback = JSON.parse(queryMacroNumericSeries(store, { provider: 'eia', seriesId: 'WCESTUS1', limit: 5 }))
+      expect(readback).toMatchObject({
+        action: 'query_macro_numeric_series',
+        status: 'ok',
+        count: 1,
+        provenance: {
+          canonicalTable: 'market_moving_factor',
+          readbackAction: 'query_macro_numeric_series',
+        },
+      })
+      expect(readback.series[0]).toMatchObject({
+        provider: 'eia',
+        seriesId: 'WCESTUS1',
+        value: 420000,
+        unit: 'MBBL',
+        sourceDataTime: '2026-07-03',
+      })
+    } finally {
+      vi.unstubAllGlobals()
+    }
   })
 
   it('exposes source-specific macro research catalog access behavior', () => {
