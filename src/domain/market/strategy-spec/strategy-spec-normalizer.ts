@@ -634,7 +634,7 @@ function exitSource(input: NormalizedStrategySpec): unknown {
   const lifecycle = rawInput.lifecycle && typeof rawInput.lifecycle === 'object' && !Array.isArray(rawInput.lifecycle)
     ? rawInput.lifecycle as Record<string, unknown>
     : {}
-  const rawExit = input.exit ?? rawInput.exits ?? rawInput.exitRule ?? rawInput.exitConditions ?? lifecycle.exit
+  const rawExit = input.exit ?? rawInput.exits ?? rawInput.exitRules ?? rawInput.exitRule ?? rawInput.exitConditions ?? lifecycle.exit
   const exit = Array.isArray(rawExit)
     ? { any: rawExit } as Record<string, unknown>
     : rawExit && typeof rawExit === 'object'
@@ -672,7 +672,7 @@ function entrySource(input: NormalizedStrategySpec): unknown {
   const signals = rawInput.signals && typeof rawInput.signals === 'object' && !Array.isArray(rawInput.signals)
     ? rawInput.signals as Record<string, unknown>
     : {}
-  return input.entry ?? signals.entry ?? rawInput.entryRule ?? rawInput.entryConditions ?? lifecycle.entry
+  return input.entry ?? signals.entry ?? rawInput.entryRules ?? rawInput.entryRule ?? rawInput.entryConditions ?? lifecycle.entry
 }
 
 function sizingSource(input: NormalizedStrategySpec): unknown {

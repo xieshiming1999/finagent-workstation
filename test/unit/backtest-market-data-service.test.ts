@@ -3068,6 +3068,38 @@ describe('BacktestMarketDataService', () => {
     expect(validation.spec.entry.all.at(-1).right).toEqual({ mul: ['vol20', 1.5] })
   })
 
+  it('accepts entryRules and exitRules custom strategy lists', async () => {
+    const { BacktestMarketDataService } = await import('../../src/domain/market/services/backtest-market-data-service')
+    const service = new BacktestMarketDataService()
+    const strategySpec = {
+      name: 'EMA Cross Trend 600519',
+      market: 'cn',
+      symbols: ['600519'],
+      indicators: [
+        { id: 'ema_fast', type: 'ema', source: 'close', params: { period: 12 } },
+        { id: 'ema_slow', type: 'ema', source: 'close', params: { period: 26 } },
+        { id: 'rsi14', type: 'rsi', source: 'close', params: { period: 14 } },
+      ],
+      entryRules: [
+        { left: 'ema_fast', operator: 'crosses_above', right: 'ema_slow' },
+      ],
+      exitRules: [
+        { left: 'ema_fast', operator: 'crosses_below', right: 'ema_slow' },
+        { left: 'rsi14', operator: '>', right: 70 },
+      ],
+    }
+
+    const validation = JSON.parse(await service.readAction('custom_strategy_validate', { strategySpec }, { basePath: '/tmp' } as any, '', 120))
+
+    expect(validation).toMatchObject({ action: 'custom_strategy_validate', status: 'validated' })
+    expect(validation.spec.entry.all).toEqual(expect.arrayContaining([
+      expect.objectContaining({ left: 'ema_fast', op: 'crosses_above', right: 'ema_slow' }),
+    ]))
+    expect(validation.spec.exit.any).toEqual(expect.arrayContaining([
+      expect.objectContaining({ left: 'ema_fast', op: 'crosses_below', right: 'ema_slow' }),
+    ]))
+  })
+
   it('normalizes legacy structured signals and exits into StrategySpec v1', async () => {
     const { BacktestMarketDataService } = await import('../../src/domain/market/services/backtest-market-data-service')
     const service = new BacktestMarketDataService()
