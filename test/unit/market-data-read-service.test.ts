@@ -9,7 +9,13 @@ describe('MarketDataReadService', () => {
 
   it('checks reusable quote storage only and reports misses without fetching', async () => {
     const getRecentQuotes = vi.fn(() => new Map([
-      ['600519', { code: '600519', name: '茅台' }],
+      ['600519', {
+        code: '600519',
+        name: '茅台',
+        source: 'tdx',
+        timestamp: '2026-07-10T13:00:00.000Z',
+        fetchedAt: '2026-07-10T13:00:05.000Z',
+      }],
     ]))
     const getLatestQuotes = vi.fn(() => new Map())
     const saveQuotes = vi.fn()
@@ -38,10 +44,52 @@ describe('MarketDataReadService', () => {
         interfaceId: 'stock.quote',
         capabilityId: 'local.cache',
         provider: 'local',
+        source: 'tdx',
         cacheStatus: 'cache-hit',
+        asOf: '2026-07-10T13:00:00.000Z',
+        fetchedAt: '2026-07-10T13:00:05.000Z',
       }),
     ])
     expect(saveQuotes).not.toHaveBeenCalled()
+  })
+
+  it('reports index quote source time and fetched-at in reusable quote provenance', async () => {
+    const getRecentQuotes = vi.fn(() => new Map([
+      ['000001', {
+        code: '000001',
+        name: '上证指数',
+        source: 'tdx:index_quote',
+        timestamp: '2026-07-10T13:20:00.000Z',
+        fetchedAt: '2026-07-10T13:20:04.000Z',
+      }],
+    ]))
+
+    vi.doMock('../../src/domain/market/repositories/local-market-data-repository', () => ({
+      LocalMarketDataRepository: class {
+        getRecentQuotes = getRecentQuotes
+        getLatestQuotes = vi.fn(() => new Map())
+        saveQuotes = vi.fn()
+        queryKline = vi.fn()
+        saveKline = vi.fn()
+      },
+    }))
+
+    const { MarketDataReadService } = await import('../../src/domain/market/services/market-data-read-service')
+    const service = new MarketDataReadService()
+    const result = service.readQuotes({ basePath: '/tmp' } as any, ['000001'])
+
+    expect(result.status).toBe('hit')
+    expect(result.provenance).toEqual([
+      expect.objectContaining({
+        interfaceId: 'index.quote',
+        capabilityId: 'local.cache',
+        provider: 'local',
+        source: 'tdx:index_quote',
+        cacheStatus: 'cache-hit',
+        asOf: '2026-07-10T13:20:00.000Z',
+        fetchedAt: '2026-07-10T13:20:04.000Z',
+      }),
+    ])
   })
 
   it('uses local daily kline when local coverage is sufficient', async () => {

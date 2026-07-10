@@ -3,6 +3,7 @@ import type * as dm from '../../../agent/data/data-manager'
 import type { KlineRow } from '../../../agent/data/store/data-store'
 import type { FetchProvenance } from '../../../agent/data/fetchers/base-fetcher'
 import { cachePolicyFor, type CachePolicy } from '../../../agent/data/cache-policy'
+import { isCoreCnMarketIndexCode } from '../market-index-universe'
 import { LocalMarketDataRepository } from '../repositories/local-market-data-repository'
 
 export type StorageReadStatus = 'hit' | 'miss' | 'stale'
@@ -67,7 +68,7 @@ export class MarketDataReadService {
       reason: quoteReason(status, missingCodes, staleCodes, maxAgeMs),
       provenance: codes
         .filter((code) => cachedQuotes.has(code))
-        .map((code) => localQuoteProvenance(code)),
+        .map((code) => localQuoteProvenance(cachedQuotes.get(code)!)),
     }
   }
 
@@ -155,16 +156,19 @@ function isDateOlderThan(date: string, maxAgeDays: number): boolean {
   return ageMs > maxAgeDays * 24 * 60 * 60 * 1000
 }
 
-function localQuoteProvenance(code: string): FetchProvenance {
+function localQuoteProvenance(quote: dm.Quote): FetchProvenance {
+  const interfaceId = isCoreCnMarketIndexCode(quote.code) ? 'index.quote' : 'stock.quote'
   return {
-    interfaceId: 'stock.quote',
+    interfaceId,
     capabilityId: 'local.cache',
     provider: 'local',
-    source: 'local',
-    endpoint: `quote_snapshot:${code}`,
+    source: quote.source ?? 'local',
+    endpoint: `quote_snapshot:${quote.code}`,
     canonicalSchema: 'quote_snapshot',
     canonicalTable: 'quote_snapshot',
     cacheStatus: 'cache-hit',
+    asOf: quote.timestamp ?? undefined,
+    fetchedAt: quote.fetchedAt ?? undefined,
   }
 }
 
