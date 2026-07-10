@@ -59,6 +59,7 @@ export interface StrategyValidationContract {
   repairPlan?: RepairStep[]
   validationSummary?: ValidationSummary
   dataRequirements?: Record<string, unknown>
+  suggestedActions?: Array<Record<string, unknown>>
   workflowAdvice: string
 }
 
@@ -353,6 +354,14 @@ export function validateStockStrategySpec(spec: StrategySpecContract): StrategyV
       },
     ))
   }
+  const suggestedActions = errors.length === 0
+    ? [{
+      action: 'custom_strategy_backtest',
+      symbols: strategySpecSymbols(spec),
+      strategySpec: spec,
+      boundary: 'Use this full strategySpec for an unsaved strategy. strategyId alone is valid only after custom_strategy_save or custom_strategy_run readback.',
+    }]
+    : []
 
   return {
     action: 'custom_strategy_validate',
@@ -381,10 +390,26 @@ export function validateStockStrategySpec(spec: StrategySpecContract): StrategyV
       minBars,
       requiredLookbackBars,
     },
+    suggestedActions,
     workflowAdvice: errors.length === 0
       ? 'If the user asked to validate only or not save, answer now from this validation result. Do not call custom_strategy_backtest, custom_strategy_save, query_kline, query_technical_indicator, Script, or other tools unless the user explicitly asks for backtest, save, or extra market evidence.'
       : 'This validation failed. Report the unsupported executable parts directly. Do not replace them with proxy indicators, and do not call custom_strategy_backtest or custom_strategy_save unless the user explicitly asks for a separate proxy redesign.',
   }
+}
+
+function strategySpecSymbols(spec: StrategySpecContract): string[] {
+  const loose = spec as LooseStrategySpec
+  const direct = String(loose.symbol ?? loose.code ?? '').trim()
+  if (direct) return [direct]
+  if (Array.isArray(loose.symbols)) {
+    const symbols = loose.symbols.map((item) => String(item).trim()).filter(Boolean)
+    if (symbols.length) return symbols
+  }
+  if (spec.universe && Array.isArray(spec.universe.symbols)) {
+    const symbols = spec.universe.symbols.map((item) => String(item).trim()).filter(Boolean)
+    if (symbols.length) return symbols
+  }
+  return []
 }
 
 export function validateFundStrategySpec(spec: StrategySpecContract): StrategyValidationContract & Record<string, unknown> {

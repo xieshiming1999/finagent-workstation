@@ -3104,6 +3104,12 @@ describe('BacktestMarketDataService', () => {
       { type: 'trailing_stop_pct', value: 6 },
     ]))
     expect(validation.spec.positionSizing).toEqual({ type: 'fixed_fraction', value: 0.3 })
+    expect(validation.suggestedActions).toEqual([
+      expect.objectContaining({
+        action: 'custom_strategy_backtest',
+        strategySpec: expect.objectContaining({ id: validation.strategyId }),
+      }),
+    ])
   })
 
   it('accepts stop loss objects inside exit or-lists', async () => {
