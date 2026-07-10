@@ -69,8 +69,14 @@ export interface StrategyValidation {
 
 function wantsDetailedCatalog(input: Record<string, unknown> = {}): boolean {
   const detail = String(input.detail ?? input.mode ?? '').toLowerCase()
+  const requestedFields = Array.isArray(input.fields)
+    ? input.fields.join(' ')
+    : String(input.fields ?? '')
   return input.includeCatalog === true ||
     input.full === true ||
+    input.indicators != null ||
+    requestedFields.includes('indicatorCatalog') ||
+    requestedFields.includes('indicators') ||
     detail === 'catalog' ||
     detail === 'full' ||
     detail === 'detailed'

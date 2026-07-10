@@ -778,6 +778,16 @@ describe('BacktestMarketDataService', () => {
     expect(contractHelp.outputContracts.custom_strategy_run.coreFields).toContain('lifecycle')
     expect(contractHelp.outputContracts.custom_strategy_compare.coreFields).toContain('strategies')
     expect(contractHelp.executableV1.indicatorCatalog).toBeUndefined()
+    const fieldHelp = JSON.parse(await service.readAction('custom_strategy_help', { fields: 'executableV1.indicatorCatalog,executableV1.indicators', indicators: ['sma', 'rsi'] }, { basePath: '/tmp' } as any, '', 120))
+    expect(fieldHelp.detail).toBe('catalog')
+    expect(fieldHelp.executableV1.indicatorCatalog).toEqual(expect.arrayContaining([
+      expect.objectContaining({ type: 'rsi' }),
+    ]))
+    expect(fieldHelp.executableV1.stockExample).toMatchObject({
+      indicators: expect.any(Array),
+      entry: expect.objectContaining({ all: expect.any(Array) }),
+      exit: expect.objectContaining({ any: expect.any(Array) }),
+    })
     const detailedHelp = JSON.parse(await service.readAction('custom_strategy_help', { detail: 'catalog' }, { basePath: '/tmp' } as any, '', 120))
     expect(detailedHelp).toMatchObject({
       action: 'custom_strategy_help',
@@ -3056,6 +3066,44 @@ describe('BacktestMarketDataService', () => {
     expect(validation.spec.entry).toHaveProperty('all')
     expect(validation.spec.exit).toHaveProperty('any')
     expect(validation.spec.entry.all.at(-1).right).toEqual({ mul: ['vol20', 1.5] })
+  })
+
+  it('normalizes legacy structured signals and exits into StrategySpec v1', async () => {
+    const { BacktestMarketDataService } = await import('../../src/domain/market/services/backtest-market-data-service')
+    const service = new BacktestMarketDataService()
+    const strategySpec = {
+      name: '茅台RSI均值回归',
+      type: 'stockTrading',
+      market: 'cn',
+      signals: {
+        entry: [
+          { indicator: 'rsi', period: 14, operator: '<', value: 35 },
+          { indicator: 'price_change_pct', period: 1, operator: '>', value: 0 },
+        ],
+      },
+      exits: {
+        stop_loss_pct: 8,
+        take_profit_pct: 12,
+        trailing_stop_pct: 6,
+      },
+      positionSizing: 'fixed_fraction',
+      fixedFraction: 0.3,
+    }
+
+    const validation = JSON.parse(await service.readAction('custom_strategy_validate', { strategySpec }, { basePath: '/tmp' } as any, '', 120))
+
+    expect(validation).toMatchObject({ action: 'custom_strategy_validate', status: 'validated' })
+    expect(validation.spec.indicators.map((indicator: { id: string }) => indicator.id)).toEqual(expect.arrayContaining(['rsi14', 'price_change_pct1']))
+    expect(validation.spec.entry.all).toEqual(expect.arrayContaining([
+      expect.objectContaining({ left: 'rsi14', op: '<', right: 35 }),
+      expect.objectContaining({ left: 'price_change_pct1', op: '>', right: 0 }),
+    ]))
+    expect(validation.spec.exit.any).toEqual(expect.arrayContaining([
+      { type: 'stop_loss_pct', value: 8 },
+      { type: 'take_profit_pct', value: 12 },
+      { type: 'trailing_stop_pct', value: 6 },
+    ]))
+    expect(validation.spec.positionSizing).toEqual({ type: 'fixed_fraction', value: 0.3 })
   })
 
   it('accepts stop loss objects inside exit or-lists', async () => {

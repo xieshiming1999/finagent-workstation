@@ -96,7 +96,7 @@ export function normalizeStrategySpec(input: NormalizedStrategySpec): Normalized
     indicators,
     entry: normalizeRuleGroup(entrySource(input), [], indicatorIds),
     exit: normalizeRuleGroup(exitSource(input), ['stop_loss_pct', 'take_profit_pct', 'trailing_stop_pct', 'max_drawdown_stop_pct', 'atr_stop_loss', 'time_stop_bars'], indicatorIds),
-    positionSizing: normalizeSizing(input.positionSizing),
+    positionSizing: normalizeSizing(sizingSource(input)),
     cost: input.cost ?? { commissionPct: 0.1, slippagePct: 0.05 },
     notes: input.notes ?? [],
   }
@@ -322,7 +322,7 @@ function indicatorsFromRules(input: NormalizedStrategySpec): NormalizedStrategyS
   const loose = input as LooseStrategySpec
   const seen = new Set<string>()
   const indicators: NonNullable<NormalizedStrategySpec['indicators']> = []
-  for (const group of [input.entry ?? loose.entryRule ?? loose.entryConditions, input.exit ?? loose.exitRule ?? loose.exitConditions] as unknown[]) {
+  for (const group of [entrySource(input), exitSource(input)] as unknown[]) {
     for (const raw of looseConditionList(group)) {
       if (!raw || typeof raw !== 'object') continue
       const condition = raw as Record<string, unknown>
@@ -634,7 +634,7 @@ function exitSource(input: NormalizedStrategySpec): unknown {
   const lifecycle = rawInput.lifecycle && typeof rawInput.lifecycle === 'object' && !Array.isArray(rawInput.lifecycle)
     ? rawInput.lifecycle as Record<string, unknown>
     : {}
-  const rawExit = input.exit ?? rawInput.exitRule ?? rawInput.exitConditions ?? lifecycle.exit
+  const rawExit = input.exit ?? rawInput.exits ?? rawInput.exitRule ?? rawInput.exitConditions ?? lifecycle.exit
   const exit = Array.isArray(rawExit)
     ? { any: rawExit } as Record<string, unknown>
     : rawExit && typeof rawExit === 'object'
@@ -669,7 +669,26 @@ function entrySource(input: NormalizedStrategySpec): unknown {
   const lifecycle = rawInput.lifecycle && typeof rawInput.lifecycle === 'object' && !Array.isArray(rawInput.lifecycle)
     ? rawInput.lifecycle as Record<string, unknown>
     : {}
-  return input.entry ?? rawInput.entryRule ?? rawInput.entryConditions ?? lifecycle.entry
+  const signals = rawInput.signals && typeof rawInput.signals === 'object' && !Array.isArray(rawInput.signals)
+    ? rawInput.signals as Record<string, unknown>
+    : {}
+  return input.entry ?? signals.entry ?? rawInput.entryRule ?? rawInput.entryConditions ?? lifecycle.entry
+}
+
+function sizingSource(input: NormalizedStrategySpec): unknown {
+  const rawInput = input as unknown as Record<string, unknown>
+  if (input.positionSizing != null) {
+    if (typeof input.positionSizing === 'string') {
+      const fixedFraction = numericValue(rawInput.fixedFraction ?? rawInput.fixed_fraction)
+      return fixedFraction == null
+        ? input.positionSizing
+        : { type: input.positionSizing, value: fixedFraction }
+    }
+    return input.positionSizing
+  }
+  const fixedFraction = numericValue(rawInput.fixedFraction ?? rawInput.fixed_fraction)
+  if (fixedFraction != null) return { type: 'fixed_fraction', value: fixedFraction }
+  return undefined
 }
 
 function normalizeSizingType(raw: string): string {
