@@ -4,6 +4,54 @@ import { maybeBuildPriorAnalysisValidationAnswer } from "../../src/domain/financ
 import { assistantMessage, toolMessage, userMessage } from "../../src/agent/message";
 
 describe("bounded finance answer synthesis", () => {
+  it("keeps stock evidence in bounded macro synthesis when quote, kline, and fundamentals are already available", () => {
+    const messages = [
+      userMessage("stock macro analysis"),
+      assistantMessage("", [
+        { id: "quote", name: "MarketData", input: { action: "quote", code: "600519" } },
+        { id: "kline", name: "DataStore", input: { action: "query_kline", code: "600519", limit: 120 } },
+        { id: "fund", name: "DataStore", input: { action: "query_fundamental", code: "600519", limit: 8 } },
+        { id: "macro", name: "DataStore", input: { action: "query_macro_factors", target: "consumer staples" } },
+      ]),
+      toolMessage(
+        "auto-retained-quote",
+        "600519 quote | interface:stock.quote | provider:local | cacheStatus:local-hit | asOf:2026-07-10T14:06:20Z | fetchedAt:2026-07-10T14:06:21Z Price: 1204.98 change: +1.93%",
+      ),
+      toolMessage(
+        "auto-retained-kline",
+        "600519 daily kline | interface:stock.daily_kline | provider:tencent | cacheStatus:local-hit | asOf:2026-07-07 | fetchedAt:2026-07-10T13:47:08Z: 120 bars (2026-01-06 ~ 2026-07-07)",
+      ),
+      toolMessage(
+        "auto-retained-fund",
+        "600519 fundamentals | interface:stock.daily_valuation | provider:eastmoney | cacheStatus:local-hit | asOf:2026-03-31 | fetchedAt:2026-07-07T07:43:20Z: 2026-03-31 PE:13.64 PB:6.3 ROE:10.57%",
+      ),
+      toolMessage(
+        "macro",
+        JSON.stringify({
+          action: "query_macro_factors",
+          rows: [
+            {
+              title: "China consumption recovery",
+              family: "policy_regulation",
+              source: "official",
+              sourceDataTime: "2026-07-09",
+            },
+          ],
+        }),
+      ),
+    ];
+
+    const answer = maybeBuildFinanceBoundedAnswer(messages);
+
+    expect(answer).toContain("宏观证据与来源状态");
+    expect(answer).toContain("个股行情: 600519");
+    expect(answer).toContain("price=1204.98");
+    expect(answer).toContain("K 线/技术面: 600519");
+    expect(answer).toContain("120 bars");
+    expect(answer).toContain("PE=13.64");
+    expect(answer).toContain("China consumption recovery");
+  });
+
   it("stops position-sizing workflows before inventing exact shares when account risk inputs are missing", () => {
     const messages = [
       userMessage(

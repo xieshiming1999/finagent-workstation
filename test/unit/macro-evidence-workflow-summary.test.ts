@@ -5,6 +5,7 @@ import {
   maybeBuildFinanceBoundedAnswer,
   maybeInterceptFinanceToolCalls,
 } from '../../src/domain/finance/workflows/finance-workflow-hooks'
+import { collectMacroEvidence } from '../../src/domain/finance/workflows/finance-macro-evidence-summary'
 
 function macroStockUser(subject: string) {
   return userMessage(
@@ -25,6 +26,27 @@ function macroStockUser(subject: string) {
 }
 
 describe('macro evidence workflow summary', () => {
+  it('uses typed indicator evidence without parsing legacy prose', () => {
+    const typed = collectMacroEvidence([
+      assistantMessage('', [{ id: 'indicator', name: 'DataProcess', input: { action: 'indicators', code: '600519' } }]),
+      toolMessage('indicator', JSON.stringify({
+        action: 'indicators',
+        code: '600519',
+        latest: { date: '2026-07-14', close: 1168.63 },
+        indicators: { rsi14: 31.5 },
+        interfaceId: 'technical.indicator_series',
+      })),
+    ])
+    const legacy = collectMacroEvidence([
+      assistantMessage('', [{ id: 'indicator', name: 'DataProcess', input: { action: 'indicators', code: '600519' } }]),
+      toolMessage('indicator', 'RSI(14): 1'),
+    ])
+
+    expect(typed.nonMacroLines).toContain('技术指标: 600519 / close=1168.63 / RSI=31.5')
+    expect(legacy.nonMacroLines).toContain('技术指标: 600519 / typed indicator evidence unavailable')
+    expect(legacy.nonMacroLines.join('\n')).not.toContain('RSI=1')
+  })
+
   it('adds governed attribution readback when macro evidence calls omit it', () => {
     const interception = maybeInterceptFinanceToolCalls([
       userMessage(

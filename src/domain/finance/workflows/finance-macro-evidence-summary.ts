@@ -64,6 +64,11 @@ export function collectMacroEvidence(messages: Message[]): MacroEvidence {
   const nonMacroLines: string[] = []
   let sawMacroAction = false
   let hasNewsRefresh = false
+  const toolCallsById = new Map<string, ToolUse>()
+  for (const message of messages) {
+    if (message.role !== Role.Assistant) continue
+    for (const call of message.toolUses ?? []) toolCallsById.set(call.id, call)
+  }
 
   for (const message of messages) {
     if (message.role === Role.Assistant) {
@@ -86,7 +91,14 @@ export function collectMacroEvidence(messages: Message[]): MacroEvidence {
       continue
     }
     const decoded = parseJsonObject(message.toolResult.content)
-    if (!decoded) continue
+    if (!decoded) {
+      const call = toolCallsById.get(message.toolResult.toolUseId)
+      const line = call
+        ? nonMacroTextResultLine(call, message.toolResult.content)
+        : nonMacroTextResultLineFromContent(message.toolResult.content)
+      if (line) nonMacroLines.push(line)
+      continue
+    }
     const action = text(decoded.action)
     if (action === 'query_finance_news') {
       const line = financeNewsPayloadLine(decoded)
@@ -189,7 +201,7 @@ function buildMacroEvidenceSection(evidence: MacroEvidence): string[] {
     lines.push('- 基金分类口径：消费基金关注消费复苏、居民收入、白酒/零售政策和风险偏好；科技基金关注流动性、产业政策、外部限制和成长股估值折现率；债券基金关注利率、信用、流动性和久期风险。缺失任一类别的高等级证据时，应降低对应结论置信度。')
   }
   if (evidence.nonMacroLines.length > 0) {
-    lines.push(`- 非宏观证据状态：${evidence.nonMacroLines.slice(0, 6).join('；')}。`)
+    lines.push(`- 非宏观证据状态：${sortEvidenceLines(evidence.nonMacroLines).slice(0, 12).join('；')}。`)
   }
   if (evidence.sourceLines.length > 0) {
     lines.push(`- 来源目录读回：${evidence.sourceLines.slice(0, 4).join('；')}。`)
@@ -249,8 +261,10 @@ function nonMacroCallLine(toolName: string, input: Record<string, unknown>): str
 
 function nonMacroResultLine(payload: Record<string, unknown>): string {
   const action = text(payload.action)
-  const label = actionLabel(action)
+  const label = actionLabel(action) || dataProcessActionLabel(action)
   if (!label) return ''
+  const evidenceDetail = structuredEvidenceDetail(action, payload)
+  if (evidenceDetail) return `${label}: ${evidenceDetail}`
   const count = text(payload.count ?? (Array.isArray(payload.rows) ? payload.rows.length : ''))
   const status = text(payload.status)
   const source = text(payload.source ?? payload.provider)
@@ -264,11 +278,154 @@ function nonMacroResultLine(payload: Record<string, unknown>): string {
   return `${label}${detail ? `: ${detail}` : ': 已返回结构化结果'}`
 }
 
+function nonMacroTextResultLine(call: ToolUse, content: string): string {
+  if (/^\s*Skipped:/i.test(content)) return ''
+  if (call.name !== 'DataStore' && call.name !== 'MarketData' && call.name !== 'DataProcess') return ''
+  const action = text(call.input.action)
+  const label = actionLabel(action) || dataProcessActionLabel(action)
+  if (!label) return ''
+  const code = text(call.input.code ?? call.input.symbol) || extractCode(content)
+  const provenance = extractProvenance(content)
+  const facts = extractEvidenceFacts(action, content)
+  const parts = [
+    code,
+    provenance,
+    facts,
+  ].filter(Boolean)
+  return `${label}${parts.length ? `: ${parts.join(' / ')}` : ': 已返回工具结果'}`
+}
+
+function nonMacroTextResultLineFromContent(content: string): string {
+  if (/^\s*Skipped:/i.test(content)) return ''
+  const action = inferActionFromContent(content)
+  if (!action) return ''
+  const label = actionLabel(action) || dataProcessActionLabel(action)
+  if (!label) return ''
+  const code = extractCode(content)
+  const provenance = extractProvenance(content)
+  const facts = extractEvidenceFacts(action, content)
+  const parts = [
+    code,
+    provenance,
+    facts,
+  ].filter(Boolean)
+  return `${label}${parts.length ? `: ${parts.join(' / ')}` : ': 已返回工具结果'}`
+}
+
+function inferActionFromContent(content: string): string {
+  if (/interface:stock\.quote\b/i.test(content) || /\bquote snapshots\b/i.test(content)) return 'query_quote'
+  if (/interface:stock\.daily_kline\b/i.test(content) || /\bdaily kline\b/i.test(content)) return 'query_kline'
+  if (/interface:stock\.daily_valuation\b/i.test(content) || /\bfundamentals\b/i.test(content)) return 'query_fundamental'
+  if (/interface:market\.sector_ranking\b/i.test(content) || /\bSector ranking\b/i.test(content)) return 'query_sector_ranking'
+  return ''
+}
+
+function dataProcessActionLabel(action: string): string {
+  const labels: Record<string, string> = {
+    summary: '技术摘要',
+    indicators: '技术指标',
+    support_summary: '支撑阻力',
+    volume_analysis: '量能分析',
+  }
+  return labels[action] ?? ''
+}
+
+function extractCode(content: string): string {
+  return content.match(/\b\d{6}\b/)?.[0] ?? ''
+}
+
+function extractProvenance(content: string): string {
+  const interfaceId = content.match(/interface:([^|\n]+)/)?.[1]?.trim()
+  const provider = content.match(/provider:([^|\n]+)/)?.[1]?.trim()
+  const cache = content.match(/cacheStatus:([^|\n]+)/)?.[1]?.trim()
+  const asOf = content.match(/asOf:([^|\n]+)/)?.[1]?.trim()
+  const fetchedAt = content.match(/fetchedAt:([^|\n]+)/)?.[1]?.trim()
+  return [
+    interfaceId ? `interface=${interfaceId}` : '',
+    provider ? `provider=${provider}` : '',
+    cache ? `cache=${cache}` : '',
+    asOf ? `asOf=${asOf}` : '',
+    fetchedAt ? `fetchedAt=${fetchedAt}` : '',
+  ].filter(Boolean).join(' / ')
+}
+
+function extractEvidenceFacts(action: string, content: string): string {
+  const compacted = compact(content.replace(/\s+/g, ' '), 160)
+  if (action === 'query_kline' || action === 'kline') {
+    const bars = content.match(/(\d+)\s+bars/i)?.[1]
+    const window = content.match(/\((\d{4}-\d{2}-\d{2}\s*~\s*\d{4}-\d{2}-\d{2})\)/)?.[1]
+    return [bars ? `${bars} bars` : '', window].filter(Boolean).join(' / ') || compacted
+  }
+  if (action === 'query_fundamental') {
+    const pe = content.match(/\bPE:([^\s]+)/)?.[1]
+    const pb = content.match(/\bPB:([^\s]+)/)?.[1]
+    const roe = content.match(/\bROE:([^\s]+)/)?.[1]
+    const report = content.match(/(\d{4}-\d{2}-\d{2})/)?.[1]
+    return [
+      report ? `report=${report}` : '',
+      pe ? `PE=${pe}` : '',
+      pb ? `PB=${pb}` : '',
+      roe ? `ROE=${roe}` : '',
+    ].filter(Boolean).join(' / ') || compacted
+  }
+  if (action === 'quote' || action === 'query_quote') {
+    const price = content.match(/(?:price|Price|最新价|C):\s*([0-9.]+)/)?.[1]
+    const change = content.match(/(?:change|涨幅|Chg):\s*([+\-0-9.]+%?)/)?.[1]
+    return [price ? `price=${price}` : '', change ? `change=${change}` : ''].filter(Boolean).join(' / ') || compacted
+  }
+  if (action === 'summary') {
+    const signal = content.match(/"overall"\s*:\s*"([^"]+)"/)?.[1]
+    return signal ? `signal=${signal}` : compacted
+  }
+  if (action === 'indicators') {
+    return 'typed indicator evidence unavailable'
+  }
+  return compacted
+}
+
+function structuredEvidenceDetail(action: string, payload: Record<string, unknown>): string {
+  if (action === 'indicators') {
+    const latest = payload.latest
+    const indicators = payload.indicators
+    if (
+      payload.interfaceId !== 'technical.indicator_series' ||
+      !isRecord(latest) ||
+      !isRecord(indicators)
+    ) return ''
+    const close = finiteNumber(latest.close)
+    const rsi = finiteNumber(indicators.rsi14)
+    return [
+      text(payload.code),
+      close == null ? '' : `close=${close}`,
+      rsi == null ? '' : `RSI=${rsi}`,
+    ].filter(Boolean).join(' / ')
+  }
+  if (action === 'score_technical') {
+    return [
+      text(payload.code),
+      text(payload.score) ? `score=${text(payload.score)}` : '',
+      text(payload.grade) ? `grade=${text(payload.grade)}` : '',
+      text(payload.signal) ? `signal=${text(payload.signal)}` : '',
+      text(payload.rsi) ? `RSI=${text(payload.rsi)}` : '',
+    ].filter(Boolean).join(' / ')
+  }
+  return ''
+}
+
+function finiteNumber(value: unknown): number | null {
+  return typeof value === 'number' && Number.isFinite(value) ? value : null
+}
+
 function actionLabel(action: string): string {
   const labels: Record<string, string> = {
+    quote: '个股行情',
+    kline: 'K 线/技术面',
+    money_flow: '资金流向',
     query_quote: '个股行情',
     query_index_quote: '指数/市场技术面',
     query_kline: 'K 线/技术面',
+    query_fundamental: '基本面/估值',
+    query_money_flow: '资金流向',
     query_sector_ranking: '板块热度',
     query_flow_rank: '资金流向',
     query_northbound_flow: '北向资金',
@@ -277,6 +434,8 @@ function actionLabel(action: string): string {
     query_fund_holding: '基金持仓',
     query_stock_company_info: '自选股公司信息',
     query_fund_company_info: '基金公司信息',
+    summary: '技术摘要',
+    score_technical: '技术评分',
   }
   if (labels[action]) return labels[action]
   if (action === 'fetch') return '数据刷新'
@@ -353,6 +512,15 @@ function hasFundContext(evidence: MacroEvidence): boolean {
     ...evidence.decisionLines,
   ].join(' ')
   return /基金|fund/i.test(textValue)
+}
+
+function sortEvidenceLines(lines: string[]): string[] {
+  return [...lines].sort((a, b) => evidenceLineRank(a) - evidenceLineRank(b))
+}
+
+function evidenceLineRank(line: string): number {
+  if (line.includes('已请求')) return 2
+  return 0
 }
 
 function factorRows(payload: Record<string, unknown>): string[] {
