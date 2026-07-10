@@ -10,6 +10,7 @@ import type { AgentEvent } from '../../src/agent/agent-event'
 import type { LLMProvider } from '../../src/agent/llm-provider'
 import type { Message } from '../../src/agent/message'
 import type { SSEEvent } from '../../src/agent/sse-event'
+import { FallbackLLMProvider } from '../../src/agent/fallback-llm'
 import { detectDoomLoop } from '../../src/agent/agent-helpers'
 import { existsSync, mkdtempSync, readFileSync } from 'fs'
 import { join } from 'path'
@@ -220,6 +221,37 @@ class ErrorThenTextLLM implements LLMProvider {
   }
 }
 
+class ErrorOnlyLLM implements LLMProvider {
+  readonly contextWindow = 128_000
+  callCount = 0
+
+  constructor(readonly model: string, private readonly message: string) {}
+
+  clone(): LLMProvider { return this }
+  cancel(): void {}
+
+  async *sendMessage(_systemPrompt: string, _messages: Message[], _tools: unknown[]): AsyncGenerator<SSEEvent> {
+    this.callCount += 1
+    yield { type: 'error', message: this.message }
+  }
+}
+
+class TextOnlyLLM implements LLMProvider {
+  readonly contextWindow = 128_000
+  callCount = 0
+
+  constructor(readonly model: string, private readonly text: string) {}
+
+  clone(): LLMProvider { return this }
+  cancel(): void {}
+
+  async *sendMessage(_systemPrompt: string, _messages: Message[], _tools: unknown[]): AsyncGenerator<SSEEvent> {
+    this.callCount += 1
+    yield { type: 'text-delta', text: this.text }
+    yield { type: 'done', finishReason: 'stop' }
+  }
+}
+
 describe('Agent Loop', () => {
   let basePath: string
 
@@ -237,6 +269,22 @@ describe('Agent Loop', () => {
     expect(events.some((e) => e.type === 'text-delta')).toBe(true)
     expect(events.some((e) => e.type === 'done')).toBe(true)
     expect(llm.calls.length).toBe(1)
+  })
+
+  it('falls back immediately when the active model emits a quota error event', async () => {
+    const quotaModel = new ErrorOnlyLLM('quota-model', 'Anthropic API error 403: permission_error usage limit for this billing cycle')
+    const backupModel = new TextOnlyLLM('backup-model', 'fallback handled the request')
+    const llm = new FallbackLLMProvider([quotaModel, backupModel])
+    const registry = new ToolRegistry()
+    const agent = new Agent({ llm, tools: registry, basePath, skipPermissions: true })
+
+    const events = await collectEvents(agent.run('hi'))
+    const text = events.filter((e) => e.type === 'text-delta').map((e: any) => e.text).join('')
+
+    expect(quotaModel.callCount).toBe(1)
+    expect(backupModel.callCount).toBe(1)
+    expect(text).toContain('fallback handled the request')
+    expect(events.some((e) => e.type === 'error')).toBe(false)
   })
 
   it('handles tool call → result → final text', async () => {

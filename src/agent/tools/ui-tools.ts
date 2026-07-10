@@ -142,7 +142,7 @@ export class UIControlTool implements Tool {
       case 'navigate':
       case 'addDashboard':
       case 'selectDashboard': {
-        const path = String(params.path ?? params.file ?? params.url ?? '')
+        const path = String(params.path ?? params.filePath ?? params.file ?? params.url ?? '')
         const title = String(params.title ?? params.name ?? '')
         if (!path) {
           return toolError('path or url required for openPage. Provide the path to an HTML file.')
@@ -172,7 +172,7 @@ export class UIControlTool implements Tool {
       }
 
       case 'addPage': {
-        const path = String(params.path ?? '')
+        const path = String(params.path ?? params.filePath ?? params.file ?? params.url ?? '')
         const title = String(params.title ?? params.name ?? '')
         if (!path) return toolError('path required for addPage')
         const fullPath = resolveRuntimePath(path, ctx)

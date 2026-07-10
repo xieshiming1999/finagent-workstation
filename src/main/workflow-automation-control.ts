@@ -318,7 +318,7 @@ export class WorkflowAutomationControl {
       buildUiEvidence(result.panelState),
       this.runtimeUiEvidence(),
     );
-    result.uiArtifacts = await this.safeUiArtifacts(runId);
+    result.uiArtifacts = await this.safeUiArtifacts(runId, result.panelState);
     result.reportPath = this.writeReport(result);
     return result;
   }
@@ -781,12 +781,14 @@ export class WorkflowAutomationControl {
     };
   }
 
-  private async safeUiArtifacts(runId: string): Promise<Array<Record<string, unknown>>> {
+  private async safeUiArtifacts(runId: string, panelState?: unknown): Promise<Array<Record<string, unknown>>> {
+    const artifacts = panelStateArtifacts(panelState);
     try {
       const artifact = await this.deps.captureUiArtifact?.(runId);
-      return artifact ? [artifact] : [];
+      return artifact ? [...artifacts, artifact] : artifacts;
     } catch (err) {
       return [
+        ...artifacts,
         {
           kind: "ui-capture-error",
           error: err instanceof Error ? err.message : String(err),
@@ -1234,6 +1236,26 @@ async function runCancellableWorkflow<T>(
     req.off("aborted", cancel);
     res.off("close", cancel);
   }
+}
+
+function panelStateArtifacts(panelState: unknown): Array<Record<string, unknown>> {
+  if (!Array.isArray(panelState)) return [];
+  return panelState
+    .filter((panel): panel is Record<string, unknown> => Boolean(panel) && typeof panel === "object" && !Array.isArray(panel))
+    .filter((panel) => panel.type === "dashboard" && typeof panel.url === "string")
+    .map((panel) => {
+      const url = String(panel.url);
+      const isDashboardFile = url.includes("/dashboards/");
+      const isPageFile = url.includes("/memory/pages/") || url.includes("/pages/");
+      return {
+        kind: "dashboard",
+        sourceKind: isDashboardFile ? "dashboard-file" : isPageFile ? "page-file" : "dashboard-panel",
+        panelId: typeof panel.id === "string" ? panel.id : undefined,
+        title: typeof panel.title === "string" ? panel.title : undefined,
+        path: url,
+        active: panel.isActive === true,
+      };
+    });
 }
 
 function evaluateScenario(

@@ -37,6 +37,17 @@ export class FallbackLLMProvider implements LLMProvider {
     try {
       let hasContent = false
       for await (const ev of this.active.sendMessage(systemPrompt, messages, tools)) {
+        if (ev.type === 'error') {
+          const switched = this.switchAfterProviderError(ev.message)
+          if (switched) {
+            for await (const retryEv of this.active.sendMessage(systemPrompt, messages, tools)) {
+              yield retryEv
+            }
+            return
+          }
+          yield ev
+          return
+        }
         hasContent = true
         yield ev
       }
@@ -44,16 +55,7 @@ export class FallbackLLMProvider implements LLMProvider {
         this.consecutiveErrors = 0
       }
     } catch (e) {
-      this.consecutiveErrors++
-      console.error(`[FallbackLLM] Error from ${this.active.model} (${this.consecutiveErrors}/${FallbackLLMProvider.MAX_ERRORS_BEFORE_SWITCH}):`, e)
-
-      if (this.consecutiveErrors >= FallbackLLMProvider.MAX_ERRORS_BEFORE_SWITCH && this.providers.length > 1) {
-        const oldIdx = this.activeIndex
-        this.activeIndex = (this.activeIndex + 1) % this.providers.length
-        this.consecutiveErrors = 0
-        console.log(`[FallbackLLM] Switching from ${this.providers[oldIdx].model} to ${this.active.model}`)
-
-        // Retry with new provider
+      if (this.switchAfterProviderError(String(e))) {
         for await (const ev of this.active.sendMessage(systemPrompt, messages, tools)) {
           yield ev
         }
@@ -61,5 +63,36 @@ export class FallbackLLMProvider implements LLMProvider {
         throw e
       }
     }
+  }
+
+  private switchAfterProviderError(message: string): boolean {
+    this.consecutiveErrors++
+    console.error(`[FallbackLLM] Error from ${this.active.model} (${this.consecutiveErrors}/${FallbackLLMProvider.MAX_ERRORS_BEFORE_SWITCH}):`, message)
+    if (this.providers.length <= 1) return false
+    if (!this.shouldSwitch(message) && this.consecutiveErrors < FallbackLLMProvider.MAX_ERRORS_BEFORE_SWITCH) {
+      return false
+    }
+    const oldIdx = this.activeIndex
+    this.activeIndex = (this.activeIndex + 1) % this.providers.length
+    this.consecutiveErrors = 0
+    console.log(`[FallbackLLM] Switching from ${this.providers[oldIdx].model} to ${this.active.model}`)
+    return true
+  }
+
+  private shouldSwitch(message: string): boolean {
+    const text = message.toLowerCase()
+    return text.includes('usage limit') ||
+      text.includes('billing cycle') ||
+      text.includes('quota') ||
+      text.includes('permission_error') ||
+      text.includes('authentication') ||
+      text.includes('unauthorized') ||
+      text.includes('forbidden') ||
+      text.includes('api error 401') ||
+      text.includes('api error 403') ||
+      text.includes('api error 429') ||
+      text.includes('http 401') ||
+      text.includes('http 403') ||
+      text.includes('http 429')
   }
 }
