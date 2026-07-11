@@ -10,6 +10,7 @@ import { FileReadTool } from '../agent/tools/file-read'
 import { FileWriteTool } from '../agent/tools/file-write'
 import { FileEditTool } from '../agent/tools/file-edit'
 import { BashTool } from '../agent/tools/bash'
+import { BudgetGovernorTool } from '../agent/tools/budget-governor'
 import { GlobTool } from '../agent/tools/glob'
 import { GrepTool } from '../agent/tools/grep'
 import { LSTool } from '../agent/tools/ls'
@@ -316,6 +317,7 @@ function initAgent() {
   registry.register(new WorkflowVerifierTool())
   registry.register(new ProviderRouterTool())
   registry.register(new RecoveryPlannerTool())
+  registry.register(new BudgetGovernorTool())
   registry.register(new RunbookTool())
   registry.register(new ArtifactRegistryTool())
   registry.register(new CapabilityStatusTool(() => registry.capabilities()))
