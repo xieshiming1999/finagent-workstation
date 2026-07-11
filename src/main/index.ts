@@ -28,6 +28,7 @@ import { EnvironmentTool } from '../agent/tools/environment'
 import { InteractionEvidenceTool } from '../agent/tools/interaction-evidence'
 import { WorkflowEvidenceTool } from '../agent/tools/workflow-evidence'
 import { WorkflowVerifierTool } from '../agent/tools/workflow-verifier'
+import { AgentSelfDebugTool } from '../agent/tools/agent-self-debug'
 import { FinanceWorkflowStateTool } from '../agent/tools/finance-workflow-state'
 import { CapabilityStatusTool } from '../agent/tools/capability-status'
 import { ToolCatalogTool } from '../agent/tools/tool-catalog'
@@ -314,6 +315,7 @@ function initAgent() {
   registry.register(new RunbookTool())
   registry.register(new ArtifactRegistryTool())
   registry.register(new CapabilityStatusTool(() => registry.capabilities()))
+  registry.register(new AgentSelfDebugTool(() => registry.capabilities()))
   registry.register(new FinanceWorkflowStateTool())
   // Wire session index for SessionSearchTool
   const sessionsDir = join(basePath, 'sessions')
