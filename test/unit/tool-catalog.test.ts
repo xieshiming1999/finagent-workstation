@@ -24,7 +24,7 @@ describe('ToolCatalogTool', () => {
       expect.objectContaining({
         name: 'ToolCatalog',
         permission: 'read-only',
-        actions: ['detail', 'help', 'list', 'module', 'modules'],
+        actions: ['detail', 'help', 'list', 'module', 'modules', 'providerModules'],
       }),
     ]))
 

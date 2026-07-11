@@ -1,3 +1,4 @@
+import dataApiInterfaces from '../data/data-api-interfaces.json'
 import type { Tool, ToolCapabilitySummary, ToolContext } from '../tool'
 
 export class ToolCatalogTool implements Tool {
@@ -10,8 +11,8 @@ export class ToolCatalogTool implements Tool {
     properties: {
       action: {
         type: 'string',
-        enum: ['help', 'list', 'detail', 'modules', 'module'],
-        description: 'help, list all tool capabilities, detail one tool, list capability modules, or detail one module',
+        enum: ['help', 'list', 'detail', 'modules', 'module', 'providerModules'],
+        description: 'help, list all tool capabilities, detail one tool, list capability modules, detail one module, or summarize provider capability modules',
       },
       tool: { type: 'string', description: 'Tool name for detail action' },
       module: { type: 'string', description: 'Module id for module action' },
@@ -23,6 +24,7 @@ export class ToolCatalogTool implements Tool {
   async call(_id: string, input: Record<string, unknown>, _ctx: ToolContext): Promise<string> {
     const action = String(input.action ?? 'list')
     if (action === 'help') return helpText()
+    if (action === 'providerModules') return JSON.stringify(providerModules())
     if (!['list', 'detail', 'modules', 'module'].includes(action)) {
       throw new Error(`Invalid ToolCatalog action "${action}". Use action="help" for supported actions.`)
     }
@@ -87,9 +89,91 @@ export class ToolCatalogTool implements Tool {
 function helpText(): string {
   return JSON.stringify({
     contract: 'tool-catalog-help-v1',
-    actions: ['list', 'detail', 'modules', 'module'],
+    actions: ['list', 'detail', 'modules', 'module', 'providerModules'],
     guidance: 'Use list/detail for individual tools. Use modules/module to inspect provider modules, cache/permission behavior, health dependencies, and runtime limitations before broad or unfamiliar work.',
   })
+}
+
+function providerModules(): Record<string, unknown> {
+  const byProvider = new Map<string, ProviderModuleAccumulator>()
+  const contract = dataApiInterfaces as DataApiInterfaceContract
+  for (const definition of contract.interfaces ?? []) {
+    for (const capability of definition.capabilities ?? []) {
+      const provider = String(capability.provider ?? '').trim()
+      if (!provider) continue
+      const current = byProvider.get(provider) ?? new ProviderModuleAccumulator(provider)
+      current.add(definition, capability)
+      byProvider.set(provider, current)
+    }
+  }
+  const providers = [...byProvider.values()].map((item) => item.toJson()).sort((a, b) =>
+    String(a.provider).localeCompare(String(b.provider)))
+  return {
+    contract: 'provider-module-matrix-v1',
+    runtime: 'finagent-workstation',
+    source: 'data-api-interfaces.json',
+    version: contract.version,
+    providerCount: providers.length,
+    interfaceCount: contract.interfaces?.length ?? 0,
+    providers,
+    guidance: 'Use this matrix before broad provider calls. Supported/global-only capabilities are reusable only when normalizer, canonical table, readback, and runtime evidence are present. Gated/unstable/disabled/not-supported providers must not be retried as normal workflow.',
+  }
+}
+
+interface DataApiInterfaceContract {
+  version?: string
+  interfaces?: DataApiInterfaceDefinition[]
+}
+
+interface DataApiInterfaceDefinition {
+  id: string
+  canonicalSchema?: string
+  queryActions?: string[]
+  capabilities?: DataApiCapability[]
+}
+
+interface DataApiCapability {
+  provider?: string
+  status?: string
+  probeId?: string
+}
+
+class ProviderModuleAccumulator {
+  readonly interfaces = new Set<string>()
+  readonly schemas = new Set<string>()
+  readonly readbacks = new Set<string>()
+  readonly probes = new Set<string>()
+  readonly statusCounts: Record<string, number> = {}
+  readonly unsupportedExamples: string[] = []
+
+  constructor(readonly provider: string) {}
+
+  add(definition: DataApiInterfaceDefinition, capability: DataApiCapability): void {
+    this.interfaces.add(definition.id)
+    if (definition.canonicalSchema) this.schemas.add(definition.canonicalSchema)
+    for (const action of definition.queryActions ?? []) this.readbacks.add(action)
+    if (capability.probeId) this.probes.add(capability.probeId)
+    const status = capability.status ?? 'unknown'
+    this.statusCounts[status] = (this.statusCounts[status] ?? 0) + 1
+    if (['not-supported', 'disabled', 'transport-unstable'].includes(status) && this.unsupportedExamples.length < 5) {
+      this.unsupportedExamples.push(`${definition.id}:${status}`)
+    }
+  }
+
+  toJson(): Record<string, unknown> {
+    return {
+      provider: this.provider,
+      interfaceCount: this.interfaces.size,
+      schemaCount: this.schemas.size,
+      readbackActionCount: this.readbacks.size,
+      probeCount: this.probes.size,
+      statusCounts: this.statusCounts,
+      sampleInterfaces: [...this.interfaces].slice(0, 8),
+      sampleSchemas: [...this.schemas].slice(0, 8),
+      sampleReadbacks: [...this.readbacks].slice(0, 8),
+      unsupportedExamples: this.unsupportedExamples,
+    }
+  }
 }
 
 interface CapabilityModuleDescriptor {

@@ -68,6 +68,18 @@ describe('agent harness reachability', () => {
       'FinanceWorkflowState',
       'RecoveryPlanner',
     ]))
+
+    const providerModules = JSON.parse(await catalog!.call('catalog-provider-modules', {
+      action: 'providerModules',
+    }, tempContext()))
+    expect(providerModules.contract).toBe('provider-module-matrix-v1')
+    expect(providerModules.runtime).toBe('finagent-workstation')
+    expect(providerModules.providers).toEqual(expect.arrayContaining([
+      expect.objectContaining({
+        provider: 'eastmoney',
+        statusCounts: expect.objectContaining({ supported: expect.any(Number) }),
+      }),
+    ]))
   })
 
   it('lets chat and event agents invoke provider routing and workflow discovery tools', async () => {
