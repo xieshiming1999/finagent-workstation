@@ -58,7 +58,7 @@ export class PageRenderTool implements Tool {
 
       return JSON.stringify({
         ok: true,
-        content: `Page ${page} rendered to ${outputPath} (${width}x${height} pixels, ${(pngBuffer.length / 1024).toFixed(1)}KB). If the active default model has vision enabled, the next provider turn receives this image directly for visual analysis.`,
+        content: `Page ${page} rendered to ${outputPath} (${width}x${height} pixels, ${(pngBuffer.length / 1024).toFixed(1)}KB). For visual analysis, call MultimodalAgent with this image path; the configured vision model may be separate from the default text model.`,
         path: outputPath,
         images: [{
           path: outputPath,

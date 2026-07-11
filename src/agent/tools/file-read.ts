@@ -60,7 +60,7 @@ export class FileReadTool implements Tool {
       ctx.readFileTimestamps.set(filePath, statSync(filePath).mtimeMs)
       return JSON.stringify({
         ok: true,
-        content: `Image read: ${filePath} (${sizeKb}KB, ${mediaType}). If the active default model has vision enabled, the next provider turn receives this image directly for visual analysis.`,
+        content: `Image read: ${filePath} (${sizeKb}KB, ${mediaType}). For visual analysis, call MultimodalAgent with this image path; the configured vision model may be separate from the default text model.`,
         path: filePath,
         basePath: ctx.basePath,
         memoryDir: ctx.memoryDir,

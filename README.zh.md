@@ -54,7 +54,7 @@ agent 执行真实 workflow 前，需要先配置运行时设置。请通过应�
 最小模型设置包括：
 
 - LLM provider、base URL、model 和 API key。
-- 推荐默认使用具备视觉能力的模型，因为常规 agent workflow 可能需要理解 UI、截图、dashboard 或视觉证据。纯文本模型只适合不检查图像的 text-only smoke test 或纯文本 workflow。
+- 推荐配置是：使用强文本模型作为默认 chat model，同时保留一个具备视觉能力的多模态模型。需要检查 UI、截图、dashboard 或视觉证据时，应通过 `MultimodalAgent` 调用视觉模型，而不是要求默认文本模型也具备视觉能力。
 - 当模型 provider 要求时，配置可选的 LLM HTTP user-agent header。
 
 金融数据设置包括：

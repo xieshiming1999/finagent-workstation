@@ -166,7 +166,7 @@ export class WebViewTool implements Tool {
         return JSON.stringify({
           ok: true,
           action: 'screenshot',
-          content: `Screenshot captured from the live open WebView: ${screenshotPath} (${parsed.width}x${parsed.height}, ${(png.length / 1024).toFixed(1)}KB). If the active default model has vision enabled, the next provider turn receives this image directly for visual inspection.`,
+          content: `Screenshot captured from the live open WebView: ${screenshotPath} (${parsed.width}x${parsed.height}, ${(png.length / 1024).toFixed(1)}KB). For visual inspection, call MultimodalAgent with this screenshot path; the configured vision model may be separate from the default text model.`,
           requestedId: panelId,
           resolvedId: targetId,
           screenshotPath,
@@ -180,7 +180,7 @@ export class WebViewTool implements Tool {
           width: parsed.width,
           height: parsed.height,
           sizeKB: Number((png.length / 1024).toFixed(1)),
-          note: 'Screenshot captured from the live open WebView. If the active default model has vision enabled, the next provider turn receives this image directly for visual inspection.',
+          note: 'Screenshot captured from the live open WebView. Use MultimodalAgent for visual inspection when the default text model is not vision-capable.',
         }, null, 2)
       }
 

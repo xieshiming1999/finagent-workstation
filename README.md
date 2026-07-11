@@ -54,7 +54,7 @@ The app needs runtime settings before the agent can run real workflows. Configur
 Minimum model settings:
 
 - LLM provider, base URL, model, and API key.
-- Recommended default: a vision-capable model for normal agent workflows, because UI/screenshot/dashboard and visual evidence workflows may need image understanding. Use a text-only model only for text-only smoke tests or workflows that do not inspect images.
+- Recommended setup: use a strong text model as the default chat model and keep a separate vision-capable provider configured for multimodal work. UI/screenshot/dashboard workflows should call `MultimodalAgent` when visual evidence is required.
 - Optional LLM HTTP user-agent header when the selected provider requires one.
 
 Finance data settings:
