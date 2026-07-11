@@ -76,6 +76,17 @@ validation workflow before spending extraction/browser calls.
 
 ## Workflow
 
+For every market overview answer that cites market, sector, flow, macro, or
+news evidence, include a compact source coverage block. For each cited evidence
+family, state provider/source, source data time (`sourceDataTime`, `timestamp`,
+`asOf`, or provider date), fetched/retrieved time (`fetchedAt` or equivalent),
+cache status when available, and missing evidence. Do not cite a data time
+without the fetched/retrieved time when the tool result exposes both. Finish
+the answer with a `来源覆盖` section containing one bullet per evidence family,
+for example `指数：provider/source；数据时间 ...；获取时间 ...；cache ...` and
+`宏观：status ...；缺失证据 ...`. When a tool result provides
+`sourceCoverageBrief`, reuse that field for the corresponding bullet.
+
 For market-wide money-flow intent, keep the first answer bounded:
 
 1. Use `DataStore(action: "query_flow_rank", limit: 20)`.
