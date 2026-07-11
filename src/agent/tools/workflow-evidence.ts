@@ -15,8 +15,8 @@ export class WorkflowEvidenceTool implements Tool {
     properties: {
       action: {
         type: 'string',
-        enum: ['help', 'summary'],
-        description: 'help or summary',
+        enum: ['help', 'summary', 'trace'],
+        description: 'help, summary, or replayable trace',
       },
       limit: {
         type: 'number',
@@ -28,7 +28,7 @@ export class WorkflowEvidenceTool implements Tool {
   async call(_id: string, input: Record<string, unknown>, ctx: ToolContext): Promise<string> {
     const action = String(input.action ?? 'summary')
     if (action === 'help') return JSON.stringify(help())
-    if (action !== 'summary') {
+    if (action !== 'summary' && action !== 'trace') {
       throw new Error(`Invalid WorkflowEvidence action "${action}". Use action="help" for supported actions.`)
     }
 
@@ -36,6 +36,31 @@ export class WorkflowEvidenceTool implements Tool {
     const pendingInteractions = readPendingInteractionState(ctx)
     const session = readCurrentSession(ctx, limit)
     const artifacts = listArtifacts(ctx, limit)
+    const workflowStates = readWorkflowStates(ctx, limit)
+    const runtimeState = deriveRuntimeState({
+      pendingInteractions,
+      session,
+      uiArtifactCount: Number((artifacts.pages as JsonObject).count ?? 0) +
+        Number((artifacts.dashboards as JsonObject).count ?? 0),
+    })
+    if (action === 'trace') {
+      return JSON.stringify({
+        contract: 'workflow-trace-v1',
+        sources: {
+          session: join(ctx.basePath, 'sessions', 'current.jsonl'),
+          interactionPending: join(ctx.memoryDir || join(ctx.basePath, 'memory'), 'interaction_pending.json'),
+          workflowState: join(ctx.memoryDir || join(ctx.basePath, 'memory'), 'workflows', 'state.json'),
+          artifacts: [
+            join(ctx.basePath, 'memory', 'pages'),
+            join(ctx.basePath, 'memory', 'dashboards'),
+          ],
+        },
+        runtimeState,
+        timeline: traceTimeline(session, pendingInteractions, artifacts, workflowStates, limit),
+        workflowStates,
+        guidance: 'Use this trace to replay the workflow from structured evidence: state, tool calls, pending interactions, UI artifacts, and final answer evidence.',
+      })
+    }
     return JSON.stringify({
       contract: 'workflow-evidence-summary-v1',
       sources: {
@@ -49,12 +74,8 @@ export class WorkflowEvidenceTool implements Tool {
       pendingInteractions,
       session,
       artifacts,
-      runtimeState: deriveRuntimeState({
-        pendingInteractions,
-        session,
-        uiArtifactCount: Number((artifacts.pages as JsonObject).count ?? 0) +
-          Number((artifacts.dashboards as JsonObject).count ?? 0),
-      }),
+      workflowStates,
+      runtimeState,
       guidance: 'Use this summary to verify tool calls, failures, pending human input, and UI artifacts. It is evidence, not a substitute for a full app workflow check.',
     })
   }
@@ -63,10 +84,11 @@ export class WorkflowEvidenceTool implements Tool {
 function help(): JsonObject {
   return {
     contract: 'workflow-evidence-help-v1',
-    actions: ['summary'],
+    actions: ['summary', 'trace'],
     reads: [
       'sessions/current.jsonl',
       'memory/interaction_pending.json',
+      'memory/workflows/state.json',
       'memory/pages',
       'memory/dashboards',
     ],
@@ -188,6 +210,84 @@ function listHtmlFiles(dir: string, limit: number): JsonObject {
     count: files.length,
     recent: files.slice(0, limit),
   }
+}
+
+function readWorkflowStates(ctx: ToolContext, limit: number): JsonObject[] {
+  const file = join(ctx.memoryDir || join(ctx.basePath, 'memory'), 'workflows', 'state.json')
+  if (!existsSync(file)) return []
+  try {
+    const decoded = JSON.parse(readFileSync(file, 'utf8')) as JsonObject
+    if (!Array.isArray(decoded.records)) return []
+    return decoded.records
+      .filter((item): item is JsonObject => Boolean(item) && typeof item === 'object' && !Array.isArray(item))
+      .slice(0, limit)
+  } catch {
+    return []
+  }
+}
+
+function traceTimeline(
+  session: JsonObject,
+  pendingInteractions: JsonObject[],
+  artifacts: JsonObject,
+  workflowStates: JsonObject[],
+  limit: number,
+): JsonObject[] {
+  const events: JsonObject[] = []
+  for (const state of workflowStates) {
+    const workflowState = state.workflowState && typeof state.workflowState === 'object' && !Array.isArray(state.workflowState)
+      ? state.workflowState as JsonObject
+      : {}
+    events.push({
+      type: 'workflow_state',
+      timestamp: state.updatedAt,
+      status: state.status,
+      workflowKind: workflowState.workflowKind,
+      subject: workflowState.subject,
+      id: state.id,
+    })
+  }
+  for (const item of Array.isArray(session.recent) ? session.recent : []) {
+    if (!item || typeof item !== 'object' || Array.isArray(item)) continue
+    const row = item as JsonObject
+    events.push({
+      type: 'session_message',
+      timestamp: row.timestamp,
+      role: row.role,
+      ...(row.toolUses ? { toolUses: row.toolUses } : {}),
+      ...(row.toolResult ? { toolResult: row.toolResult } : {}),
+      ...(row.content ? { content: row.content } : {}),
+    })
+  }
+  for (const item of pendingInteractions) {
+    events.push({
+      timestamp: item.updatedAt,
+      pendingType: item.type,
+      ...item,
+      type: 'pending_interaction',
+    })
+  }
+  for (const group of ['pages', 'dashboards']) {
+    const artifactGroup = artifacts[group]
+    const recent = artifactGroup && typeof artifactGroup === 'object' && !Array.isArray(artifactGroup)
+      ? (artifactGroup as JsonObject).recent
+      : []
+    if (!Array.isArray(recent)) continue
+    for (const item of recent) {
+      if (!item || typeof item !== 'object' || Array.isArray(item)) continue
+      const row = item as JsonObject
+      events.push({
+        type: 'ui_artifact',
+        artifactKind: group,
+        timestamp: row.updatedAt,
+        path: row.path,
+        sizeBytes: row.sizeBytes,
+      })
+    }
+  }
+  return events
+    .sort((a, b) => String(a.timestamp ?? '').localeCompare(String(b.timestamp ?? '')))
+    .slice(-limit)
 }
 
 function compactValue(value: unknown): unknown {
