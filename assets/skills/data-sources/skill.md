@@ -53,6 +53,23 @@ runtime-blocked, schema-contract, schema-mismatch, and explicit do-not-retry
 rows stay in `blockedTargets` until the root cause changes or the user
 deliberately passes bounded `probeIds`.
 
+When the user asks how to recover from a行情, macro, data-source, or provider
+failure, do not answer only from this static guidance. Inspect current runtime
+evidence first:
+
+```json
+DataStore(action: "data_health", section: "failures", limit: 10)
+DataStore(action: "query_api_calls", minutes: 120, limit: 10)
+```
+
+Then summarize the actual failure classes, missing evidence, cache/readback
+fallback, and next bounded retry or no-retry decision. If there are no recent
+failures, state that the recovery policy is being described from contract
+evidence rather than a live failure row.
+For provider failure recovery, answer from the health and API-call evidence
+directly. Do not inspect or rewrite dashboard/page files unless the user asks
+for a dashboard, report artifact, or file update.
+
 For external web evidence, `Research` is the tool name, not the search engine.
 Use `Research(action:"providers")` to inspect search engines/news sources, then
 `Research(action:"search", provider:"brave|tavily")` only when governed

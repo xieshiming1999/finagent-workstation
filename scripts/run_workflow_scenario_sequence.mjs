@@ -52,6 +52,7 @@ for (const originalScenario of selected) {
           maxDataToolCalls: turn.maxDataToolCalls,
           timeoutMs: turn.timeoutMs,
           disallowRawHtml: turn.disallowRawHtml,
+          allowedTools: turn.allowedTools,
           disallowTools: turn.disallowTools,
           expectTools: turn.expectTools,
           expectToolActions: turn.expectToolActions,
@@ -78,6 +79,7 @@ for (const originalScenario of selected) {
     maxDataToolCalls: scenario.maxDataToolCalls,
     timeoutMs: scenario.timeoutMs,
     disallowRawHtml: scenario.disallowRawHtml,
+    allowedTools: scenario.allowedTools,
     disallowTools: scenario.disallowTools,
   };
   console.log(`Running ${scenario.id} through http://127.0.0.1:${port}/workflow/scenario_sequence`);
