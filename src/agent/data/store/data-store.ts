@@ -455,7 +455,7 @@ export class DataStore {
   saveCalendar(rows: Array<Record<string, unknown>>): void {
     marketStore.saveCalendar(this, rows)
   }
-  queryCalendar(opts: { market?: string; start?: string; end?: string; limit?: number } = {}): Array<Record<string, unknown>> {
+  queryCalendar(opts: { market?: string; start?: string; end?: string; limit?: number; order?: 'asc' | 'desc' } = {}): Array<Record<string, unknown>> {
     return marketStore.queryCalendar(this, opts)
   }
   saveFinanceNews(rows: Array<Record<string, unknown>>): void {

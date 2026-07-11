@@ -4,6 +4,7 @@ import { join } from 'path'
 import { tmpdir } from 'os'
 import { DataStore } from '../../src/agent/data/store/data-store'
 import { closeDb } from '../../src/agent/data/store/db'
+import { queryTradeCalendar } from '../../src/agent/tools/data-store-tool-query-core-funds'
 
 describe('DataStore calendar persistence', () => {
   let basePath = ''
@@ -35,5 +36,33 @@ describe('DataStore calendar persistence', () => {
       latest_date: '2026-06-13',
       row_count: 2,
     })
+  })
+
+  it('exposes full calendar coverage separately from a limited default page', () => {
+    const rows: Array<Record<string, unknown>> = []
+    let date = new Date('2026-01-05T00:00:00Z')
+    while (date <= new Date('2026-12-31T00:00:00Z')) {
+      const yyyyMmDd = date.toISOString().slice(0, 10)
+      rows.push({
+        date: yyyyMmDd,
+        market: 'CN',
+        is_trading_day: date.getUTCDay() === 0 || date.getUTCDay() === 6 ? 0 : 1,
+        year: 2026,
+        month: date.getUTCMonth() + 1,
+      })
+      date = new Date(date.getTime() + 24 * 60 * 60 * 1000)
+    }
+    store.saveCalendar(rows)
+
+    const summary = queryTradeCalendar(store, { market: 'CN', limit: 100 })
+    expect(summary).toContain('coverage:2026-01-05..2026-12-31')
+    expect(summary).toContain(`coverageRows:${rows.length}`)
+    expect(summary).toContain('pageRows:100')
+    expect(summary).toContain('asOf:2026-12-31')
+    expect(summary).not.toContain('asOf:2026-04-')
+
+    const exact = queryTradeCalendar(store, { market: 'CN', date: '2026-07-10' })
+    expect(exact).toContain('2026-07-10 CN open')
+    expect(exact).toContain('coverage:2026-01-05..2026-12-31')
   })
 })

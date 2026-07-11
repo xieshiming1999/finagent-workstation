@@ -522,14 +522,15 @@ export function saveCalendar(store: StoreDeps, rows: Row[]): void {
 
 export function queryCalendar(
   store: StoreDeps,
-  opts: { market?: string; start?: string; end?: string; limit?: number } = {},
+  opts: { market?: string; start?: string; end?: string; limit?: number; order?: 'asc' | 'desc' } = {},
 ): Row[] {
   let sql = 'SELECT * FROM trade_calendar WHERE 1=1'
   const params: unknown[] = []
   if (opts.market) { sql += ' AND market = ?'; params.push(String(opts.market).toUpperCase()) }
   if (opts.start) { sql += ' AND date >= ?'; params.push(opts.start) }
   if (opts.end) { sql += ' AND date <= ?'; params.push(opts.end) }
-  return store.query(`${sql} ORDER BY date ASC LIMIT ?`, ...params, opts.limit ?? 100)
+  const order = opts.order === 'desc' ? 'DESC' : 'ASC'
+  return store.query(`${sql} ORDER BY date ${order} LIMIT ?`, ...params, opts.limit ?? 100)
 }
 
 export function saveFinanceNews(store: StoreDeps, rows: Row[]): void {

@@ -96,6 +96,10 @@ export type ReadbackProvenance = {
   sourceProviders?: string[]
   marketScope?: string[]
   globalOnly?: boolean
+  coverageStart?: string | null
+  coverageEnd?: string | null
+  coverageRows?: number | string | null
+  pageRows?: number | string | null
   asOf?: string | null
   fetchedAt?: string | null
 }
@@ -118,6 +122,11 @@ export function readbackTitle(title: string, provenance?: ReadbackProvenance): s
     provenance.sourceProviders?.length ? `sourceProviders:${provenance.sourceProviders.join(',')}` : null,
     provenance.globalOnly === true ? 'globalOnly:true' : null,
     provenance.marketScope?.length ? `marketScope:${provenance.marketScope.join(',')}` : null,
+    provenance.coverageStart || provenance.coverageEnd
+      ? `coverage:${provenance.coverageStart ?? '-'}..${provenance.coverageEnd ?? '-'}`
+      : null,
+    provenance.coverageRows != null ? `coverageRows:${provenance.coverageRows}` : null,
+    provenance.pageRows != null ? `pageRows:${provenance.pageRows}` : null,
     provenance.asOf ? `asOf:${provenance.asOf}` : null,
     provenance.fetchedAt ? `fetchedAt:${provenance.fetchedAt}` : null,
   ].filter(Boolean)

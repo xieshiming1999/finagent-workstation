@@ -220,43 +220,57 @@ export function queryTradeCalendar(
   input: Record<string, unknown>,
 ): string {
   const market = typeof input.market === "string" ? input.market : undefined;
+  const date = typeof input.date === "string" ? input.date : undefined;
   const start =
-    typeof input.start === "string"
+    date ??
+    (typeof input.start === "string"
       ? input.start
       : typeof input.startDate === "string"
         ? input.startDate
-        : undefined;
+        : undefined);
   const end =
-    typeof input.end === "string"
+    date ??
+    (typeof input.end === "string"
       ? input.end
       : typeof input.endDate === "string"
         ? input.endDate
-        : undefined;
+        : undefined);
+  const defaultMarket = market?.toUpperCase() ?? "CN";
+  const coverage = ds
+    .getAllCoverage("calendar")
+    .find((row) => String(row.code ?? "").toUpperCase() === defaultMarket);
   const rows = ds.queryCalendar({
     market,
     start,
     end,
     limit: Number(input.limit ?? 100),
+    order: start || end ? "asc" : "desc",
   });
   if (rows.length === 0)
     return "No trade calendar rows. Persist trade_cal first.";
   const rowMaps = rows as unknown as Array<Record<string, unknown>>;
+  const renderedRows = start || end ? rowMaps : [...rowMaps].reverse();
+  const provenance = readbackProvenanceFromRows(
+    "calendar.trade_days",
+    "trade_calendar",
+    "trade_calendar",
+    "query_trade_calendar",
+    rowMaps,
+    {
+      asOfKeys: ["date"],
+      fetchedAtKeys: ["fetched_at", "updated_at"],
+    },
+  );
+  provenance.coverageStart = coverage?.earliest_date ?? null;
+  provenance.coverageEnd = coverage?.latest_date ?? null;
+  provenance.coverageRows = coverage?.row_count ?? null;
+  provenance.pageRows = rowMaps.length;
   return formatRows(
     "trade_calendar",
-    rowMaps,
+    renderedRows,
     (r) =>
       `${r.date} ${r.market ?? "-"} ${Number(r.is_trading_day) === 1 ? "open" : "closed"}`,
-    readbackProvenanceFromRows(
-      "calendar.trade_days",
-      "trade_calendar",
-      "trade_calendar",
-      "query_trade_calendar",
-      rowMaps,
-      {
-        asOfKeys: ["date"],
-        fetchedAtKeys: ["fetched_at", "updated_at"],
-      },
-    ),
+    provenance,
   );
 }
 
