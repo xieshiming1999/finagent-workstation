@@ -340,20 +340,21 @@ export function maybeBuildCustomStrategySaveRunBoundaryAnswer(messages: Message[
       stringOrNull(latestSave?.strategyId) ??
       stringOrNull(spec.id) ??
       '-'
+    const resolvedSaveStatus = saveStatus ?? (stringOrNull(latestRun.strategyId) ? 'saved strategy readback' : '-')
     return [
       '## 策略保存与重跑完成',
       '',
       '已通过结构化策略记录完成保存，并使用 `custom_strategy_run` 按 strategyId 重新执行。系统已停止追加 provider、脚本、文件、监控或交易工具调用。',
       '',
       `- strategyId：${strategyId}。`,
-      `- 保存状态：${saveStatus ?? '-'}。`,
+      `- 保存状态：${resolvedSaveStatus}。`,
       `- 重跑状态：${stringOrNull(latestRun.status) ?? '-'}。`,
       `- 标的：${stringOrNull(latestRun.code) ?? stringOrNull(latestRun.symbol) ?? '-'}。`,
       `- 数据覆盖：${strategyDataCoverageSummary(latestRun)}。`,
       `- 交易次数：${String(metrics.tradeCount ?? latestRun.tradeCount ?? '-')}。`,
-      `- 总收益：${String(metrics.totalReturn ?? '-')}。`,
-      `- 最大回撤：${String(metrics.maxDrawdown ?? '-')}。`,
-      `- 胜率：${String(metrics.winRate ?? '-')}。`,
+      `- 总收益率：${String(metrics.totalReturnPct ?? metrics.totalReturn ?? latestRun.totalReturn ?? '-')}%。`,
+      `- 最大回撤：${String(metrics.maxDrawdownPct ?? metrics.maxDrawdown ?? latestRun.maxDrawdown ?? '-')}%。`,
+      `- 胜率：${String(metrics.winRatePct ?? metrics.winRate ?? latestRun.winRate ?? '-')}%。`,
       '',
       '结论：该策略已经具备可复用策略记录、验证/回测证据和按 strategyId 重跑路径。后续可在 Strategy Library 中查看，或在新的用户请求中用于更多标的比较、观察池和监控工作流。',
     ].join('\n')

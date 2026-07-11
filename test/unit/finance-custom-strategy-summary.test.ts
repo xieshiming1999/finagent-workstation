@@ -303,6 +303,9 @@ describe('finance custom strategy summaries', () => {
     expect(answer).toContain('strategyId：custom_ema_v1')
     expect(answer).toContain('标的：000858')
     expect(answer).toContain('数据覆盖')
+    expect(answer).toContain('总收益率：4%')
+    expect(answer).toContain('最大回撤：8%')
+    expect(answer).toContain('胜率：50%')
   })
 
   it('stops repeated custom_strategy_save from structured save evidence without prompt parsing', () => {
@@ -347,6 +350,8 @@ describe('finance custom strategy summaries', () => {
     expect(answer).toContain('策略保存与重跑完成')
     expect(answer).toContain('strategyId：custom_ema_v1')
     expect(answer).toContain('标的：000858')
+    expect(answer).toContain('保存状态：saved strategy readback')
+    expect(answer).toContain('总收益率：4%')
   })
 
   it('does not close a natural-language save-rerun turn after save only', () => {
