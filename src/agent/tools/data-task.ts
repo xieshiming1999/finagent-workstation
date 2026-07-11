@@ -9,7 +9,7 @@ export class DataTaskTool implements Tool {
   inputSchema = {
     type: 'object',
     properties: {
-      action: { type: 'string', enum: ['submit', 'status', 'result', 'cancel', 'list'], description: 'Task action' },
+      action: { type: 'string', enum: ['help', 'submit', 'status', 'result', 'cancel', 'list'], description: 'Task action' },
       type: { type: 'string', description: 'Alias for taskType. Task type: screen_advanced, batch_quote, batch_score' },
       taskType: { type: 'string', description: 'Task type: screen_advanced, batch_quote, batch_score' },
       params: { type: 'object', description: 'Task parameters' },
@@ -26,16 +26,19 @@ export class DataTaskTool implements Tool {
   constructor(private engine: DataTaskEngine | null = null) {}
 
   validateInput(input: Record<string, unknown>): string | null {
-    if (!input.action) return 'action is required. Available: submit, status, result, cancel, list'
+    if (!input.action) return 'action is required. Available: help, submit, status, result, cancel, list'
     return null
   }
 
   async call(_id: string, input: Record<string, unknown>): Promise<string> {
+    const action = String(input.action)
+    if (action === 'help') {
+      return dataTaskHelp()
+    }
     if (!this.engine) {
       return toolError('DataTask engine not configured. Use DataStore(action:"fetch") for persisted fetch queue operations.')
     }
 
-    const action = String(input.action)
     switch (action) {
       case 'submit': {
         const taskType = String(input.taskType ?? input.type ?? '')
@@ -145,6 +148,25 @@ export class DataTaskTool implements Tool {
     const task = this.engine.get(taskId)
     return toolError(`DataTask ${taskId} did not complete within ${timeoutMs}ms. Current status: ${task?.status ?? 'unknown'}, progress: ${task?.progress ?? 'unknown'}. The task may still be running; use DataTask(action:"status", taskId:"${taskId}") and DataTask(action:"result", taskId:"${taskId}") later.`)
   }
+}
+
+function dataTaskHelp(): string {
+  return JSON.stringify({
+    contract: 'data-task-help-v1',
+    actions: ['submit', 'status', 'result', 'cancel', 'list'],
+    taskTypes: ['screen_advanced', 'batch_quote', 'batch_score'],
+    guidance: [
+      'Use submit with block:true or omitted when the workflow needs the result immediately.',
+      'Use submit with block:false only for intentional background work, then poll status and result by taskId.',
+      'Use list to inspect active or recent tasks before submitting duplicates.',
+      'Use cancel only for a taskId that is pending or running.',
+    ],
+    examples: [
+      { action: 'submit', taskType: 'batch_quote', codes: ['600519'], block: true },
+      { action: 'status', taskId: '<taskId>' },
+      { action: 'result', taskId: '<taskId>' },
+    ],
+  }, null, 2)
 }
 
 function normalizeTimeout(raw: unknown): number {

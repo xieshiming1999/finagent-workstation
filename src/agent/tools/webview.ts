@@ -17,7 +17,7 @@ export class WebViewTool implements Tool {
     properties: {
       action: {
         type: 'string',
-        enum: ['open', 'navigate', 'extract', 'execute', 'screenshot', 'cookies', 'dom', 'click', 'input', 'scroll', 'wait_for', 'back', 'forward', 'reload', 'get_info', 'get_html', 'list', 'locate', 'refresh'],
+        enum: ['help', 'open', 'navigate', 'extract', 'execute', 'screenshot', 'cookies', 'dom', 'click', 'input', 'scroll', 'wait_for', 'back', 'forward', 'reload', 'get_info', 'get_html', 'list', 'locate', 'refresh'],
         description: 'Action to perform. list/locate/refresh manage panels; others interact with content.',
       },
       id: { type: 'string', description: 'WebView panel ID (e.g., "eastmoney", "xueqiu")' },
@@ -30,7 +30,7 @@ export class WebViewTool implements Tool {
       y: { type: 'number', description: 'Vertical scroll amount or position' },
       timeout: { type: 'number', description: 'Timeout in ms (for wait_for, default 5000)' },
     },
-    required: ['action', 'id'],
+    required: ['action'],
   }
 
   private emitEvent: EventEmitter | null = null
@@ -44,6 +44,7 @@ export class WebViewTool implements Tool {
   validateInput(input: Record<string, unknown>): string | null {
     const action = input.action as string
     if (!action) return 'action is required.'
+    if (action === 'help') return null
     if (!input.id) return 'id is required. WebView panel ID.'
 
     switch (action) {
@@ -70,6 +71,7 @@ export class WebViewTool implements Tool {
 
   async call(_id: string, input: Record<string, unknown>, ctx: ToolContext): Promise<string> {
     const action = String(input.action)
+    if (action === 'help') return webViewHelp()
     const panelId = String(input.id)
     const url = input.url ? String(input.url) : undefined
     const script = input.script ? String(input.script) : undefined
@@ -477,6 +479,34 @@ export class WebViewTool implements Tool {
       note: 'Live renderer verification timed out, but the dashboard HTML artifact exists and was inspected through the WebView tool fallback. Retry live WebView get_info/screenshot later if visual DOM evidence is required.',
     }, null, 2)
   }
+}
+
+function webViewHelp(): string {
+  return JSON.stringify({
+    contract: 'webview-help-v1',
+    actions: {
+      discovery: ['help', 'list', 'locate', 'get_info', 'get_html'],
+      navigation: ['open', 'navigate', 'back', 'forward', 'reload', 'refresh'],
+      interaction: ['click', 'input', 'scroll', 'wait_for'],
+      extraction: ['extract', 'execute', 'dom', 'cookies', 'screenshot'],
+    },
+    requiredFields: {
+      open: ['id', 'url'],
+      navigate: ['id', 'url'],
+      execute: ['id', 'script'],
+      click: ['id', 'selector'],
+      input: ['id', 'selector', 'text'],
+      wait_for: ['id', 'selector'],
+      screenshot: ['id'],
+      list: ['id: any'],
+    },
+    guidance: [
+      'Use list before assuming a panel exists.',
+      'Use get_info or wait_for before screenshot when page readiness matters.',
+      'Use screenshot plus MultimodalAgent for visual verification.',
+      'Use refresh only for file-backed pages; reload is native browser reload.',
+    ],
+  }, null, 2)
 }
 
 function parseCaptureResult(raw: string): { dataUrl: string; width: number | null; height: number | null } {

@@ -34,6 +34,18 @@ function makeCtx(basePath: string): ToolContext {
 }
 
 describe('sync tool contracts', () => {
+  it('WebView help is available without an existing panel id', async () => {
+    const tool = new WebViewTool()
+
+    const result = JSON.parse(await tool.call('wv-help', {
+      action: 'help',
+    }, makeCtx(mkdtempSync(join(tmpdir(), 'fin-webview-help-')))))
+
+    expect(result.contract).toBe('webview-help-v1')
+    expect(result.actions.discovery).toContain('list')
+    expect(result.requiredFields.open).toContain('url')
+  })
+
   it('WebView open observes renderer panel state before reporting success', async () => {
     const tool = new WebViewTool()
     const events: Record<string, unknown>[] = []
@@ -541,6 +553,16 @@ describe('sync tool contracts', () => {
     expect(properties.taskType.description).toContain('screen_advanced')
     expect(properties.taskType.description).not.toContain('Task type: screen,')
     expect(properties.conditions.description).toContain('screen_advanced')
+  })
+
+  it('DataTask help is available before engine configuration', async () => {
+    const tool = new DataTaskTool(null)
+
+    const result = JSON.parse(await tool.call('dt-help', { action: 'help' }))
+
+    expect(result.contract).toBe('data-task-help-v1')
+    expect(result.actions).toContain('submit')
+    expect(result.taskTypes).toContain('screen_advanced')
   })
 
   it('DataStore fetch blocks by default until fetch task is done', async () => {
