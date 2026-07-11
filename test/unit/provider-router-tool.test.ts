@@ -76,11 +76,27 @@ describe('ProviderRouterTool', () => {
       runtimeEnabled: true,
       runtimeRows: 1,
       manualRows: 0,
+      contractRows: 0,
     })
     expect(result.providerHealth).toEqual(expect.arrayContaining([
       expect.objectContaining({
         provider: 'tdx',
         reason: expect.stringContaining('runtime_unavailable'),
+      }),
+    ]))
+  })
+
+  it('merges data API contract probe health', async () => {
+    const result = JSON.parse(await new ProviderRouterTool(() => []).call('router-contract-health', {
+      action: 'route',
+      task: 'fund',
+    }, tempToolContext()))
+
+    expect(result.providerHealthSource.contractRows).toBeGreaterThan(0)
+    expect(result.providerHealth).toEqual(expect.arrayContaining([
+      expect.objectContaining({
+        provider: 'tushare',
+        reason: expect.stringContaining('contract'),
       }),
     ]))
   })

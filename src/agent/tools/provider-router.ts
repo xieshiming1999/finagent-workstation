@@ -6,6 +6,7 @@ import {
   type FinanceProvider,
   type ProviderGates,
 } from '../data/provider-policy'
+import dataApiInterfaces from '../data/data-api-interfaces.json'
 import { globalApiStats, type ApiCallRecord } from '../data/resilience'
 import type { Tool, ToolContext } from '../tool'
 
@@ -118,7 +119,7 @@ function route(
   runtimeHealthProvider: ProviderHealthProvider,
 ): Record<string, unknown> {
   const gates = gatesFromInput(input)
-  const healthRows = combinedHealthRows(input, runtimeHealthProvider)
+  const healthRows = combinedHealthRows(task, input, runtimeHealthProvider)
   const healthBlocks = healthBlocksFromRows(healthRows)
   const effectiveGates = {
     ...gates,
@@ -158,6 +159,7 @@ function route(
 }
 
 function combinedHealthRows(
+  task: FinanceDataTask,
   input: Record<string, unknown>,
   runtimeHealthProvider: ProviderHealthProvider,
 ): Array<Record<string, unknown>> {
@@ -166,7 +168,7 @@ function combinedHealthRows(
       !!row && typeof row === 'object' && !Array.isArray(row))
     : []
   if (input.includeRuntimeHealth === false) return [...rows]
-  return [...rows, ...runtimeHealthProvider()]
+  return [...rows, ...contractProviderHealthRows(task), ...runtimeHealthProvider()]
 }
 
 function healthBlocksFromRows(rows: Array<Record<string, unknown>>): Partial<Record<FinanceProvider, string>> {
@@ -214,6 +216,84 @@ export function runtimeProviderHealthRows(records: ApiCallRecord[] = globalApiSt
   })
 }
 
+export function contractProviderHealthRows(task: FinanceDataTask): Array<Record<string, unknown>> {
+  const interfaceIds = taskInterfaceIds(task)
+  if (interfaceIds.length === 0) return []
+  const contract = dataApiInterfaces as DataApiInterfaceContract
+  const byId = new Map((contract.interfaces ?? []).map((item) => [item.id, item]))
+  const rows: Array<Record<string, unknown>> = []
+  for (const interfaceId of interfaceIds) {
+    const definition = byId.get(interfaceId)
+    if (!definition) continue
+    for (const capability of definition.capabilities ?? []) {
+      const status = contractBlockingStatus(capability.status)
+      if (!status) continue
+      rows.push({
+        provider: capability.provider,
+        status,
+        reason: `contract ${status}: ${capability.id} for ${definition.id}${capability.probeId ? ` probe=${capability.probeId}` : ''}${capability.reason ? ` (${capability.reason})` : ''}`,
+        source: 'dataApiInterfaceContract',
+        interfaceId: definition.id,
+        capabilityId: capability.id,
+        probeId: capability.probeId,
+      })
+    }
+  }
+  return rows
+}
+
+function contractBlockingStatus(status: string | undefined): string | null {
+  if (status === 'disabled') return 'blocked'
+  if (status === 'transport-unstable') return 'transport_unstable'
+  return null
+}
+
+function taskInterfaceIds(task: FinanceDataTask): string[] {
+  switch (task) {
+    case 'quote':
+      return ['stock.quote']
+    case 'indexQuote':
+      return ['index.quote']
+    case 'kline':
+      return ['stock.daily_kline']
+    case 'indexKline':
+      return ['index.daily_kline']
+    case 'intradayTick':
+      return ['stock.tick_chart_intraday', 'stock.transactions']
+    case 'sector':
+      return ['market.sector_ranking']
+    case 'limitPool':
+      return ['market.limit_pool']
+    case 'dragonTiger':
+      return ['market.dragon_tiger']
+    case 'fundamental':
+      return ['stock.daily_valuation', 'stock.company_info']
+    case 'macro':
+      return ['wind.economic_series']
+    case 'fund':
+      return ['fund.identity_list', 'fund.nav_history']
+    case 'moneyFlow':
+      return ['stock.money_flow', 'market.flow_rank']
+  }
+}
+
+interface DataApiInterfaceContract {
+  interfaces?: DataApiInterfaceDefinition[]
+}
+
+interface DataApiInterfaceDefinition {
+  id: string
+  capabilities?: DataApiCapability[]
+}
+
+interface DataApiCapability {
+  id?: string
+  provider?: string
+  status?: string
+  probeId?: string
+  reason?: string
+}
+
 function runtimeHealthStatus(records: ApiCallRecord[], failures: ApiCallRecord[]): string {
   if (failures.length <= 0) return 'ready'
   const successes = records.length - failures.length
@@ -228,6 +308,7 @@ function providerHealthSource(input: Record<string, unknown>, rows: Array<Record
     runtimeRows: input.includeRuntimeHealth === false
       ? 0
       : rows.length - (Array.isArray(input.providerHealth) ? input.providerHealth.length : 0),
+    contractRows: rows.filter((row) => row.source === 'dataApiInterfaceContract').length,
     runtimeEnabled: input.includeRuntimeHealth !== false,
   }
 }
