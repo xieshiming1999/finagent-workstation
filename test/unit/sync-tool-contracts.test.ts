@@ -681,6 +681,57 @@ describe('sync tool contracts', () => {
     })
   })
 
+  it('TaskOutput validates expected output contract and evidence', async () => {
+    const basePath = mkdtempSync(join(tmpdir(), 'fin-task-output-validation-'))
+    const ctx = makeCtx(basePath)
+    ctx.taskRegistry.configure(join(basePath, 'memory'))
+    const task = ctx.taskRegistry.register({
+      description: 'research',
+      prompt: 'inspect',
+      isBackgrounded: true,
+    })
+    ctx.taskRegistry.updateStatus(task.id, 'completed', {
+      result: JSON.stringify({
+        contract: 'task-analysis-v1',
+        evidenceRefs: ['quote', 'macro'],
+        summary: 'done',
+      }),
+    })
+
+    const result = JSON.parse(await new TaskOutputTool().call('to1', {
+      task_id: task.id,
+      block: false,
+      expectedContract: 'task-analysis-v1',
+      requiredEvidence: ['quote', 'macro'],
+    }, ctx))
+
+    expect(result.retrieval_status).toBe('success')
+  })
+
+  it('TaskOutput fails validation for missing required evidence', async () => {
+    const basePath = mkdtempSync(join(tmpdir(), 'fin-task-output-validation-missing-'))
+    const ctx = makeCtx(basePath)
+    ctx.taskRegistry.configure(join(basePath, 'memory'))
+    const task = ctx.taskRegistry.register({
+      description: 'research',
+      prompt: 'inspect',
+      isBackgrounded: true,
+    })
+    ctx.taskRegistry.updateStatus(task.id, 'completed', {
+      result: JSON.stringify({
+        contract: 'task-analysis-v1',
+        evidenceRefs: ['quote'],
+      }),
+    })
+
+    await expect(new TaskOutputTool().call('to1', {
+      task_id: task.id,
+      block: false,
+      expectedContract: 'task-analysis-v1',
+      requiredEvidence: ['quote', 'macro'],
+    }, ctx)).rejects.toThrow('validation_failed')
+  })
+
   it('TaskOutput throws tool errors for failed background tasks', async () => {
     const basePath = mkdtempSync(join(tmpdir(), 'fin-task-output-failed-'))
     const ctx = makeCtx(basePath)

@@ -140,6 +140,12 @@ export class TaskOutputTool implements Tool {
       task_id: { type: 'string', description: 'Task ID to get output from' },
       block: { type: 'boolean', description: 'Wait for completion (default true)' },
       timeout: { type: 'number', description: 'Max wait time in ms (default 30000, max 600000)' },
+      expectedContract: { type: 'string', description: 'Optional JSON contract value required in completed task output.' },
+      requiredEvidence: {
+        type: 'array',
+        items: { type: 'string' },
+        description: 'Optional evidence keys that must appear in structured completed task output.',
+      },
     },
     required: ['task_id'],
   }
@@ -200,17 +206,95 @@ export class TaskOutputTool implements Tool {
       return toolError(`Task ${taskId} ${task.status}: ${task.error ?? ctx.taskRegistry.readOutput(taskId) ?? 'no error detail available'}`)
     }
 
+    const output = ctx.taskRegistry.readOutput(taskId)
+    const validation = validateTaskOutput(output, {
+      expectedContract: optionalString(input.expectedContract),
+      requiredEvidence: stringList(input.requiredEvidence),
+    })
+    if (validation) {
+      return toolError(JSON.stringify({
+        retrieval_status: 'validation_failed',
+        task_id: taskId,
+        status: task.status,
+        ownership: taskOwnership(task),
+        outputValidation: validation,
+      }))
+    }
+
     return JSON.stringify({
       retrieval_status: 'success',
       task_id: taskId,
       status: task.status,
       ownership: taskOwnership(task),
-      ...(ctx.taskRegistry.readOutput(taskId) ? { result: ctx.taskRegistry.readOutput(taskId) } : {}),
+      ...(output ? { result: output } : {}),
       ...(task.error ? { error: task.error } : {}),
       toolUseCount: task.toolUseCount,
       estimatedTokens: task.estimatedTokens,
     })
   }
+}
+
+function validateTaskOutput(
+  output: unknown,
+  opts: { expectedContract?: string, requiredEvidence: string[] },
+): Record<string, unknown> | null {
+  if (!opts.expectedContract && opts.requiredEvidence.length === 0) return null
+  const decoded = jsonObject(output)
+  if (!decoded) {
+    return {
+      ok: false,
+      reason: 'Task output is not structured JSON; cannot validate expectedContract or requiredEvidence.',
+      ...(opts.expectedContract ? { expectedContract: opts.expectedContract } : {}),
+      ...(opts.requiredEvidence.length ? { requiredEvidence: opts.requiredEvidence } : {}),
+    }
+  }
+  if (opts.expectedContract && decoded.contract !== opts.expectedContract) {
+    return {
+      ok: false,
+      reason: 'Task output contract did not match expectedContract.',
+      expectedContract: opts.expectedContract,
+      actualContract: decoded.contract,
+    }
+  }
+  const missing = opts.requiredEvidence.filter((key) => !containsEvidence(decoded, key))
+  if (missing.length > 0) {
+    return {
+      ok: false,
+      reason: 'Task output is missing required evidence.',
+      missingEvidence: missing,
+    }
+  }
+  return null
+}
+
+function jsonObject(value: unknown): Record<string, unknown> | null {
+  try {
+    const decoded = typeof value === 'string' ? JSON.parse(value) : value
+    return decoded && typeof decoded === 'object' && !Array.isArray(decoded)
+      ? decoded as Record<string, unknown>
+      : null
+  } catch {
+    return null
+  }
+}
+
+function containsEvidence(output: Record<string, unknown>, key: string): boolean {
+  const refs = output.evidenceRefs
+  if (Array.isArray(refs) && refs.map(String).includes(key)) return true
+  const evidence = output.evidence
+  if (evidence && typeof evidence === 'object' && !Array.isArray(evidence) && key in evidence) return true
+  const provenance = output.provenance
+  return Boolean(provenance && typeof provenance === 'object' && !Array.isArray(provenance) && key in provenance)
+}
+
+function optionalString(value: unknown): string | undefined {
+  const text = String(value ?? '').trim()
+  return text || undefined
+}
+
+function stringList(value: unknown): string[] {
+  if (!Array.isArray(value)) return []
+  return value.map((item) => String(item ?? '').trim()).filter(Boolean)
 }
 
 function taskOwnership(task: BackgroundTask): Record<string, unknown> {
