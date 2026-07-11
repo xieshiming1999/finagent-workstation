@@ -1,14 +1,21 @@
 import { describe, expect, it } from 'vitest'
 import { execFileSync } from 'child_process'
-import { readFileSync } from 'fs'
+import { existsSync, readFileSync } from 'fs'
 import { join } from 'path'
 import { listDataApiInterfaces } from '../../src/agent/data/data-api-interface-contract'
 import { OUTPUT_ONLY_INTERFACES } from '../../src/agent/data/output-only-interfaces'
 
-const repoRoot = join(process.cwd(), '..')
+const repoRoot = process.cwd()
+const workspaceRoot = join(repoRoot, '..')
+
+function sourcePath(relativePath: string): string {
+  const localPath = join(repoRoot, relativePath)
+  if (existsSync(localPath)) return localPath
+  return join(workspaceRoot, relativePath)
+}
 
 const normalSkillPaths = [
-  'finagent_workstation/assets/skills/fund/skill.md',
+  'assets/skills/fund/skill.md',
   'finagent/assets/finance/skills/fund/skill.md',
   'finagent/assets/finance/skills/stock/skill.md',
   'finagent/assets/finance/skills/market-overview/skill.md',
@@ -19,10 +26,10 @@ const normalSkillPaths = [
   'app/assets/finance/skills/fund-dashboard/skill.md',
   'app/assets/finance/skills/stock-dashboard/skill.md',
   'app/assets/finance/skills/oil-war-room/skill.md',
-  'finagent_workstation/assets/skills/data-sources/skill.md',
-  'finagent_workstation/assets/skills/data-management/skill.md',
-  'finagent_workstation/assets/skills/investment-workflow/skill.md',
-  'finagent_workstation/assets/skills/market-overview/skill.md',
+  'assets/skills/data-sources/skill.md',
+  'assets/skills/data-management/skill.md',
+  'assets/skills/investment-workflow/skill.md',
+  'assets/skills/market-overview/skill.md',
 ]
 
 const legacyOrDiagnosticSkillPaths = [
@@ -37,12 +44,12 @@ const monitorWorkflowPaths = [
   'app/assets/finance/skills/monitor-templates/fund_nav.js',
   'app/assets/finance/skills/monitor-templates/skill.md',
   'app/assets/finance/skills/monitor-dashboard/skill.md',
-  'finagent_workstation/assets/skills/monitor-templates/price_alert.js',
-  'finagent_workstation/assets/skills/monitor-templates/change_alert.js',
-  'finagent_workstation/assets/skills/monitor-templates/volume_surge.js',
-  'finagent_workstation/assets/skills/monitor-templates/watchlist.js',
-  'finagent_workstation/assets/skills/monitor-templates/fund_nav.js',
-  'finagent_workstation/assets/skills/monitor-templates/skill.md',
+  'assets/skills/monitor-templates/price_alert.js',
+  'assets/skills/monitor-templates/change_alert.js',
+  'assets/skills/monitor-templates/volume_surge.js',
+  'assets/skills/monitor-templates/watchlist.js',
+  'assets/skills/monitor-templates/fund_nav.js',
+  'assets/skills/monitor-templates/skill.md',
   'finagent/assets/finance/skills/monitor-templates/price_alert.js',
   'finagent/assets/finance/skills/monitor-templates/change_alert.js',
   'finagent/assets/finance/skills/monitor-templates/volume_surge.js',
@@ -55,18 +62,18 @@ const providerGuidancePaths = [
   'AGENTS.md',
   '.codex/skills/cc-mobile-repo/SKILL.md',
   '.codex/skills/finagent-workstation-finance-workflows/SKILL.md',
-  'finagent_workstation/assets/bundle/AGENTS.md',
-  'finagent_workstation/assets/skills/data-management/skill.md',
-  'finagent_workstation/assets/skills/tushare/skill.md',
+  'assets/bundle/AGENTS.md',
+  'assets/skills/data-management/skill.md',
+  'assets/skills/tushare/skill.md',
   'finagent/assets/finance/skills/tushare/skill.md',
   'app/assets/finance/skills/tushare/skill.md',
-  'finagent_workstation/assets/skills/yfinance/skill.md',
-  'finagent_workstation/assets/skills/tradingview-scanner/skill.md',
+  'assets/skills/yfinance/skill.md',
+  'assets/skills/tradingview-scanner/skill.md',
 ]
 
 const dataApiToolGuidancePaths = [
-  'finagent_workstation/src/agent/tools/data-store-tool-queries.ts',
-  'finagent_workstation/src/agent/tools/data-store-tool-help.ts',
+  'src/agent/tools/data-store-tool-queries.ts',
+  'src/agent/tools/data-store-tool-help.ts',
   'app/lib/agent/tools/market_data_tool/market_data_tool_schema.dart',
 ]
 
@@ -146,27 +153,27 @@ function mobileContractInterfaceIds(text: string): string[] {
 describe('finance skill provider contract', () => {
   it('generates skill-facing data API interface references from the code-owned contract', () => {
     execFileSync('node', ['scripts/finance_data_api_skill_reference.mjs'], {
-      cwd: join(repoRoot, 'finagent_workstation'),
+      cwd: repoRoot,
       stdio: 'pipe',
     })
-    const desktopPath = 'finagent_workstation/assets/skills/data-sources/references/data-api-interfaces.md'
+    const desktopPath = 'assets/skills/data-sources/references/data-api-interfaces.md'
     const mobilePaths = [
       'app/assets/finance/skills/data-sources/references/data-api-interfaces.md',
       'finagent/assets/finance/skills/data-sources/references/data-api-interfaces.md',
     ]
     const desktopInterfaceIds = listDataApiInterfaces().map((item) => item.id)
-    const desktopText = readFileSync(join(repoRoot, desktopPath), 'utf-8')
+    const desktopText = readFileSync(sourcePath(desktopPath), 'utf-8')
     expect(desktopText).toContain('Generated from the code-owned finagent_workstation finance data API contract')
     expect(desktopText).toContain('Provider parameters are routing constraints')
     expect(referenceInterfaceIds(desktopText)).toEqual(desktopInterfaceIds)
 
     const mobileContractText = readFileSync(
-      join(repoRoot, 'app/lib/domain/market/providers/data_api_interface_contract.dart'),
+      sourcePath('app/lib/domain/market/providers/data_api_interface_contract.dart'),
       'utf-8',
     )
     const mobileInterfaceIds = mobileContractInterfaceIds(mobileContractText)
     for (const path of mobilePaths) {
-      const text = readFileSync(join(repoRoot, path), 'utf-8')
+      const text = readFileSync(sourcePath(path), 'utf-8')
       expect(text).toContain('Generated from the code-owned shared_mobile_finagent finance data API contract')
       expect(text).toContain('Provider parameters are routing constraints')
       expect(referenceInterfaceIds(text)).toEqual(mobileInterfaceIds)
@@ -175,24 +182,25 @@ describe('finance skill provider contract', () => {
 
   it('generates skill-facing output-only API interface references from code-owned contracts', () => {
     execFileSync('node', ['scripts/finance_output_only_api_skill_reference.mjs'], {
-      cwd: join(repoRoot, 'finagent_workstation'),
+      cwd: repoRoot,
       stdio: 'pipe',
     })
-    const desktopPath = 'finagent_workstation/assets/skills/data-sources/references/output-only-api-interfaces.md'
+    const desktopPath = 'assets/skills/data-sources/references/output-only-api-interfaces.md'
     const mobilePaths = [
       'app/assets/finance/skills/data-sources/references/output-only-api-interfaces.md',
       'finagent/assets/finance/skills/data-sources/references/output-only-api-interfaces.md',
     ]
-    const desktopText = readFileSync(join(repoRoot, desktopPath), 'utf-8')
+    const desktopText = readFileSync(sourcePath(desktopPath), 'utf-8')
     expect(desktopText).toContain('Generated from the code-owned finagent_workstation finance output-only API contract')
     expect(desktopText).toContain('Unknown provider output must be rejected')
     expect(referenceInterfaceIds(desktopText.split('## Knowledge Records')[0])).toEqual(OUTPUT_ONLY_INTERFACES.map((item) => item.id))
 
     for (const path of mobilePaths) {
-      const text = readFileSync(join(repoRoot, path), 'utf-8')
+      const text = readFileSync(sourcePath(path), 'utf-8')
       expect(text).toContain('Generated from the code-owned shared_mobile_finagent finance output-only API contract')
       expect(text).toContain('Unknown provider output must be rejected')
       expect(referenceInterfaceIds(text.split('## Knowledge Records')[0])).toEqual([
+        'market.optimize_params',
         'provider.diagnostic',
         'provider.reference_dataset',
         'market.intraday_ohlcv_bars',
@@ -207,12 +215,12 @@ describe('finance skill provider contract', () => {
 
   it('points normal data-source skills at the generated data API interface reference', () => {
     const paths = [
-      'finagent_workstation/assets/skills/data-sources/skill.md',
+      'assets/skills/data-sources/skill.md',
       'app/assets/finance/skills/data-sources/skill.md',
       'finagent/assets/finance/skills/data-sources/skill.md',
     ]
     for (const path of paths) {
-      const text = readFileSync(join(repoRoot, path), 'utf-8')
+      const text = readFileSync(sourcePath(path), 'utf-8')
       expect(text).toContain('references/data-api-interfaces.md')
       expect(text).toContain('references/output-only-api-interfaces.md')
       expect(text).toMatch(/Provider parameters are\s+routing constraints|provider\s+参数只是 interface 的路由约束/)
@@ -220,7 +228,7 @@ describe('finance skill provider contract', () => {
   })
 
   it('keeps Tencent data-source skill guidance aligned with governed runtime support', () => {
-    const desktopText = readFileSync(join(repoRoot, 'finagent_workstation/assets/skills/data-sources/skill.md'), 'utf-8')
+    const desktopText = readFileSync(sourcePath('assets/skills/data-sources/skill.md'), 'utf-8')
     for (const capability of [
       'tencent.stock.quote',
       'tencent.index.quote',
@@ -245,7 +253,7 @@ describe('finance skill provider contract', () => {
       'app/assets/finance/skills/data-sources/skill.md',
       'finagent/assets/finance/skills/data-sources/skill.md',
     ]) {
-      const text = readFileSync(join(repoRoot, path), 'utf-8')
+      const text = readFileSync(sourcePath(path), 'utf-8')
       expect(text).toContain('stock.quote')
       expect(text).toContain('index.quote')
       expect(text).toContain('fund.etf_quote')
@@ -258,7 +266,7 @@ describe('finance skill provider contract', () => {
   })
 
   it('documents connected panel provenance workflows for desktop fund and news data', () => {
-    const fundText = readFileSync(join(repoRoot, 'finagent_workstation/assets/skills/fund/skill.md'), 'utf-8')
+    const fundText = readFileSync(sourcePath('assets/skills/fund/skill.md'), 'utf-8')
     expect(fundText).toContain('Manual Fund Pulse refresh queues `fund_list`, `etf_quotes`,')
     expect(fundText).toContain('`fund_performance`, and stale ordinary `fund_nav` seeds')
     expect(fundText).toContain('money funds should use')
@@ -267,7 +275,7 @@ describe('finance skill provider contract', () => {
     expect(fundText).toContain('scheduled Data Feed runs share the same configured-feed enqueue path')
     expect(fundText).toContain('failed fetch')
 
-    const dataSourcesText = readFileSync(join(repoRoot, 'finagent_workstation/assets/skills/data-sources/skill.md'), 'utf-8')
+    const dataSourcesText = readFileSync(sourcePath('assets/skills/data-sources/skill.md'), 'utf-8')
     expect(dataSourcesText).toContain('Runtime panels are part of the same provenance workflow')
     expect(dataSourcesText).toContain('Fund Pulse manual refresh currently covers fund list, ETF quotes,')
     expect(dataSourcesText).toContain('The News panel reads `news.finance_feed` through a governed route')
@@ -277,7 +285,7 @@ describe('finance skill provider contract', () => {
   it('does not advertise raw public provider URLs as normal stock/fund workflows', () => {
     const offenders: string[] = []
     for (const path of normalSkillPaths) {
-      const text = readFileSync(join(repoRoot, path), 'utf-8')
+      const text = readFileSync(sourcePath(path), 'utf-8')
       if (/akshare\.akfamily\.xyz|Bridge\.fetch\(['"]https:\/\/akshare|callService\(['"]https:\/\/akshare/.test(text)) {
         offenders.push(path)
       }
@@ -288,7 +296,7 @@ describe('finance skill provider contract', () => {
   it('requires raw provider URL mentions in normal skills to be framed as diagnostic or legacy', () => {
     const offenders: string[] = []
     for (const path of [...normalSkillPaths, ...legacyOrDiagnosticSkillPaths]) {
-      const text = readFileSync(join(repoRoot, path), 'utf-8')
+      const text = readFileSync(sourcePath(path), 'utf-8')
       if (
         /https:\/\/akshare\.akfamily\.xyz|https:\/\/fund\.eastmoney\.com|push2\.eastmoney\.com|push2delay\.eastmoney\.com/.test(text) &&
         !/\b(?:diagnostic|diagnostics|legacy|fallback only|调试)\b/i.test(text)
@@ -302,7 +310,7 @@ describe('finance skill provider contract', () => {
   it('does not advertise disabled Tushare interfaces as normal reusable workflows', () => {
     const offenders: string[] = []
     for (const path of normalSkillPaths) {
-      const text = readFileSync(join(repoRoot, path), 'utf-8')
+      const text = readFileSync(sourcePath(path), 'utf-8')
       if (disabledTushareApiPattern.test(text) || staleTushareCapabilityPattern.test(text)) offenders.push(path)
     }
     expect(offenders).toEqual([])
@@ -311,34 +319,34 @@ describe('finance skill provider contract', () => {
   it('uses the governed fund NAV history interface id in agent-facing guidance', () => {
     const staleFundNavInterfacePattern = /interfaceId\s*:\s*["']fund\.nav["']/
     const offenders = normalSkillPaths
-      .filter((path) => staleFundNavInterfacePattern.test(readFileSync(join(repoRoot, path), 'utf-8')))
+      .filter((path) => staleFundNavInterfacePattern.test(readFileSync(sourcePath(path), 'utf-8')))
     expect(offenders).toEqual([])
 
-    const fundText = readFileSync(join(repoRoot, 'finagent/assets/finance/skills/fund/skill.md'), 'utf-8')
+    const fundText = readFileSync(sourcePath('finagent/assets/finance/skills/fund/skill.md'), 'utf-8')
     expect(fundText).toContain('interfaceId: "fund.nav_history"')
   })
 
   it('does not describe provider-specific finance data as direct normal workflow routes', () => {
     const staleDirectProviderPattern = /can go directly to EastMoney|code-owned direct EastMoney|direct EastMoney routes|use direct EastMoney routes|Use EastMoney for:|AkShare `stock_zh_a_spot_em`|Live quotes\s*\|\s*AkShare or sidecar/i
     const offenders = normalSkillPaths
-      .filter((path) => staleDirectProviderPattern.test(readFileSync(join(repoRoot, path), 'utf-8')))
+      .filter((path) => staleDirectProviderPattern.test(readFileSync(sourcePath(path), 'utf-8')))
     expect(offenders).toEqual([])
   })
 
   it('does not tell agents to use raw provider calls first from readback/query guidance', () => {
     const staleProviderFirstPattern = /Use\s+(?:DataStore|MarketData)\(action:\s*["'](?:tdx|akshare|tushare|yfinance|ta)["'][^\n]*\)\s+first/i
     const offenders = dataApiToolGuidancePaths
-      .filter((path) => staleProviderFirstPattern.test(readFileSync(join(repoRoot, path), 'utf-8')))
+      .filter((path) => staleProviderFirstPattern.test(readFileSync(sourcePath(path), 'utf-8')))
     expect(offenders).toEqual([])
   })
 
   it('keeps mobile Wind guidance on MarketData and desktop Wind guidance on DataStore', () => {
     const mobileText = readFileSync(
-      join(repoRoot, 'finagent/assets/finance/skills/wind-aifinmarket/references/native-windmcp.md'),
+      sourcePath('finagent/assets/finance/skills/wind-aifinmarket/references/native-windmcp.md'),
       'utf-8',
     )
     const desktopText = readFileSync(
-      join(repoRoot, 'finagent_workstation/assets/skills/wind-aifinmarket/references/native-windmcp.md'),
+      sourcePath('assets/skills/wind-aifinmarket/references/native-windmcp.md'),
       'utf-8',
     )
 
@@ -352,15 +360,15 @@ describe('finance skill provider contract', () => {
   it('keeps bundled normal monitor workflows off raw provider endpoints', () => {
     const rawMonitorProviderPattern = /https:\/\/akshare\.akfamily\.xyz|callService\(['"]\/api\/finance\/(?:tushare|sidecar\/akshare)|apiPath:\s*['"]\/api\/finance\/(?:tushare|sidecar\/akshare)|api_name\s*:\s*['"](?:daily|fund_nav|fund_basic|moneyflow|income|balancesheet|cashflow|fina_indicator)['"]/i
     const offenders = monitorWorkflowPaths
-      .filter((path) => rawMonitorProviderPattern.test(readFileSync(join(repoRoot, path), 'utf-8')))
+      .filter((path) => rawMonitorProviderPattern.test(readFileSync(sourcePath(path), 'utf-8')))
     expect(offenders).toEqual([])
   })
 
   it('does not teach unknown provider schemas as normal successful tool output', () => {
     const staleUnknownSchemaPattern = /unknown (?:endpoint )?schemas? (?:are )?(?:returned as|remain|stay) tool output|unknown .*?tool output only until|unknown yfinance funcs are output-only/i
     const staleDiscoveryPattern = /DataStore\(action:\s*"(?:(?:akshare|yfinance|ta)_search|sidecar_status)"\)/
-    const offenders = providerGuidancePaths.filter((path) => {
-      const text = readFileSync(join(repoRoot, path), 'utf-8')
+    const offenders = providerGuidancePaths.filter((path) => existsSync(sourcePath(path))).filter((path) => {
+      const text = readFileSync(sourcePath(path), 'utf-8')
       return staleUnknownSchemaPattern.test(text) || staleDiscoveryPattern.test(text)
     })
     expect(offenders).toEqual([])
@@ -368,11 +376,11 @@ describe('finance skill provider contract', () => {
 
   it('keeps Electron and mobile Wind MCP provider capability lists aligned with the known manifest', () => {
     const electronTools = extractWindToolMap(
-      readFileSync(join(repoRoot, 'finagent_workstation/src/agent/tools/wind-mcp.ts'), 'utf-8'),
+      readFileSync(sourcePath('src/agent/tools/wind-mcp.ts'), 'utf-8'),
       'WIND_TOOLS',
     )
     const mobileTools = extractWindToolMap(
-      readFileSync(join(repoRoot, 'app/lib/agent/tools/wind_mcp_tool/wind_mcp_tool.dart'), 'utf-8'),
+      readFileSync(sourcePath('app/lib/agent/tools/wind_mcp_tool/wind_mcp_tool.dart'), 'utf-8'),
       '_windToolsByServer',
     )
 
