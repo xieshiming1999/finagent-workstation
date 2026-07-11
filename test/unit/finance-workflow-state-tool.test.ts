@@ -37,6 +37,49 @@ describe('FinanceWorkflowStateTool', () => {
       workflowKind: 'trade_prep',
     }, tempToolContext())).rejects.toThrow(/Invalid finance workflow state: .*assetClass must be one of.*FinanceWorkflowState\(action:"help"\)/)
   })
+
+  it('saves and resumes durable workflow state', async () => {
+    const tool = new FinanceWorkflowStateTool()
+    const context = tempToolContext()
+
+    const saved = JSON.parse(await tool.call('tool-3', {
+      action: 'save',
+      id: 'trade-prep-600519',
+      status: 'active',
+      workflowState: {
+        contract: 'finance-workflow-state-v1',
+        workflowKind: 'trade_prep',
+        assetClass: 'stock',
+        intentMode: 'size',
+        executionMode: 'requires_confirmation',
+        confirmationState: 'pending',
+        safetyBoundary: 'trade preparation only',
+        evidenceRefs: ['quote', 'risk_budget'],
+        subject: '600519',
+      },
+      requiredEvidence: ['quote', 'risk_budget'],
+      completedSteps: ['quote_checked'],
+      generatedArtifacts: ['artifact:trade-prep-600519'],
+      pendingApproval: { kind: 'paper_trade' },
+    }, context))
+    expect(saved.record.id).toBe('trade-prep-600519')
+
+    const current = JSON.parse(await tool.call('tool-4', {
+      action: 'current',
+    }, context))
+    expect(current.record).toMatchObject({
+      id: 'trade-prep-600519',
+      status: 'active',
+      workflowState: { workflowKind: 'trade_prep' },
+      pendingApproval: { kind: 'paper_trade' },
+    })
+
+    const listed = JSON.parse(await tool.call('tool-5', {
+      action: 'list',
+      workflowKind: 'trade_prep',
+    }, context))
+    expect(listed.count).toBe(1)
+  })
 })
 
 function tempToolContext(): ToolContext {
