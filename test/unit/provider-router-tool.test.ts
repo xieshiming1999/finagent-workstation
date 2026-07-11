@@ -1,0 +1,65 @@
+import { mkdirSync, mkdtempSync } from 'node:fs'
+import { tmpdir } from 'node:os'
+import { join } from 'node:path'
+import { describe, expect, it } from 'vitest'
+import type { ToolContext } from '../../src/agent/tool'
+import { ProviderRouterTool } from '../../src/agent/tools/provider-router'
+
+describe('ProviderRouterTool', () => {
+  it('routes quote with code-owned provider order and blocks', async () => {
+    const result = JSON.parse(await new ProviderRouterTool().call('router-1', {
+      action: 'route',
+      task: 'quote',
+      preferredProviders: ['eastmoneyDirect', 'tdx'],
+      temporarilyBlockedProviders: ['tdx'],
+    }, tempToolContext()))
+
+    expect(result.contract).toBe('provider-router-route-v1')
+    expect(result.order).toEqual(['eastmoneyDirect'])
+    expect(result.skipped).toEqual(expect.arrayContaining([
+      expect.objectContaining({ provider: 'tdx', reason: 'temporarily_blocked' }),
+    ]))
+    expect(result.serialProviders).toContain('eastmoneyDirect')
+  })
+
+  it('explains credential and compatibility gates', async () => {
+    const result = JSON.parse(await new ProviderRouterTool().call('router-2', {
+      action: 'route',
+      task: 'macro',
+      gates: { tushareConfigured: true },
+    }, tempToolContext()))
+
+    expect(result.order).toEqual(['tushare'])
+    expect(result.skipped).toEqual(expect.arrayContaining([
+      expect.objectContaining({ provider: 'wind', reason: 'wind_not_configured' }),
+      expect.objectContaining({ provider: 'akshare', reason: 'akshare_compatibility_disabled' }),
+    ]))
+  })
+
+  it('rejects unsupported task through the tool error channel', async () => {
+    await expect(new ProviderRouterTool().call('router-3', {
+      action: 'route',
+      task: 'unknown',
+    }, tempToolContext())).rejects.toThrow('requires a supported task')
+  })
+})
+
+function tempToolContext(): ToolContext {
+  const basePath = mkdtempSync(join(tmpdir(), 'fin-provider-router-tool-'))
+  const memoryDir = join(basePath, 'memory')
+  mkdirSync(memoryDir, { recursive: true })
+  return {
+    basePath,
+    workDir: basePath,
+    memoryDir,
+    bundleDir: join(basePath, 'bundle'),
+    projectLocalDir: join(basePath, '.finagent-workstation'),
+    pluginSkillPaths: [],
+    skipPermissions: false,
+    approvedTools: new Set(),
+    planMode: false,
+    readFileTimestamps: new Map(),
+    taskRegistry: {} as ToolContext['taskRegistry'],
+    teamRegistry: {} as ToolContext['teamRegistry'],
+  }
+}

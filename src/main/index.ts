@@ -40,6 +40,7 @@ import { WatchlistTool } from '../agent/tools/watchlist'
 import { WatchlistStore } from '../agent/watchlist-store'
 import { WatchlistRefresher } from '../agent/watchlist-refresher'
 import { PortfolioTool } from '../agent/tools/portfolio'
+import { ProviderRouterTool } from '../agent/tools/provider-router'
 import { ResearchTool } from '../agent/tools/research'
 import { CronScheduler } from '../agent/cron-scheduler'
 import { MonitorCreateTool, MonitorUpdateTool, MonitorDeleteTool, MonitorListTool } from '../agent/tools/monitor'
@@ -312,6 +313,7 @@ function initAgent() {
   registry.register(new InteractionEvidenceTool())
   registry.register(new WorkflowEvidenceTool())
   registry.register(new WorkflowVerifierTool())
+  registry.register(new ProviderRouterTool())
   registry.register(new RunbookTool())
   registry.register(new ArtifactRegistryTool())
   registry.register(new CapabilityStatusTool(() => registry.capabilities()))
