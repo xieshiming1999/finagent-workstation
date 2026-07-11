@@ -7,6 +7,7 @@ import {
   maybeBuildCustomStrategyComparisonAnswer,
   maybeBuildCustomStrategyRejectedValidationAnswer,
   maybeBuildCustomStrategyRejectedValidationBoundedAnswer,
+  maybeBuildCustomStrategyRepeatedSaveAnswer,
   maybeBuildCustomStrategyRunComparisonAnswer,
   maybeBuildCustomStrategySaveRunBoundaryAnswer,
   maybeBuildCustomStrategySaveAnswer,
@@ -434,6 +435,14 @@ export function maybeInterceptFinanceToolCalls(
     return {
       skippedReason: CUSTOM_STRATEGY_SKIP_REASONS.saveComplete,
       answer: saveAnswer,
+    }
+  }
+
+  const repeatedSaveAnswer = maybeBuildCustomStrategyRepeatedSaveAnswer(messages, proposedToolCalls)
+  if (repeatedSaveAnswer) {
+    return {
+      skippedReason: CUSTOM_STRATEGY_SKIP_REASONS.saveComplete,
+      answer: repeatedSaveAnswer,
     }
   }
 

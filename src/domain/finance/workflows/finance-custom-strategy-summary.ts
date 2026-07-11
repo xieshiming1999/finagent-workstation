@@ -466,21 +466,29 @@ export function maybeBuildCustomStrategySaveAnswer(messages: Message[], proposed
     if (call.name !== 'MarketData' || call.input.action !== 'custom_strategy_save') continue
     const payload = parseJsonObject(resultByToolUseId.get(call.id) ?? '')
     if (!payload || payload.action !== 'custom_strategy_save') continue
-    const spec = objectOrEmpty(payload.spec)
-    const validation = objectOrEmpty(payload.validation)
-    const evidence = objectOrEmpty(payload.evidence)
-    return [
+    return formatCustomStrategySavedPayload(payload, [
       '自定义策略已保存，并停止追加技术指标、脚本、文件或额外行情工具调用。本回答只基于 `custom_strategy_save` 的代码执行结果。',
-      '',
-      `- 策略ID：${stringOrNull(payload.strategyId) ?? stringOrNull(validation.strategyId) ?? stringOrNull(spec.id) ?? '-'}。`,
-      `- 版本：${payload.version ?? validation.version ?? '-'}。`,
-      `- 保存状态：${payload.status ?? '-'}。`,
-      `- 策略名称：${stringOrNull(spec.name) ?? '-'}。`,
-      `- 回测证据：${Object.keys(evidence).length === 0 ? '未随保存结果返回回测证据' : `${evidence.actualStartDate ?? '-'} ~ ${evidence.actualEndDate ?? '-'}，K线 ${evidence.bars ?? '-'} 根，状态 ${evidence.status ?? '-'}`}。`,
-      '- 数据边界：保存的是经过验证的 StrategySpec 和已有回测证据；未执行真实交易、模拟盘交易、监控创建或自选股变更。',
-      '',
-      '之后复用时应通过 `custom_strategy_run` 或 strategyId 读取已保存策略，不要把策略名当成内置 backtest strategy 字符串。',
-    ].join('\n')
+    ])
+  }
+  return null
+}
+
+export function maybeBuildCustomStrategyRepeatedSaveAnswer(messages: Message[], proposedToolCalls: ToolUse[]): string | null {
+  if (!proposedToolCalls.some((call) => call.name === 'MarketData' && call.input.action === 'custom_strategy_save')) {
+    return null
+  }
+  const lastUserIndex = findLastIndex(messages, (message) => message.role === Role.User)
+  if (lastUserIndex < 0) return null
+  const turnMessages = messages.slice(lastUserIndex + 1)
+  const toolCalls = collectToolCalls(turnMessages)
+  const resultByToolUseId = successfulToolResults(turnMessages)
+  for (const call of [...toolCalls].reverse()) {
+    if (call.name !== 'MarketData' || call.input.action !== 'custom_strategy_save') continue
+    const payload = parseJsonObject(resultByToolUseId.get(call.id) ?? '')
+    if (!payload || payload.action !== 'custom_strategy_save') continue
+    return formatCustomStrategySavedPayload(payload, [
+      '自定义策略已经保存成功，后续相同 `custom_strategy_save` 调用已停止。本回答只基于本轮已有的结构化保存结果。',
+    ])
   }
   return null
 }
@@ -491,6 +499,24 @@ export function maybeBuildCustomStrategySavedAnswer(messages: Message[]): string
     name: 'MarketData',
     input: { action: 'query_kline' },
   }])
+}
+
+function formatCustomStrategySavedPayload(payload: Record<string, unknown>, intro: string[]): string {
+  const spec = objectOrEmpty(payload.spec)
+  const validation = objectOrEmpty(payload.validation)
+  const evidence = objectOrEmpty(payload.evidence)
+  return [
+    ...intro,
+    '',
+    `- 策略ID：${stringOrNull(payload.strategyId) ?? stringOrNull(validation.strategyId) ?? stringOrNull(spec.id) ?? '-'}。`,
+    `- 版本：${payload.version ?? validation.version ?? '-'}。`,
+    `- 保存状态：${payload.status ?? '-'}。`,
+    `- 策略名称：${stringOrNull(spec.name) ?? '-'}。`,
+    `- 回测证据：${Object.keys(evidence).length === 0 ? '未随保存结果返回回测证据' : `${evidence.actualStartDate ?? '-'} ~ ${evidence.actualEndDate ?? '-'}，K线 ${evidence.bars ?? '-'} 根，状态 ${evidence.status ?? '-'}`}。`,
+    '- 数据边界：保存的是经过验证的 StrategySpec 和已有回测证据；未执行真实交易、模拟盘交易、监控创建或自选股变更。',
+    '',
+    '之后复用时应通过 `custom_strategy_run` 或 strategyId 读取已保存策略，不要把策略名当成内置 backtest strategy 字符串。',
+  ].join('\n')
 }
 
 function commandStateFromLastUser(messages: Message[], lastUserIndex: number): FinanceWorkflowState | null {

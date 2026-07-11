@@ -5,6 +5,7 @@ import {
   maybeBuildCustomStrategyBacktestAnswer,
   maybeBuildCustomStrategyComparisonAnswer,
   maybeBuildCustomStrategyRejectedValidationAnswer,
+  maybeBuildCustomStrategyRepeatedSaveAnswer,
   maybeBuildCustomStrategySaveAnswer,
   maybeBuildCustomStrategySaveRunBoundaryAnswer,
   maybeBuildCustomStrategySavedAnswer,
@@ -302,6 +303,30 @@ describe('finance custom strategy summaries', () => {
     expect(answer).toContain('strategyId：custom_ema_v1')
     expect(answer).toContain('标的：000858')
     expect(answer).toContain('数据覆盖')
+  })
+
+  it('stops repeated custom_strategy_save from structured save evidence without prompt parsing', () => {
+    const messages: Message[] = [
+      user('保存策略。'),
+      assistantTool('save', { action: 'custom_strategy_save' }),
+      tool('save', {
+        action: 'custom_strategy_save',
+        strategyId: 'custom_ema_v1',
+        version: 1,
+        status: 'backtested',
+        spec: { id: 'custom_ema_v1', name: 'EMA 趋势策略' },
+        validation: { status: 'validated' },
+        evidence: { status: 'backtested', actualStartDate: '2025-07-01', actualEndDate: '2026-06-30', bars: 240 },
+      }),
+    ]
+
+    const answer = maybeBuildCustomStrategyRepeatedSaveAnswer(messages, [
+      { id: 'repeat-save', name: 'MarketData', input: { action: 'custom_strategy_save' } },
+    ])
+
+    expect(answer).toContain('已经保存成功')
+    expect(answer).toContain('custom_ema_v1')
+    expect(answer).toContain('停止')
   })
 
   it('builds rerun answer from custom_strategy_run evidence without a same-turn save', () => {
