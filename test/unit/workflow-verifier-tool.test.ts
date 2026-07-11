@@ -43,6 +43,56 @@ describe('WorkflowVerifierTool', () => {
     expect(result.nextAction).toContain('Do not finalize yet')
   })
 
+  it('accepts matching typed workflow state', async () => {
+    const ctx = tempToolContext()
+    seedSession(ctx, 'MarketData')
+    seedWorkflowState(ctx, 'stock_research')
+    new ArtifactRegistry(ctx.basePath).register({
+      kind: 'analysis',
+      path: 'memory/reports/stock-analysis.md',
+      title: 'Stock analysis',
+      source: 'agent-workflow',
+      verificationStatus: 'verified',
+    })
+
+    const result = JSON.parse(await new WorkflowVerifierTool().call('verify-state', {
+      action: 'check',
+      workflow: 'stock_research',
+      requireWorkflowState: true,
+      providerHealth: [
+        { provider: 'tdx', status: 'healthy' },
+      ],
+    }, ctx))
+
+    expect(result.passed).toBe(true)
+    expect(result.missing).toEqual([])
+    expect(result.observed.workflowState.id).toBe('state-1')
+  })
+
+  it('fails on blocking provider health', async () => {
+    const ctx = tempToolContext()
+    seedSession(ctx, 'MarketData')
+    new ArtifactRegistry(ctx.basePath).register({
+      kind: 'analysis',
+      path: 'memory/reports/stock-analysis.md',
+      title: 'Stock analysis',
+      source: 'agent-workflow',
+      verificationStatus: 'verified',
+    })
+
+    const result = JSON.parse(await new WorkflowVerifierTool().call('verify-health', {
+      action: 'check',
+      workflow: 'stock_research',
+      providerHealth: [
+        { provider: 'eastmoney', status: 'transport_unstable' },
+      ],
+    }, ctx))
+
+    expect(result.passed).toBe(false)
+    expect(result.missing).toContain('provider_health')
+    expect(result.checks.find((item: { id: string }) => item.id === 'provider_health').message).toContain('eastmoney:transport_unstable')
+  })
+
   it('rejects unknown workflow through the tool error channel', async () => {
     const ctx = tempToolContext()
     await expect(new WorkflowVerifierTool().call('verify-3', {
@@ -70,6 +120,36 @@ function tempToolContext(): ToolContext {
     taskRegistry: {} as ToolContext['taskRegistry'],
     teamRegistry: {} as ToolContext['teamRegistry'],
   }
+}
+
+function seedWorkflowState(ctx: ToolContext, workflowKind: string): void {
+  const dir = join(ctx.memoryDir, 'workflows')
+  mkdirSync(dir, { recursive: true })
+  writeFileSync(join(dir, 'state.json'), JSON.stringify({
+    contract: 'workflow-state-store-v1',
+    records: [
+      {
+        id: 'state-1',
+        contract: 'workflow-state-record-v1',
+        status: 'active',
+        workflowState: {
+          contract: 'finance-workflow-state-v1',
+          workflowKind,
+          assetClass: 'stock',
+          intentMode: 'analysis',
+          executionMode: 'preview_only',
+          safetyBoundary: 'no_trade',
+          evidenceRefs: ['quote'],
+          confirmationState: 'none',
+          source: 'test',
+        },
+        requiredEvidence: ['quote'],
+        completedSteps: ['quote'],
+        generatedArtifacts: [],
+        updatedAt: '2026-07-11T00:00:00.000Z',
+      },
+    ],
+  }), 'utf-8')
 }
 
 function seedSession(ctx: ToolContext, toolName: string): void {

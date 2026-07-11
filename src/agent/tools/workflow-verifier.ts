@@ -58,6 +58,19 @@ export class WorkflowVerifierTool implements Tool {
         type: 'string',
         description: 'Optional artifact id/stable ref to require for this check.',
       },
+      workflowStateId: {
+        type: 'string',
+        description: 'Optional saved FinanceWorkflowState id to require for this check.',
+      },
+      requireWorkflowState: {
+        type: 'boolean',
+        description: 'Require a saved typed workflow-state record that matches this workflow family.',
+      },
+      providerHealth: {
+        type: 'array',
+        items: { type: 'object' },
+        description: 'Optional provider-health rows from ProviderRouter/API health/probes. Blocking statuses fail this verifier check.',
+      },
       limit: { type: 'integer', minimum: 1, maximum: 100 },
     },
   }
@@ -84,6 +97,9 @@ export class WorkflowVerifierTool implements Tool {
       workflow,
       spec,
       artifactId: optionalString(input.artifactId),
+      workflowStateId: optionalString(input.workflowStateId),
+      requireWorkflowState: input.requireWorkflowState === true,
+      providerHealth: input.providerHealth,
       limit: clampLimit(input.limit),
     }))
   }
@@ -101,6 +117,8 @@ function help(): Record<string, unknown> {
       'no_pending_interactions',
       'artifact_evidence',
       'approval_boundary',
+      'workflow_state',
+      'provider_health',
     ],
     guidance: [
       'This tool checks structured session, interaction, and artifact evidence.',
@@ -112,11 +130,25 @@ function help(): Record<string, unknown> {
 
 function checkWorkflow(
   ctx: ToolContext,
-  input: { workflow: string; spec: WorkflowSpec; artifactId?: string; limit: number },
+  input: {
+    workflow: string
+    spec: WorkflowSpec
+    artifactId?: string
+    workflowStateId?: string
+    requireWorkflowState: boolean
+    providerHealth: unknown
+    limit: number
+  },
 ): Record<string, unknown> {
   const session = readSession(ctx, input.limit)
   const pending = readPendingInteractionState(ctx)
   const artifactEvidence = artifactEvidenceFor(ctx, input.spec, input.artifactId)
+  const workflowStateEvidence = workflowStateEvidenceFor(ctx, {
+    workflow: input.workflow,
+    workflowStateId: input.workflowStateId,
+    required: input.requireWorkflowState || !!input.workflowStateId,
+  })
+  const providerHealthEvidence = providerHealthEvidenceFor(input.providerHealth)
   const toolNames = new Set(session.toolNames)
   const usedRequiredTool = input.spec.requiredAnyTools.some((name) => toolNames.has(name))
   const checks = [
@@ -138,6 +170,18 @@ function checkWorkflow(
         : 'Workflow has no trade approval boundary.',
       'Trade-preparation workflow requires explicit approval evidence before any side-effect.',
     ),
+    check(
+      'workflow_state',
+      workflowStateEvidence.passed,
+      workflowStateEvidence.passedMessage ?? 'Typed workflow state is valid.',
+      workflowStateEvidence.reason ?? 'Typed workflow state is missing or invalid.',
+    ),
+    check(
+      'provider_health',
+      providerHealthEvidence.passed,
+      providerHealthEvidence.passedMessage ?? 'Provider health is valid.',
+      providerHealthEvidence.reason ?? 'Provider health contains blocking evidence.',
+    ),
   ]
   const missing = checks.filter((item) => !item.passed).map((item) => item.id)
   return {
@@ -150,6 +194,8 @@ function checkWorkflow(
       toolNames: [...toolNames].sort(),
       pendingInteractions: pending.length,
       artifact: artifactEvidence.artifact ?? null,
+      workflowState: workflowStateEvidence.record ?? null,
+      providerHealth: providerHealthEvidence.observed,
     },
     nextAction: missing.length === 0
       ? 'Final answer may cite the verified workflow evidence.'
@@ -207,6 +253,139 @@ function artifactEvidenceFor(ctx: ToolContext, spec: WorkflowSpec, artifactId?: 
     : { passed: false, reason: `No registered artifact of required kind: ${spec.artifactKinds.join(', ')}.` }
 }
 
+function workflowStateEvidenceFor(ctx: ToolContext, input: {
+  workflow: string
+  workflowStateId?: string
+  required: boolean
+}): {
+  passed: boolean
+  reason?: string
+  passedMessage?: string
+  record?: Record<string, unknown>
+} {
+  const expectedKind = workflowKindForVerifierWorkflow(input.workflow)
+  const records = readWorkflowStateRecords(ctx)
+  const record = input.workflowStateId
+    ? records.find((item) => item.id === input.workflowStateId)
+    : records.find((item) => {
+        const state = objectValue(item.workflowState)
+        return item.status === 'active' && state?.workflowKind === expectedKind
+      })
+  if (!record) {
+    if (!input.required) {
+      return {
+        passed: true,
+        passedMessage: 'Typed workflow state was not required for this check.',
+      }
+    }
+    return {
+      passed: false,
+      reason: input.workflowStateId
+        ? `Required workflow state "${input.workflowStateId}" is not saved.`
+        : `No active saved FinanceWorkflowState for expected kind "${expectedKind}".`,
+    }
+  }
+  const state = objectValue(record.workflowState)
+  const kind = state?.workflowKind
+  if (kind !== expectedKind) {
+    return {
+      passed: false,
+      record,
+      reason: `Saved workflow state kind "${String(kind)}" does not match expected "${expectedKind}".`,
+    }
+  }
+  if (record.status === 'blocked') {
+    return {
+      passed: false,
+      record,
+      reason: `Saved workflow state is blocked: ${String(record.blocker ?? 'blocker not specified')}.`,
+    }
+  }
+  return {
+    passed: true,
+    passedMessage: 'Typed workflow state is saved and matches this workflow.',
+    record,
+  }
+}
+
+function providerHealthEvidenceFor(value: unknown): {
+  passed: boolean
+  reason?: string
+  passedMessage?: string
+  observed: Record<string, unknown>[]
+} {
+  const rows = Array.isArray(value)
+    ? value.filter((item): item is Record<string, unknown> => !!item && typeof item === 'object' && !Array.isArray(item))
+    : []
+  if (rows.length === 0) {
+    return {
+      passed: true,
+      passedMessage: 'Provider health evidence was not supplied for this check.',
+      observed: rows,
+    }
+  }
+  const blockingStatuses = new Set([
+    'unhealthy',
+    'blocked',
+    'runtime_unavailable',
+    'transport_unstable',
+    'quota_exhausted',
+    'credential_missing',
+    'credential-or-quota-required',
+  ])
+  const blocking = rows.filter((row) => {
+    const status = String(row.status ?? row.classification ?? '').trim().toLowerCase()
+    return blockingStatuses.has(status)
+  })
+  if (blocking.length > 0) {
+    const labels = blocking.map((row) => {
+      const provider = String(row.provider ?? row.source ?? 'provider')
+      const status = String(row.status ?? row.classification ?? 'blocked')
+      return `${provider}:${status}`
+    }).join(', ')
+    return {
+      passed: false,
+      reason: `Provider health has blocking rows: ${labels}.`,
+      observed: rows,
+    }
+  }
+  return {
+    passed: true,
+    passedMessage: 'Provider health evidence has no blocking rows.',
+    observed: rows,
+  }
+}
+
+function readWorkflowStateRecords(ctx: ToolContext): Record<string, unknown>[] {
+  const file = join(ctx.memoryDir, 'workflows', 'state.json')
+  if (!existsSync(file)) return []
+  try {
+    const decoded = JSON.parse(readFileSync(file, 'utf8')) as { records?: unknown }
+    return Array.isArray(decoded.records)
+      ? decoded.records.filter((item): item is Record<string, unknown> => !!item && typeof item === 'object' && !Array.isArray(item))
+      : []
+  } catch {
+    return []
+  }
+}
+
+function workflowKindForVerifierWorkflow(workflow: string): string {
+  switch (workflow) {
+    case 'market_overview':
+      return 'market_analysis'
+    case 'stock_research':
+      return 'stock_research'
+    case 'fund_selection':
+      return 'fund_research'
+    case 'strategy_backtest':
+      return 'strategy_review'
+    case 'trade_preparation':
+      return 'trade_prep'
+    default:
+      return 'unknown'
+  }
+}
+
 function check(id: string, passed: boolean, passedMessage: string, failedMessage: string): {
   id: string
   passed: boolean
@@ -222,4 +401,10 @@ function clampLimit(value: unknown): number {
 function optionalString(value: unknown): string | undefined {
   const text = String(value ?? '').trim()
   return text || undefined
+}
+
+function objectValue(value: unknown): Record<string, unknown> | undefined {
+  return value && typeof value === 'object' && !Array.isArray(value)
+    ? value as Record<string, unknown>
+    : undefined
 }
