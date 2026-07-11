@@ -4,6 +4,7 @@ import { join } from 'path'
 import { describe, expect, it } from 'vitest'
 import { PromptBuilder } from '../../src/agent/prompt-builder'
 import type { Tool } from '../../src/agent/tool'
+import { InteractionEvidenceTool } from '../../src/agent/tools/interaction-evidence'
 
 describe('PromptBuilder tool capability disclosure', () => {
   it('includes generated tool flags and action values in the available tool list', () => {
@@ -26,5 +27,13 @@ describe('PromptBuilder tool capability disclosure', () => {
 
     expect(prompt).toContain('# Available Tools')
     expect(prompt).toContain('- Example [write-or-side-effect, serial, actions=help|run]: Example broad tool')
+  })
+
+  it('exposes InteractionEvidence as an agent-discoverable harness inspection tool', () => {
+    const basePath = mkdtempSync(join(tmpdir(), 'fin-prompt-capability-'))
+    const prompt = new PromptBuilder(basePath, basePath).build([new InteractionEvidenceTool()])
+
+    expect(prompt).toContain('# Available Tools')
+    expect(prompt).toContain('- InteractionEvidence [read-only, parallel-ok, actions=help|recent|summary]:')
   })
 })

@@ -25,6 +25,7 @@ import { AskUserQuestionTool } from '../agent/tools/ask-user'
 import { TaskCreateTool, TaskGetTool, TaskUpdateTool, TaskListTool, TaskOutputTool, TaskStopTool } from '../agent/tools/tasks'
 import { EnterPlanModeTool, ExitPlanModeTool } from '../agent/tools/plan-mode'
 import { EnvironmentTool } from '../agent/tools/environment'
+import { InteractionEvidenceTool } from '../agent/tools/interaction-evidence'
 import { DataProcessTool } from '../agent/tools/data-process'
 import { CronCreateTool, CronDeleteTool, CronListTool } from '../agent/tools/cron'
 import { WatchlistTool } from '../agent/tools/watchlist'
@@ -299,6 +300,7 @@ function initAgent() {
   registry.register(new EnterPlanModeTool())
   registry.register(new ExitPlanModeTool())
   registry.register(new EnvironmentTool())
+  registry.register(new InteractionEvidenceTool())
   // Wire session index for SessionSearchTool
   const sessionsDir = join(basePath, 'sessions')
   const sessionIndex = new SessionIndex(sessionsDir)
