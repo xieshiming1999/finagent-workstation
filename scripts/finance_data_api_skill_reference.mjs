@@ -5,27 +5,32 @@ import { dirname, resolve } from 'node:path'
 import { fileURLToPath } from 'node:url'
 
 const scriptDir = dirname(fileURLToPath(import.meta.url))
-const repoRoot = resolve(scriptDir, '..', '..')
 const appRoot = resolve(scriptDir, '..')
+const workspaceRoot = resolve(appRoot, '..')
 const args = parseArgs(process.argv.slice(2))
 const electronContractPath = resolve(appRoot, 'src/agent/data/data-api-interfaces.json')
 const electronCacheCoveragePath = resolve(appRoot, 'src/agent/data/data-api-cache-coverage.json')
-const mobileContractPath = resolve(repoRoot, 'app/lib/domain/market/providers/data_api_interface_contract.dart')
+const mobileContractPath = resolve(workspaceRoot, 'app/lib/domain/market/providers/data_api_interface_contract.dart')
 
 const outputs = [
   {
-    path: resolve(repoRoot, 'finagent_workstation/assets/skills/data-sources/references/data-api-interfaces.md'),
+    path: resolve(appRoot, 'assets/skills/data-sources/references/data-api-interfaces.md'),
     contract: readElectronContract(),
   },
-  {
-    path: resolve(repoRoot, 'app/assets/finance/skills/data-sources/references/data-api-interfaces.md'),
-    contract: readMobileContract(),
-  },
-  {
-    path: resolve(repoRoot, 'finagent/assets/finance/skills/data-sources/references/data-api-interfaces.md'),
-    contract: readMobileContract(),
-  },
 ]
+if (existsSync(mobileContractPath)) {
+  const mobileContract = readMobileContract()
+  outputs.push(
+    {
+      path: resolve(workspaceRoot, 'app/assets/finance/skills/data-sources/references/data-api-interfaces.md'),
+      contract: mobileContract,
+    },
+    {
+      path: resolve(workspaceRoot, 'finagent/assets/finance/skills/data-sources/references/data-api-interfaces.md'),
+      contract: mobileContract,
+    },
+  )
+}
 
 const renderedOutputs = outputs.map((output) => ({
   ...output,
@@ -207,7 +212,7 @@ function readStringList(block, field) {
 }
 
 function relativePath(path) {
-  return path.startsWith(repoRoot) ? path.slice(repoRoot.length + 1) : path
+  return path.startsWith(appRoot) ? path.slice(appRoot.length + 1) : path
 }
 
 function parseArgs(values) {

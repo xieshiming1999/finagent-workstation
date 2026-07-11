@@ -1,31 +1,36 @@
 #!/usr/bin/env node
 
-import { mkdirSync, readFileSync, writeFileSync } from 'node:fs'
+import { existsSync, mkdirSync, readFileSync, writeFileSync } from 'node:fs'
 import { dirname, resolve } from 'node:path'
 import { fileURLToPath } from 'node:url'
 import ts from 'typescript'
 
 const scriptDir = dirname(fileURLToPath(import.meta.url))
-const repoRoot = resolve(scriptDir, '..', '..')
 const appRoot = resolve(scriptDir, '..')
+const workspaceRoot = resolve(appRoot, '..')
 const electronContractPath = resolve(appRoot, 'src/agent/data/output-only-interfaces.ts')
-const mobileContractPath = resolve(repoRoot, 'app/lib/domain/market/providers/output_only_api_interface_contract.dart')
+const mobileContractPath = resolve(workspaceRoot, 'app/lib/domain/market/providers/output_only_api_interface_contract.dart')
 const args = parseArgs(process.argv.slice(2))
 
 const outputs = [
   {
-    path: resolve(repoRoot, 'finagent_workstation/assets/skills/data-sources/references/output-only-api-interfaces.md'),
+    path: resolve(appRoot, 'assets/skills/data-sources/references/output-only-api-interfaces.md'),
     contract: readElectronContract(),
   },
-  {
-    path: resolve(repoRoot, 'app/assets/finance/skills/data-sources/references/output-only-api-interfaces.md'),
-    contract: readMobileContract(),
-  },
-  {
-    path: resolve(repoRoot, 'finagent/assets/finance/skills/data-sources/references/output-only-api-interfaces.md'),
-    contract: readMobileContract(),
-  },
 ]
+if (existsSync(mobileContractPath)) {
+  const mobileContract = readMobileContract()
+  outputs.push(
+    {
+      path: resolve(workspaceRoot, 'app/assets/finance/skills/data-sources/references/output-only-api-interfaces.md'),
+      contract: mobileContract,
+    },
+    {
+      path: resolve(workspaceRoot, 'finagent/assets/finance/skills/data-sources/references/output-only-api-interfaces.md'),
+      contract: mobileContract,
+    },
+  )
+}
 
 const problems = []
 
@@ -238,7 +243,7 @@ function readStringList(block, field) {
 }
 
 function relativePath(path) {
-  return path.replace(`${repoRoot}/`, '')
+  return path.replace(`${appRoot}/`, '')
 }
 
 function parseArgs(values) {
