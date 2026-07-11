@@ -1,6 +1,6 @@
 import { existsSync, readFileSync, readdirSync } from 'fs'
 import { join } from 'path'
-import type { Tool } from './tool'
+import { summarizeToolCapability, type Tool } from './tool'
 import { promptBuilderCopy } from './runtime-copy'
 import { memoryLifecyclePromptGuidance } from './memory-lifecycle'
 import { financeOutputStandardPromptGuidance } from './finance-output-standard'
@@ -120,7 +120,18 @@ export class PromptBuilder {
 
   private buildToolsSection(tools: Tool[]): string {
     const sorted = [...tools].sort((a, b) => a.name.localeCompare(b.name))
-    const lines = sorted.map((t) => `- ${t.name}: ${t.description}`)
+    const lines = sorted.map((tool) => {
+      const capability = summarizeToolCapability(tool)
+      const flags = [
+        capability.permission,
+        capability.requiresUserInteraction ? 'requires-user-input' : '',
+        capability.canParallel ? 'parallel-ok' : 'serial',
+        capability.schema.actionValues.length
+          ? `actions=${capability.schema.actionValues.join('|')}`
+          : '',
+      ].filter(Boolean)
+      return `- ${tool.name} [${flags.join(', ')}]: ${tool.description}`
+    })
     return `# Available Tools\n\n${lines.join('\n')}`
   }
 
