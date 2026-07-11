@@ -3,29 +3,32 @@ import { join } from 'path'
 
 let logDir = ''
 let logFile = ''
+let initialized = false
 
 export function initLogger(basePath: string): void {
   logDir = join(basePath, 'logs')
   mkdirSync(logDir, { recursive: true })
   const date = new Date().toISOString().split('T')[0]
   logFile = join(logDir, `${date}.log`)
+  if (initialized) return
+  initialized = true
 
   const originalLog = console.log
   const originalError = console.error
   const originalWarn = console.warn
 
   console.log = (...args: unknown[]) => {
-    originalLog(...args)
+    writeConsole(originalLog, args)
     appendToLog('INFO', args)
   }
 
   console.error = (...args: unknown[]) => {
-    originalError(...args)
+    writeConsole(originalError, args)
     appendToLog('ERROR', args)
   }
 
   console.warn = (...args: unknown[]) => {
-    originalWarn(...args)
+    writeConsole(originalWarn, args)
     appendToLog('WARN', args)
   }
 
@@ -39,6 +42,20 @@ function appendToLog(level: string, args: unknown[]): void {
     const msg = args.map((a) => typeof a === 'string' ? a : JSON.stringify(a, null, 0)?.slice(0, 500) ?? String(a)).join(' ')
     appendFileSync(logFile, `[${ts}] [${level}] ${msg}\n`)
   } catch { /* silent */ }
+}
+
+function writeConsole(writer: (...args: unknown[]) => void, args: unknown[]): void {
+  try {
+    writer(...args)
+  } catch (error) {
+    if (!isBrokenConsolePipe(error)) throw error
+  }
+}
+
+function isBrokenConsolePipe(error: unknown): boolean {
+  if (!error || typeof error !== 'object') return false
+  const code = (error as { code?: unknown }).code
+  return code === 'EIO' || code === 'EPIPE' || code === 'ERR_STREAM_DESTROYED'
 }
 
 export interface LogSnapshot {
