@@ -447,7 +447,7 @@ function initAgent() {
   }).catch((e) => console.error('[MCP] Connection error:', e))
 
   const agentConfig = loadConfig(globalConfigPath())
-  agent = new Agent({ llm: createLLMProvider(agentConfig), tools: registry, basePath, assetsPath, skipPermissions: agentConfig.chatSkipPermissions, capabilities, agentRole: 'chat', iterationLimit: agentConfig.agentDepthLimit, drainNotificationsInLoop: true, bridgeRequest: routeRequest, getConfigValue: sharedGetConfigValue, domainWorkflowHooks: financeWorkflowHooks })
+  agent = new Agent({ llm: createLLMProvider(agentConfig), tools: registry, basePath, assetsPath, skipPermissions: agentConfig.skipToolPermissions, capabilities, agentRole: 'chat', iterationLimit: agentConfig.agentDepthLimit, drainNotificationsInLoop: true, bridgeRequest: routeRequest, getConfigValue: sharedGetConfigValue, domainWorkflowHooks: financeWorkflowHooks })
   agent.pluginSkillPaths = getPluginSkillPaths(plugins)
   agent.pluginCommandPaths = getPluginCommandPaths(plugins)
   agent.session.searchIndex = sessionIndex
@@ -534,7 +534,7 @@ function initAgent() {
     basePath,
     sessionBasePath: join(basePath, 'event-agent'),
     assetsPath,
-    skipPermissions: true,
+    skipPermissions: agentConfig.skipToolPermissions,
     capabilities,
     agentRole: 'event',
     iterationLimit: agentConfig.agentDepthLimit,

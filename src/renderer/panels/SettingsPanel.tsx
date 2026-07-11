@@ -26,6 +26,7 @@ interface ConfigData {
   models: ModelConfig[]
   agentDepthLimit: number
   toolTimeout: number
+  skipToolPermissions: boolean
   chatSkipPermissions: boolean
   systemPrompt: string
   workspacePath: string
@@ -39,6 +40,7 @@ const DEFAULTS: ConfigData = {
   models: [],
   agentDepthLimit: 0,
   toolTimeout: 120000,
+  skipToolPermissions: true,
   chatSkipPermissions: true,
   systemPrompt: '',
   workspacePath: '',
@@ -296,10 +298,13 @@ function AgentTab({ config, update }: { config: ConfigData; update: (k: keyof Co
         <label className="flex items-center gap-2 text-xs text-gray-600">
           <input
             type="checkbox"
-            checked={config.chatSkipPermissions}
-            onChange={(e) => update('chatSkipPermissions', e.target.checked)}
+            checked={config.skipToolPermissions ?? config.chatSkipPermissions}
+            onChange={(e) => {
+              update('skipToolPermissions', e.target.checked)
+              update('chatSkipPermissions', e.target.checked)
+            }}
           />
-          {t('skipChatToolPermissions')}
+          {t('skipToolPermissions')}
         </label>
       </Section>
       <Section title={t('systemPromptOverride')}>

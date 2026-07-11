@@ -25,6 +25,8 @@ export interface AppConfig {
   // Agent
   agentDepthLimit: number
   toolTimeout: number
+  skipToolPermissions: boolean
+  /** Deprecated compatibility alias for older config files. */
   chatSkipPermissions: boolean
   systemPrompt: string
   // General
@@ -42,6 +44,7 @@ const DEFAULT_CONFIG: AppConfig = {
   models: DEFAULT_MODELS,
   agentDepthLimit: 0,
   toolTimeout: 120000,
+  skipToolPermissions: true,
   chatSkipPermissions: true,
   systemPrompt: '',
   workspacePath: '',
@@ -89,9 +92,12 @@ export function loadConfig(basePath: string): AppConfig {
       }
       data.models = [migrated]
     }
+    const skipToolPermissions = data.skipToolPermissions ?? data.chatSkipPermissions ?? DEFAULT_CONFIG.skipToolPermissions
     return {
       ...DEFAULT_CONFIG,
       ...data,
+      skipToolPermissions,
+      chatSkipPermissions: skipToolPermissions,
       models: data.models ?? DEFAULT_MODELS,
       apiKeys: data.apiKeys ?? {},
       tdxServers: data.tdxServers ?? [],
