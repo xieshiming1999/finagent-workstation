@@ -69,6 +69,36 @@ export function buildCustomStrategyPreflightToolCalls(messages: Message[]): Tool
   }]
 }
 
+export function buildCustomStrategySavedRunRepairToolCalls(
+  messages: Message[],
+  proposedToolCalls: ToolUse[],
+): ToolUse[] | null {
+  const lastUserIndex = findLastIndex(messages, (message) => message.role === Role.User)
+  if (lastUserIndex < 0) return null
+  const saved = latestSavedStrategy(messages.slice(0, lastUserIndex))
+  if (!saved) return null
+  let changed = false
+  const repaired = proposedToolCalls.map((call) => {
+    if (call.name !== 'MarketData' || call.input.action !== 'custom_strategy_backtest') return call
+    const target =
+      stringOrNull(call.input.code) ??
+      stringOrNull(call.input.symbol) ??
+      firstString(call.input.symbols) ??
+      firstString(call.input.codes)
+    if (!target) return call
+    changed = true
+    return {
+      ...call,
+      input: {
+        action: 'custom_strategy_run',
+        strategyId: saved.strategyId,
+        code: target,
+      },
+    }
+  })
+  return changed ? repaired : null
+}
+
 function buildStructuredStrategyToolCalls(
   state: FinanceWorkflowState | null,
   structuredSpec?: Record<string, unknown>,

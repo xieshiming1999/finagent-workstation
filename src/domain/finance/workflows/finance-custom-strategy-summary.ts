@@ -298,8 +298,6 @@ export function maybeBuildCustomStrategyRunComparisonAnswer(messages: Message[])
 export function maybeBuildCustomStrategySaveRunBoundaryAnswer(messages: Message[]): string | null {
   const lastUserIndex = findLastIndex(messages, (message) => message.role === Role.User)
   if (lastUserIndex < 0) return null
-  const state = commandStateFromLastUser(messages, lastUserIndex)
-  if (!state || !isStrategyState(state) || state.intentMode !== 'rerun') return null
 
   const turnMessages = messages.slice(lastUserIndex + 1)
   const toolCalls = collectToolCalls(turnMessages)
@@ -334,12 +332,12 @@ export function maybeBuildCustomStrategySaveRunBoundaryAnswer(messages: Message[
   }
 
   const saveStatus = stringOrNull(latestSave?.status)
-  if (latestSave && latestRun && latestRun.status === 'backtested') {
-    const spec = objectOrEmpty(latestSave.spec)
+  if (latestRun && latestRun.status === 'backtested') {
+    const spec = objectOrEmpty(latestSave?.spec)
     const metrics = objectOrEmpty(latestRun.metrics)
     const strategyId =
       stringOrNull(latestRun.strategyId) ??
-      stringOrNull(latestSave.strategyId) ??
+      stringOrNull(latestSave?.strategyId) ??
       stringOrNull(spec.id) ??
       '-'
     return [
@@ -456,8 +454,8 @@ export function maybeBuildCustomStrategySaveAnswer(messages: Message[], proposed
   const lastUserIndex = findLastIndex(messages, (message) => message.role === Role.User)
   if (lastUserIndex < 0) return null
   const commandState = commandStateFromLastUser(messages, lastUserIndex)
-  if (commandState && (!isStrategyState(commandState) || commandState.intentMode !== 'save')) return null
-  const state = commandState ?? latestFinanceWorkflowState(messages, lastUserIndex)
+  if (!commandState || !isStrategyState(commandState) || commandState.intentMode !== 'save') return null
+  const state = commandState
   if (!isStrategyState(state) || state?.intentMode !== 'save') return null
   if (!proposedToolCalls.some(isCustomStrategySaveOverrunToolCall)) return null
 

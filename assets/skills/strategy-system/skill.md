@@ -222,6 +222,15 @@ Use the canonical stock `StrategySpec` shape. Do not invent fields such as
 `entryRules.conditions` or `exitRules.stop_loss_pct`; the validator expects
 declared indicators plus `entry` / `exit` rule groups:
 
+`custom_strategy_help.executableV1.conditionDslV1` is an optional structured
+shorthand, not a natural-language parser. Prefer canonical `entry` / `exit`
+groups. If using `rules[]`, each item must use an enum-style `action`
+(`entry`, `exit`, `buy`, `sell`, `long`, or `close`) and a simple `condition`
+matching `<series-or-indicator-id> <operator> <series-or-indicator-id|number>`,
+joined only by `and` / `or`. Unsupported prose, Chinese action labels,
+parentheses, news/sentiment/fund-flow descriptions, or arithmetic expressions
+must remain rejected or be rewritten into canonical rule objects.
+
 ```json
 {
   "name": "low_risk_pullback",

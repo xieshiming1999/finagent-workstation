@@ -227,6 +227,15 @@ export function customStrategyHelp(input: Record<string, unknown> = {}): string 
       rankingMetrics: ['score', 'total_return_pct', 'sharpe_ratio', 'max_drawdown_pct', 'trade_count', 'relative_strength_pct', 'rps'],
       rebalanceIntervals: ['weekly', 'monthly', 'quarterly'],
       portfolioDraftControls: ['rebalanceInterval', 'maxPositionWeight', 'minScore', 'maxPairwiseCorrelation'],
+      conditionDsl: {
+        available: true,
+        boundary: 'Optional structured shorthand only; prefer canonical entry/exit rule groups.',
+        catalogRequest: {
+          action: 'custom_strategy_help',
+          detail: 'catalog',
+          fields: ['executableV1.conditionDslV1'],
+        },
+      },
     },
     fundObservationV1: {
       requires: ['assetClass:fund', 'market:fund', 'fundRows'],
@@ -645,6 +654,21 @@ export function customStrategyHelp(input: Record<string, unknown> = {}): string 
     executableV1.indicators = stockIndicatorTypes
     executableV1.indicatorCatalog = indicatorHelpCatalog
     executableV1.indicatorCatalogByCategory = groupedIndicatorCatalog
+    executableV1.conditionDslV1 = {
+      boundary: 'Optional structured StrategySpec shorthand only. Prefer canonical entry/exit rule groups. Do not use natural-language strategy prose here.',
+      fields: {
+        rules: 'Array of objects with action and condition.',
+        action: ['entry', 'exit', 'buy', 'sell', 'long', 'close'],
+        condition: 'Simple comparisons joined by and/or.',
+      },
+      grammar: '<series-or-indicator-id> (< | <= | > | >= | crosses_above | crosses_below) (<series-or-indicator-id> | number)',
+      builtInSeries: ['close', 'volume'],
+      examples: [
+        { action: 'entry', condition: 'close > sma20 and sma20 > sma60' },
+        { action: 'exit', condition: 'close < sma20' },
+      ],
+      unsupported: ['Chinese action labels', 'free-form sentences', 'parentheses', 'arithmetic expressions except canonical right.mul rule objects', 'news/sentiment/fund-flow prose'],
+    }
     const fundObservationV1 = payload.fundObservationV1 as Record<string, unknown>
     fundObservationV1.indicators = fundStrategyIndicatorCatalog
     fundObservationV1.indicatorCatalog = fundIndicatorHelpCatalog

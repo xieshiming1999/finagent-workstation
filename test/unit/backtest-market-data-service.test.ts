@@ -2418,17 +2418,14 @@ describe('BacktestMarketDataService', () => {
     expect(validation.errors.join('\n')).toContain('positionSizing.value')
     expect(validation.errors.join('\n')).toContain('risk.maxLossPerTradePct')
     expect(validation.errors.join('\n')).toContain('stop_loss_pct value')
-    expect(validation.errors.join('\n')).toContain('unsupported exit exit type "chandelier_exit"')
+    expect(validation.errors.join('\n')).toContain('unsupported exit operator "chandelier_exit"')
     expect(validation.unsupportedDetails).toEqual(expect.arrayContaining([
       expect.objectContaining({
-        category: 'exit_type',
-        path: 'exit.type',
-        field: 'type',
+        category: 'operator',
+        path: 'exit.op',
+        field: 'op',
         value: 'chandelier_exit',
-        candidateExitTypes: expect.arrayContaining(['stop_loss_pct', 'atr_stop_loss', 'time_stop_bars']),
-        candidateExitCatalog: expect.arrayContaining([
-          expect.objectContaining({ type: 'atr_stop_loss', valueUnit: 'atr_multiple' }),
-        ]),
+        suggestion: expect.stringContaining('crosses_above'),
       }),
     ]))
     expect(validation.validationIssues).toEqual(expect.arrayContaining([
@@ -2453,15 +2450,12 @@ describe('BacktestMarketDataService', () => {
     ]))
     expect(validation.repairPlan).toEqual(expect.arrayContaining([
       expect.objectContaining({
-        category: 'exit_type',
-        repairAction: 'use_supported_exit_type',
-        target: 'strategySpec.exit',
+        category: 'operator',
+        repairAction: 'use_supported_operator',
+        target: 'strategySpec.entry_or_exit',
         patchHint: expect.objectContaining({
-          operation: 'replace_exit_type',
-          candidateExitTypes: expect.arrayContaining(['stop_loss_pct', 'atr_stop_loss']),
-          candidateExitCatalog: expect.arrayContaining([
-            expect.objectContaining({ type: 'time_stop_bars' }),
-          ]),
+          operation: 'replace_operator',
+          allowed: expect.arrayContaining(['>', '<', 'crosses_above', 'crosses_below']),
         }),
       }),
     ]))
@@ -3098,6 +3092,280 @@ describe('BacktestMarketDataService', () => {
     expect(validation.spec.exit.any).toEqual(expect.arrayContaining([
       expect.objectContaining({ left: 'ema_fast', op: 'crosses_below', right: 'ema_slow' }),
     ]))
+  })
+
+  it('accepts agent-authored entrySignals and exitSignals custom strategy lists', async () => {
+    const { BacktestMarketDataService } = await import('../../src/domain/market/services/backtest-market-data-service')
+    const service = new BacktestMarketDataService()
+    const strategySpec = {
+      name: 'Simple SMA Trend',
+      market: 'cn',
+      assetClass: 'stock',
+      dataRequirements: { minBars: 120 },
+      entrySignals: [
+        {
+          indicator: 'sma',
+          params: { period: 20 },
+          operator: '>',
+          left: { field: 'close' },
+          right: { indicator: 'sma', params: { period: 20 } },
+        },
+      ],
+      exitSignals: [
+        {
+          indicator: 'sma',
+          params: { period: 20 },
+          operator: '<',
+          left: { field: 'close' },
+          right: { indicator: 'sma', params: { period: 20 } },
+        },
+      ],
+      stopLossPct: 8,
+      positionSizing: { type: 'full_capital' },
+    }
+
+    const validation = JSON.parse(await service.readAction('custom_strategy_validate', { strategySpec }, { basePath: '/tmp' } as any, '', 120))
+
+    expect(validation).toMatchObject({ action: 'custom_strategy_validate', status: 'validated' })
+    expect(validation.spec.indicators).toEqual(expect.arrayContaining([
+      expect.objectContaining({ id: 'sma20', type: 'sma' }),
+    ]))
+    expect(validation.spec.entry.all).toEqual(expect.arrayContaining([
+      expect.objectContaining({ left: 'close', op: '>', right: expect.objectContaining({ mul: ['sma20', 1] }) }),
+    ]))
+    expect(validation.spec.exit.any).toEqual(expect.arrayContaining([
+      expect.objectContaining({ left: 'close', op: '<', right: expect.objectContaining({ mul: ['sma20', 1] }) }),
+      expect.objectContaining({ type: 'stop_loss_pct', value: 8 }),
+    ]))
+  })
+
+  it('accepts top-level signals as indicator declarations for rule refs', async () => {
+    const { BacktestMarketDataService } = await import('../../src/domain/market/services/backtest-market-data-service')
+    const service = new BacktestMarketDataService()
+    const strategySpec = {
+      name: 'Moutai EMA Trend',
+      market: 'cn',
+      assetClass: 'stock',
+      signals: [
+        { indicator: 'ema', period: 12, input: 'close', output: 'ema12' },
+        { indicator: 'ema', period: 26, input: 'close', output: 'ema26' },
+      ],
+      entryRules: [{ lhs: 'ema12', op: 'crosses_above', rhs: 'ema26' }],
+      exitRules: [{ lhs: 'ema12', op: 'crosses_below', rhs: 'ema26' }],
+    }
+
+    const validation = JSON.parse(await service.readAction('custom_strategy_validate', { strategySpec }, { basePath: '/tmp' } as any, '', 120))
+
+    expect(validation).toMatchObject({ action: 'custom_strategy_validate', status: 'validated' })
+    expect(validation.spec.indicators).toEqual(expect.arrayContaining([
+      expect.objectContaining({ id: 'ema12', type: 'ema' }),
+      expect.objectContaining({ id: 'ema26', type: 'ema' }),
+    ]))
+    expect(validation.spec.entry.all).toEqual(expect.arrayContaining([
+      expect.objectContaining({ left: 'ema12', op: 'crosses_above', right: 'ema26' }),
+    ]))
+    expect(validation.spec.exit.any).toEqual(expect.arrayContaining([
+      expect.objectContaining({ left: 'ema12', op: 'crosses_below', right: 'ema26' }),
+    ]))
+  })
+
+  it('normalizes explicit buy/sell rule condition DSL into entry and exit groups', async () => {
+    const { BacktestMarketDataService } = await import('../../src/domain/market/services/backtest-market-data-service')
+    const service = new BacktestMarketDataService()
+    const strategySpec = {
+      name: 'SMA Trend DSL',
+      market: 'cn',
+      assetClass: 'stock',
+      indicators: [
+        { id: 'sma20', type: 'sma', params: { period: 20 } },
+        { id: 'sma60', type: 'sma', params: { period: 60 } },
+      ],
+      rules: [
+        { name: 'buy', action: 'buy', condition: 'close > sma20 and sma20 > sma60' },
+        { name: 'sell', action: 'sell', condition: 'close < sma20' },
+      ],
+      exits: { stop_loss_pct: 8 },
+      positionSizing: { type: 'full_capital' },
+    }
+
+    const validation = JSON.parse(await service.readAction('custom_strategy_validate', { strategySpec }, { basePath: '/tmp' } as any, '', 120))
+
+    expect(validation).toMatchObject({ action: 'custom_strategy_validate', status: 'validated' })
+    expect(validation.spec.entry.all).toEqual(expect.arrayContaining([
+      expect.objectContaining({ left: 'close', op: '>', right: 'sma20' }),
+      expect.objectContaining({ left: 'sma20', op: '>', right: 'sma60' }),
+    ]))
+    expect(validation.spec.exit.any).toEqual(expect.arrayContaining([
+      expect.objectContaining({ left: 'close', op: '<', right: 'sma20' }),
+      expect.objectContaining({ type: 'stop_loss_pct', value: 8 }),
+    ]))
+  })
+
+  it('returns structured repair feedback for invalid condition DSL', async () => {
+    const { BacktestMarketDataService } = await import('../../src/domain/market/services/backtest-market-data-service')
+    const service = new BacktestMarketDataService()
+    const strategySpec = {
+      name: 'Invalid DSL',
+      market: 'cn',
+      assetClass: 'stock',
+      indicators: [{ id: 'sma20', type: 'sma', params: { period: 20 } }],
+      rules: [
+        { action: '买入', condition: 'close rises above sma20 with strong mood' },
+      ],
+      exit: { any: [{ type: 'stop_loss_pct', value: 8 }] },
+    }
+
+    const validation = JSON.parse(await service.readAction('custom_strategy_validate', { strategySpec }, { basePath: '/tmp' } as any, '', 120))
+
+    expect(validation).toMatchObject({ action: 'custom_strategy_validate', status: 'rejected' })
+    expect(validation.validationIssues).toEqual(expect.arrayContaining([
+      expect.objectContaining({
+        category: 'condition_dsl',
+        path: 'rules[0].action',
+        allowedActions: ['entry', 'exit', 'buy', 'sell', 'long', 'close'],
+      }),
+      expect.objectContaining({
+        category: 'condition_dsl',
+        path: 'rules[0].condition',
+        grammar: expect.stringContaining('<series-or-indicator-id>'),
+      }),
+    ]))
+    expect(validation.repairPlan).toEqual(expect.arrayContaining([
+      expect.objectContaining({
+        category: 'condition_dsl',
+        repairAction: 'fix_condition_dsl',
+        patchHint: expect.objectContaining({ catalog: 'custom_strategy_help.executableV1.conditionDslV1' }),
+      }),
+    ]))
+  })
+
+  it('normalizes compact indicator-pair custom strategy rules', async () => {
+    const { BacktestMarketDataService } = await import('../../src/domain/market/services/backtest-market-data-service')
+    const service = new BacktestMarketDataService()
+    const strategySpec = {
+      name: 'Compact EMA Cross Trend',
+      market: 'cn',
+      assetClass: 'stock',
+      indicators: [
+        { type: 'ema', params: { period: 12 } },
+        { type: 'ema', params: { period: 26 } },
+        { type: 'atr_pct', params: { period: 14 } },
+      ],
+      entry: {
+        all: [
+          {
+            indicator: 'ema',
+            params: { period: 12 },
+            operator: 'crosses_above',
+            indicator2: 'ema',
+            params2: { period: 26 },
+          },
+        ],
+      },
+      exit: {
+        any: [
+          { type: 'atr_stop_loss', value: 8 },
+          { type: 'take_profit_pct', value: 15 },
+          {
+            indicator: 'ema',
+            params: { period: 12 },
+            operator: 'crosses_below',
+            indicator2: 'ema',
+            params2: { period: 26 },
+          },
+        ],
+      },
+      positionSizing: 'full_capital',
+      dataRequirements: { minBars: 120 },
+    }
+
+    const validation = JSON.parse(await service.readAction('custom_strategy_validate', { strategySpec }, { basePath: '/tmp' } as any, '', 120))
+
+    expect(validation).toMatchObject({ action: 'custom_strategy_validate', status: 'validated' })
+    expect(validation.spec.indicators).toEqual(expect.arrayContaining([
+      expect.objectContaining({ id: 'ema12', type: 'ema', params: expect.objectContaining({ period: 12 }) }),
+      expect.objectContaining({ id: 'ema26', type: 'ema', params: expect.objectContaining({ period: 26 }) }),
+    ]))
+    expect(validation.spec.entry.all).toEqual(expect.arrayContaining([
+      expect.objectContaining({ left: 'ema12', op: 'crosses_above', right: 'ema26' }),
+    ]))
+    expect(validation.spec.exit.any).toEqual(expect.arrayContaining([
+      expect.objectContaining({ left: 'ema12', op: 'crosses_below', right: 'ema26' }),
+    ]))
+  })
+
+  it('normalizes explicit rules that use type as the comparison operator', async () => {
+    const { BacktestMarketDataService } = await import('../../src/domain/market/services/backtest-market-data-service')
+    const service = new BacktestMarketDataService()
+    const strategySpec = {
+      name: 'Type Operator EMA Cross',
+      market: 'cn',
+      assetClass: 'stock',
+      entryRules: [
+        {
+          type: 'crosses_above',
+          left: { indicator: 'ema', params: { period: 12 } },
+          right: { indicator: 'ema', params: { period: 26 } },
+        },
+      ],
+      exitRules: [
+        {
+          type: '>',
+          left: { indicator: 'ema_slope', params: { period: 12 } },
+          right: 0,
+        },
+        { type: 'stop_loss_pct', value: 5 },
+      ],
+    }
+
+    const validation = JSON.parse(await service.readAction('custom_strategy_validate', { strategySpec }, { basePath: '/tmp' } as any, '', 120))
+
+    expect(validation).toMatchObject({ action: 'custom_strategy_validate', status: 'validated' })
+    expect(validation.spec.entry.all).toEqual(expect.arrayContaining([
+      expect.objectContaining({ left: 'ema12', op: 'crosses_above', right: expect.objectContaining({ mul: ['ema26', 1] }) }),
+    ]))
+    expect(validation.spec.exit.any).toEqual(expect.arrayContaining([
+      expect.objectContaining({ left: 'ema_slope12', op: '>', right: 0 }),
+      expect.objectContaining({ type: 'stop_loss_pct', value: 5 }),
+    ]))
+  })
+
+  it('normalizes indicator names and string indicator values into rule refs', async () => {
+    const { BacktestMarketDataService } = await import('../../src/domain/market/services/backtest-market-data-service')
+    const service = new BacktestMarketDataService()
+    const strategySpec = {
+      name: 'Named Indicator Alias Trend',
+      market: 'cn',
+      assetClass: 'stock',
+      indicators: [
+        { name: 'ema', params: { period: 12 } },
+        { name: 'ema', params: { period: 26 } },
+        { name: 'sma', params: { period: 60 } },
+      ],
+      entry: {
+        conditions: [
+          { indicator: 'ema_12', operator: 'crosses_above', value: 'ema_26' },
+          { indicator: 'close', operator: '>', value: 'sma_60' },
+        ],
+      },
+      exit: { stop_loss_pct: 8, take_profit_pct: 20 },
+      positionSizing: 'fixed_fraction',
+      positionFraction: 0.2,
+    }
+
+    const validation = JSON.parse(await service.readAction('custom_strategy_validate', { strategySpec }, { basePath: '/tmp' } as any, '', 120))
+
+    expect(validation).toMatchObject({ action: 'custom_strategy_validate', status: 'validated' })
+    expect(validation.spec.indicators).toEqual(expect.arrayContaining([
+      expect.objectContaining({ id: 'ema12' }),
+      expect.objectContaining({ id: 'ema26' }),
+      expect.objectContaining({ id: 'sma60' }),
+    ]))
+    expect(validation.spec.entry.all).toEqual(expect.arrayContaining([
+      expect.objectContaining({ left: 'ema12', op: 'crosses_above', right: 'ema26' }),
+      expect.objectContaining({ left: 'close', op: '>', right: 'sma60' }),
+    ]))
+    expect(validation.spec.positionSizing).toMatchObject({ type: 'fixed_fraction', value: 0.2 })
   })
 
   it('normalizes legacy structured signals and exits into StrategySpec v1', async () => {

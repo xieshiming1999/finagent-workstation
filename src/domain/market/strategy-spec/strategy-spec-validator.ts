@@ -40,6 +40,7 @@ export interface StrategySpecContract {
   originalSignals?: unknown
   unsupportedOriginalSignals?: unknown
   proxyApproval?: unknown
+  conditionDslIssues?: Array<Record<string, unknown>>
 }
 
 type LooseStrategySpec = StrategySpecContract & Record<string, unknown>
@@ -99,6 +100,8 @@ type ValidationIssue = {
   declaredRuleRefs?: string[]
   exampleNumericRight?: number
   exampleReferenceRight?: string
+  allowedActions?: string[]
+  grammar?: string
 }
 
 type RepairStep = {
@@ -168,6 +171,7 @@ export function validateStockStrategySpec(spec: StrategySpecContract): StrategyV
   const allowedRuleRefs = new Set(['close', 'volume', 'turnover_rate'])
   let requiredLookbackBars = 0
   validateProxyStrategyApproval(spec, errors, unsupported, unsupportedDetails, validationIssues)
+  validateConditionDslIssues(spec, errors, unsupported, unsupportedDetails, validationIssues)
 
   if (!spec.name) {
     const message = 'name is required'
@@ -394,6 +398,43 @@ export function validateStockStrategySpec(spec: StrategySpecContract): StrategyV
     workflowAdvice: errors.length === 0
       ? 'If the user asked to validate only or not save, answer now from this validation result. Do not call custom_strategy_backtest, custom_strategy_save, query_kline, query_technical_indicator, Script, or other tools unless the user explicitly asks for backtest, save, or extra market evidence.'
       : 'This validation failed. Report the unsupported executable parts directly. Do not replace them with proxy indicators, and do not call custom_strategy_backtest or custom_strategy_save unless the user explicitly asks for a separate proxy redesign.',
+  }
+}
+
+function validateConditionDslIssues(
+  spec: StrategySpecContract,
+  errors: string[],
+  unsupported: string[],
+  unsupportedDetails: UnsupportedDetail[],
+  validationIssues: ValidationIssue[],
+) {
+  const issues = Array.isArray(spec.conditionDslIssues) ? spec.conditionDslIssues : []
+  for (const issue of issues) {
+    const index = Number(issue.index ?? 0)
+    const field = String(issue.field ?? 'condition')
+    const value = String(issue.value ?? '')
+    const message = String(issue.message ?? 'invalid conditionDslV1 rule')
+    errors.push(message)
+    unsupported.push(message)
+    validationIssues.push(validationIssue(
+      'condition_dsl',
+      `rules[${Number.isFinite(index) ? index : 0}].${field}`,
+      field,
+      value,
+      message,
+      'Use canonical entry/exit groups, or request custom_strategy_help detail:"catalog" fields:["executableV1.conditionDslV1"] and revise rules[] to the supported mini-contract.',
+      {
+        allowedActions: ['entry', 'exit', 'buy', 'sell', 'long', 'close'],
+        grammar: '<series-or-indicator-id> (< | <= | > | >= | crosses_above | crosses_below) (<series-or-indicator-id> | number)',
+      },
+    ))
+    unsupportedDetails.push(unsupportedDetail(
+      'condition_dsl',
+      `rules[${Number.isFinite(index) ? index : 0}].${field}`,
+      field,
+      value,
+      message,
+    ))
   }
 }
 
@@ -994,6 +1035,8 @@ function repairActionForCategory(category: string): string {
       return 'fix_indicator_parameter'
     case 'rule_shape':
       return 'fix_rule_shape'
+    case 'condition_dsl':
+      return 'fix_condition_dsl'
     case 'dataRequirements':
       return 'fix_data_requirements'
     case 'risk':
@@ -1016,6 +1059,7 @@ function repairTargetForCategory(category: string): string {
     case 'rule_source':
     case 'operator':
     case 'rule_shape':
+    case 'condition_dsl':
       return 'strategySpec.entry_or_exit'
     case 'exit_type':
     case 'exit_value':
@@ -1082,6 +1126,13 @@ function repairPatchHintForCategory(category: string): Record<string, unknown> {
       return {
         operation: 'provide_rule_group',
         allowedGroups: ['all', 'any'],
+      }
+    case 'condition_dsl':
+      return {
+        operation: 'revise_condition_dsl_or_use_canonical_rule_group',
+        catalog: 'custom_strategy_help.executableV1.conditionDslV1',
+        allowedActions: ['entry', 'exit', 'buy', 'sell', 'long', 'close'],
+        grammar: '<series-or-indicator-id> (< | <= | > | >= | crosses_above | crosses_below) (<series-or-indicator-id> | number)',
       }
     case 'dataRequirements':
       return {
@@ -1302,6 +1353,8 @@ function unsupportedSuggestion(category: string): string {
       return 'Use full_capital, fixed_fraction, risk_per_trade, or kelly_fraction.'
     case 'proxy_strategy':
       return 'A proxy StrategySpec is a separate strategy. Validate/backtest/save it only after explicit structured approval.'
+    case 'condition_dsl':
+      return 'Use canonical entry/exit rule groups, or request custom_strategy_help detail:"catalog" fields:["executableV1.conditionDslV1"] and revise the structured DSL fields.'
     default:
       return 'Revise this StrategySpec field according to custom_strategy_help before validating again.'
   }

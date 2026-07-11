@@ -14,7 +14,10 @@ import {
   maybeBuildCustomStrategyUnsupportedProxyAnswer,
   maybeBuildCustomStrategyValidateOnlyAnswer,
 } from './finance-custom-strategy-summary'
-import { buildCustomStrategyPreflightToolCalls } from './finance-custom-strategy-preflight'
+import {
+  buildCustomStrategyPreflightToolCalls,
+  buildCustomStrategySavedRunRepairToolCalls,
+} from './finance-custom-strategy-preflight'
 import { buildTradeSizingPreflightToolCalls } from './finance-trade-sizing-preflight'
 import {
   buildInvestmentEvidenceReviewSearchToolCalls,
@@ -395,6 +398,34 @@ export function maybeInterceptFinanceToolCalls(
         'Skipped: saved backtested strategy evidence is runnable; executing custom_strategy_run before any save-only summary.',
       answer: null,
       autoToolCalls: saveRerunCalls,
+    }
+  }
+
+  const savedRunRepairCalls = buildCustomStrategySavedRunRepairToolCalls(messages, proposedToolCalls)
+  if (savedRunRepairCalls) {
+    return {
+      skippedReason:
+        'Skipped: saved strategy rerun must use custom_strategy_run by strategyId instead of reconstructing the StrategySpec with custom_strategy_backtest.',
+      answer: null,
+      autoToolCalls: savedRunRepairCalls,
+    }
+  }
+
+  const saveRunBoundaryAnswer = maybeBuildCustomStrategySaveRunBoundaryAnswer(messages)
+  if (
+    saveRunBoundaryAnswer &&
+    proposedToolCalls.some((call) =>
+      call.name === 'MarketData' &&
+      (call.input.action === 'custom_strategy_save' ||
+        call.input.action === 'custom_strategy_run' ||
+        call.input.action === 'query_kline' ||
+        call.input.action === 'custom_strategy_backtest')
+    )
+  ) {
+    return {
+      skippedReason:
+        'Skipped: saved custom strategy already has structured save/run evidence for this turn; answering before repeated strategy or provider calls.',
+      answer: saveRunBoundaryAnswer,
     }
   }
 

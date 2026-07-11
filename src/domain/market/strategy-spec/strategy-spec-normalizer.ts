@@ -39,15 +39,19 @@ export function normalizeStrategySpec(input: NormalizedStrategySpec): Normalized
   const name = String(input.name ?? 'custom strategy').trim()
   const version = numberOf(input.version, 1)
   const id = input.id || `custom_${slug(name)}_v${version}`
-  const rawIndicators = normalizeRawIndicators(loose.indicators ?? loose.observation)
+  const rawIndicators = normalizeRawIndicators(loose.indicators ?? loose.observation ?? loose.signals)
+  const conditionDslIssues = collectConditionDslIssues(input)
   const indicators = (rawIndicators.length ? rawIndicators : indicatorsFromRules(input) ?? []).map((indicator) => {
     const source = indicator as Record<string, unknown>
     const ref = parseIndicatorRef(String(source.type ?? source.indicator ?? source.name ?? source.id ?? ''))
-    const idValue = String(source.id ?? source.name ?? ref.id)
     const params: Record<string, unknown> = {
       ...(source.params && typeof source.params === 'object' && !Array.isArray(source.params) ? source.params as Record<string, unknown> : {}),
       ...((source.length != null || source.period != null) ? { period: numberOf(source.period ?? source.length, ref.period) } : {}),
     }
+    const period = numberOf(params.period, ref.period)
+    const rawName = String(source.name ?? '').trim()
+    const explicitNameId = rawName && !parseRegisteredIndicator(rawName) ? rawName : undefined
+    const idValue = String(source.id ?? source.output ?? source.alias ?? explicitNameId ?? makeRef(ref.type, period).id)
     if (ref.type === 'bollinger') {
       delete params.stdDev
       delete params.std_dev
@@ -99,6 +103,7 @@ export function normalizeStrategySpec(input: NormalizedStrategySpec): Normalized
     positionSizing: normalizeSizing(sizingSource(input)),
     cost: input.cost ?? { commissionPct: 0.1, slippagePct: 0.05 },
     notes: input.notes ?? [],
+    ...(conditionDslIssues.length ? { conditionDslIssues } : {}),
   }
 }
 
@@ -391,7 +396,7 @@ function isAnyRuleGroup(source: Record<string, unknown>): boolean {
 }
 
 function normalizeExplicitRule(rule: Record<string, unknown>, indicatorIds = new Set<string>()): Rule {
-  if ('type' in rule) return rule as Rule
+  if ('type' in rule && isStopRuleType(rule.type)) return rule as Rule
   for (const key of ['stop_loss_pct', 'take_profit_pct', 'trailing_stop_pct', 'max_drawdown_stop_pct', 'atr_stop_loss', 'time_stop_bars']) {
     const value = numericValue(rule[key])
     if (value != null) return { type: key as 'stop_loss_pct' | 'take_profit_pct' | 'trailing_stop_pct' | 'max_drawdown_stop_pct' | 'atr_stop_loss' | 'time_stop_bars', value }
@@ -399,8 +404,9 @@ function normalizeExplicitRule(rule: Record<string, unknown>, indicatorIds = new
   const leftRef = leftIndicatorRef(rule)
   const indicator = leftRef.type
   const op = operatorFromRule(rule)
+  const { type: _type, ...comparisonRule } = rule
   return {
-    ...(rule as Record<string, unknown>),
+    ...(comparisonRule as Record<string, unknown>),
     left: normalizedRuleLeft(rule, leftRef, indicatorIds),
     op,
     right: indicator === 'volume_sma' ? volumeComparisonRight(leftRef, rule, indicatorIds) : rightValue(rule, indicatorIds),
@@ -433,13 +439,25 @@ function normalizeOperator(raw: string): string {
 }
 
 function operatorFromRule(rule: Record<string, unknown>): string {
-  const direct = normalizeOperator(String(rule.operator ?? rule.op ?? '').trim())
+  const typeOperator = !isStopRuleType(rule.type) ? rule.type : undefined
+  const direct = normalizeOperator(String(rule.operator ?? rule.op ?? typeOperator ?? '').trim())
   if (direct) return direct
   for (const key of Object.keys(rule)) {
     const normalized = normalizeOperatorKey(key)
     if (normalized) return normalized
   }
   return ''
+}
+
+function isStopRuleType(raw: unknown): boolean {
+  return [
+    'stop_loss_pct',
+    'take_profit_pct',
+    'trailing_stop_pct',
+    'max_drawdown_stop_pct',
+    'atr_stop_loss',
+    'time_stop_bars',
+  ].includes(String(raw ?? ''))
 }
 
 function normalizeOperatorKey(raw: string): string {
@@ -456,7 +474,7 @@ function normalizedRuleLeft(rule: Record<string, unknown>, leftRef: StrategyIndi
     if (leftRef.type === 'volume' || leftRef.type === 'volume_sma') return 'volume'
     return leftRef.id
   }
-  const rawLeft = String(rule.left ?? rule.indicator ?? '').trim()
+  const rawLeft = String(rule.left ?? rule.lhs ?? rule.indicator ?? '').trim()
   if (indicatorIds.has(rawLeft)) return rawLeft
   if (leftRef.type === 'volume' || leftRef.type === 'volume_sma') return 'volume'
   if (/^close_?\d*$/i.test(rawLeft)) return 'close'
@@ -514,6 +532,14 @@ function normalizeSizing(raw: NormalizedStrategySpec['positionSizing'] | unknown
 
 function indicatorRefs(rule: Record<string, unknown>): StrategyIndicatorRef[] {
   const refs = [leftIndicatorRef(rule)]
+  if (rule.indicator2 != null || rule.params2 != null || rule.period2 != null) {
+    refs.push(refFromObject({
+      indicator: rule.indicator2,
+      params: rule.params2,
+      period: rule.period2,
+      length: rule.length2,
+    }))
+  }
   if (rule.reference && typeof rule.reference === 'object') refs.push(refFromObject(rule.reference as Record<string, unknown>))
   if (rule.referenceIndicator != null || rule.referencePeriod != null) {
     refs.push(refFromObject({
@@ -534,14 +560,20 @@ function indicatorRefs(rule: Record<string, unknown>): StrategyIndicatorRef[] {
 
 function leftIndicatorRef(rule: Record<string, unknown>): StrategyIndicatorRef {
   if (rule.left && typeof rule.left === 'object') return refFromObject(rule.left as Record<string, unknown>)
-  const parsed = parseIndicatorRef(String(rule.indicator ?? rule.left ?? rule.ref ?? '').trim())
-  const period = numberOf(rule.period ?? rule.length, parsed.period)
+  const parsed = parseIndicatorRef(String(rule.indicator ?? rule.left ?? rule.lhs ?? rule.ref ?? '').trim())
+  const params = rule.params && typeof rule.params === 'object' && !Array.isArray(rule.params)
+    ? rule.params as Record<string, unknown>
+    : {}
+  const period = numberOf(rule.period ?? rule.length ?? params.period, parsed.period)
   return makeRef(parsed.type, period)
 }
 
 function refFromObject(raw: Record<string, unknown>): StrategyIndicatorRef {
-  const parsed = parseIndicatorRef(String(raw.indicator ?? raw.type ?? raw.left ?? raw.ref ?? raw.name ?? raw.id ?? '').trim())
-  const period = numberOf(raw.period ?? raw.length, parsed.period)
+  const parsed = parseIndicatorRef(String(raw.indicator ?? raw.type ?? raw.left ?? raw.field ?? raw.ref ?? raw.name ?? raw.id ?? '').trim())
+  const params = raw.params && typeof raw.params === 'object' && !Array.isArray(raw.params)
+    ? raw.params as Record<string, unknown>
+    : {}
+  const period = numberOf(raw.period ?? raw.length ?? params.period, parsed.period)
   return makeRef(parsed.type, period)
 }
 
@@ -555,6 +587,20 @@ function refsFromRightObject(raw: Record<string, unknown>): StrategyIndicatorRef
 }
 
 function rightValue(condition: Record<string, unknown>, indicatorIds = new Set<string>()): unknown {
+  if (typeof condition.rhs === 'string') {
+    if (indicatorIds.has(condition.rhs)) return condition.rhs
+    const ref = parseIndicatorRef(condition.rhs)
+    if (allowedIndicators.has(ref.type) || indicatorIds.has(ref.id)) return ref.id
+  }
+  if (condition.indicator2 != null || condition.params2 != null || condition.period2 != null) {
+    const ref = refFromObject({
+      indicator: condition.indicator2,
+      params: condition.params2,
+      period: condition.period2,
+      length: condition.length2,
+    })
+    return ref.id
+  }
   if (condition.reference && typeof condition.reference === 'object') {
     const ref = refFromObject(condition.reference as Record<string, unknown>)
     return { mul: [ref.id, numericValue(condition.scale) ?? numericValue(condition.multiplier) ?? 1] }
@@ -577,6 +623,7 @@ function rightValue(condition: Record<string, unknown>, indicatorIds = new Set<s
     if (ref.type === 'volume_sma') {
       return { mul: [ref.id, numericValue(condition.scale) ?? numericValue(condition.multiplier) ?? numericValue(condition.factor) ?? 1] }
     }
+    if (allowedIndicators.has(ref.type) || indicatorIds.has(ref.id)) return ref.id
   }
   if (condition.right && typeof condition.right === 'object' && !('mul' in condition.right)) {
     const right = condition.right as Record<string, unknown>
@@ -629,12 +676,111 @@ function volumeComparisonRight(ref: { id: string }, condition: Record<string, un
   return { mul: [ref.id, numericValue(condition.value) ?? 1] }
 }
 
+function rulesDslSource(input: NormalizedStrategySpec, mode: 'entry' | 'exit'): unknown {
+  const rawInput = input as unknown as Record<string, unknown>
+  const rules = Array.isArray(rawInput.rules) ? rawInput.rules : []
+  const selected = rules
+    .filter(isRecord)
+    .filter((rule) => ruleActionMode(rule) === mode)
+    .flatMap((rule) => conditionRulesFromDsl(String(rule.condition ?? rule.expression ?? '')))
+  if (!selected.length) return undefined
+  const rawLogic = String((rules.find(isRecord) as Record<string, unknown> | undefined)?.logic ?? '').toLowerCase()
+  const hasAny = mode === 'exit' || selected.some((rule) => rule.logic === 'or') || rawLogic === 'or' || rawLogic === 'any'
+  const cleaned = selected.map(({ logic: _logic, ...rule }) => rule)
+  return hasAny ? { any: cleaned } : { all: cleaned }
+}
+
+function collectConditionDslIssues(input: NormalizedStrategySpec): Array<Record<string, unknown>> {
+  const rawInput = input as unknown as Record<string, unknown>
+  const rules = Array.isArray(rawInput.rules) ? rawInput.rules : []
+  const issues: Array<Record<string, unknown>> = []
+  rules.forEach((raw, index) => {
+    if (!isRecord(raw)) {
+      issues.push({ index, field: 'rules', message: 'conditionDslV1 rule must be an object.' })
+      return
+    }
+    const mode = ruleActionMode(raw)
+    if (!mode) {
+      issues.push({
+        index,
+        field: 'action',
+        value: raw.action ?? raw.side ?? raw.type,
+        message: 'conditionDslV1 action must be one of entry, exit, buy, sell, long, or close.',
+      })
+    }
+    const condition = String(raw.condition ?? raw.expression ?? '')
+    if (!condition.trim()) {
+      issues.push({ index, field: 'condition', value: condition, message: 'conditionDslV1 condition is required.' })
+      return
+    }
+    if (conditionRulesFromDsl(condition).length === 0) {
+      issues.push({
+        index,
+        field: 'condition',
+        value: condition,
+        message: 'conditionDslV1 condition must be simple comparisons joined only by and/or.',
+      })
+    }
+  })
+  return issues
+}
+
+function ruleActionMode(rule: Record<string, unknown>): 'entry' | 'exit' | '' {
+  const action = String(rule.action ?? rule.side ?? rule.type ?? '').trim().toLowerCase()
+  if (action === 'entry' || action === 'exit') return action
+  if (action === 'buy' || action === 'long') return 'entry'
+  if (action === 'sell' || action === 'close') return 'exit'
+  return ''
+}
+
+function conditionRulesFromDsl(raw: string): Array<Record<string, unknown> & { logic?: 'and' | 'or' }> {
+  if (!raw.trim()) return []
+  const parts = raw
+    .split(/\s+(and|or|&&|\|\|)\s+/i)
+    .filter((part) => part.trim())
+  const out: Array<Record<string, unknown> & { logic?: 'and' | 'or' }> = []
+  let nextLogic: 'and' | 'or' = 'and'
+  for (const part of parts) {
+    const token = part.trim()
+    if (/^(and|&&)$/i.test(token)) {
+      nextLogic = 'and'
+      continue
+    }
+    if (/^(or|\|\|)$/i.test(token)) {
+      nextLogic = 'or'
+      continue
+    }
+    const parsed = parseDslComparison(token)
+    if (!parsed) return []
+    out.push({ ...parsed, logic: nextLogic })
+  }
+  return out
+}
+
+function parseDslComparison(raw: string): Record<string, unknown> | null {
+  const match = raw.trim().match(/^([a-zA-Z_][a-zA-Z0-9_]*|close|volume)\s*(crosses_above|crosses_below|>=|<=|>|<)\s*([a-zA-Z_][a-zA-Z0-9_]*|[0-9]+(?:\.[0-9]+)?)$/)
+  if (!match) return null
+  const [, left, operator, right] = match
+  const numericRight = numericValue(right)
+  return {
+    left,
+    operator: normalizeOperator(operator),
+    value: numericRight ?? right,
+  }
+}
+
 function exitSource(input: NormalizedStrategySpec): unknown {
   const rawInput = input as unknown as Record<string, unknown>
   const lifecycle = rawInput.lifecycle && typeof rawInput.lifecycle === 'object' && !Array.isArray(rawInput.lifecycle)
     ? rawInput.lifecycle as Record<string, unknown>
     : {}
-  const rawExit = input.exit ?? rawInput.exits ?? rawInput.exitRules ?? rawInput.exitRule ?? rawInput.exitConditions ?? lifecycle.exit
+  const rawExitBase = input.exit ?? rawInput.exits ?? rawInput.exitSignals ?? rawInput.exitRules ?? rawInput.exitRule ?? rawInput.exitConditions ?? lifecycle.exit
+  const rawExitDsl = rulesDslSource(input, 'exit')
+  const rawExit = rawExitBase == null && rawExitDsl != null
+    ? rawExitDsl
+    : rawExitBase && typeof rawExitBase === 'object' && !Array.isArray(rawExitBase) && rawExitDsl && typeof rawExitDsl === 'object' && !Array.isArray(rawExitDsl)
+      ? { ...(rawExitDsl as Record<string, unknown>), ...(rawExitBase as Record<string, unknown>) }
+      : rawExitBase
   const exit = Array.isArray(rawExit)
     ? { any: rawExit } as Record<string, unknown>
     : rawExit && typeof rawExit === 'object'
@@ -672,21 +818,21 @@ function entrySource(input: NormalizedStrategySpec): unknown {
   const signals = rawInput.signals && typeof rawInput.signals === 'object' && !Array.isArray(rawInput.signals)
     ? rawInput.signals as Record<string, unknown>
     : {}
-  return input.entry ?? signals.entry ?? rawInput.entryRules ?? rawInput.entryRule ?? rawInput.entryConditions ?? lifecycle.entry
+  return input.entry ?? signals.entry ?? rawInput.entrySignals ?? rawInput.entryRules ?? rawInput.entryRule ?? rawInput.entryConditions ?? lifecycle.entry ?? rulesDslSource(input, 'entry')
 }
 
 function sizingSource(input: NormalizedStrategySpec): unknown {
   const rawInput = input as unknown as Record<string, unknown>
   if (input.positionSizing != null) {
     if (typeof input.positionSizing === 'string') {
-      const fixedFraction = numericValue(rawInput.fixedFraction ?? rawInput.fixed_fraction)
+      const fixedFraction = numericValue(rawInput.fixedFraction ?? rawInput.fixed_fraction ?? rawInput.positionFraction ?? rawInput.position_fraction)
       return fixedFraction == null
         ? input.positionSizing
         : { type: input.positionSizing, value: fixedFraction }
     }
     return input.positionSizing
   }
-  const fixedFraction = numericValue(rawInput.fixedFraction ?? rawInput.fixed_fraction)
+  const fixedFraction = numericValue(rawInput.fixedFraction ?? rawInput.fixed_fraction ?? rawInput.positionFraction ?? rawInput.position_fraction)
   if (fixedFraction != null) return { type: 'fixed_fraction', value: fixedFraction }
   return undefined
 }

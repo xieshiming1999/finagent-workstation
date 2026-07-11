@@ -1,7 +1,10 @@
 import { describe, expect, it } from 'vitest'
 
 import { assistantMessage, toolMessage, userMessage } from '../../src/agent/message'
-import { buildCustomStrategyPreflightToolCalls } from '../../src/domain/finance/workflows/finance-custom-strategy-preflight'
+import {
+  buildCustomStrategyPreflightToolCalls,
+  buildCustomStrategySavedRunRepairToolCalls,
+} from '../../src/domain/finance/workflows/finance-custom-strategy-preflight'
 
 function strategyWorkflowContent(strategySpec?: Record<string, unknown>): string {
   return 'structured strategy request\n' +
@@ -61,5 +64,39 @@ describe('finance custom strategy preflight', () => {
     expect(calls).toHaveLength(1)
     expect(calls?.[0].input.action).toBe('custom_strategy_validate')
     expect(calls?.[0].input.strategySpec).toEqual(spec)
+  })
+
+  it('repairs saved strategy rerun from custom_strategy_backtest to custom_strategy_run', () => {
+    const calls = buildCustomStrategySavedRunRepairToolCalls([
+      userMessage('create and save'),
+      assistantMessage('', [
+        { id: 'save', name: 'MarketData', input: { action: 'custom_strategy_save' } },
+      ]),
+      toolMessage('save', JSON.stringify({
+        action: 'custom_strategy_save',
+        strategyId: 'custom_sma_v1',
+        status: 'backtested',
+        spec: { id: 'custom_sma_v1', universe: { symbols: ['600519'] } },
+        evidence: { status: 'backtested' },
+      })),
+      userMessage('rerun saved strategy'),
+    ], [
+      {
+        id: 'bt',
+        name: 'MarketData',
+        input: {
+          action: 'custom_strategy_backtest',
+          code: '000858',
+          strategySpec: { id: 'custom_sma_v1' },
+        },
+      },
+    ])
+
+    expect(calls).toHaveLength(1)
+    expect(calls?.[0].input).toEqual({
+      action: 'custom_strategy_run',
+      strategyId: 'custom_sma_v1',
+      code: '000858',
+    })
   })
 })

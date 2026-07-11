@@ -5,7 +5,9 @@ import {
   maybeBuildCustomStrategyBacktestAnswer,
   maybeBuildCustomStrategyComparisonAnswer,
   maybeBuildCustomStrategyRejectedValidationAnswer,
+  maybeBuildCustomStrategySaveAnswer,
   maybeBuildCustomStrategySaveRunBoundaryAnswer,
+  maybeBuildCustomStrategySavedAnswer,
   maybeBuildCustomStrategyUnsupportedProxyAnswer,
 } from '../../src/domain/finance/workflows/finance-custom-strategy-summary'
 
@@ -271,29 +273,77 @@ describe('finance custom strategy summaries', () => {
     expect(answer).toContain('backtested evidence')
   })
 
-  it('does not build save-rerun boundary from prompt text alone', () => {
+  it('builds save-rerun boundary from structured save and run evidence without prompt parsing', () => {
     const messages: Message[] = [
       user('把刚才验证通过的策略保存下来，然后重新按策略 ID 跑一次，确认结果一致。'),
       assistantTool('save', { action: 'custom_strategy_save' }),
       tool('save', {
         action: 'custom_strategy_save',
-        strategyId: 'custom_fund_watch_v1',
+        strategyId: 'custom_ema_v1',
         version: 1,
-        status: 'validated',
-        spec: { id: 'custom_fund_watch_v1', name: '基金定投观察策略' },
+        status: 'backtested',
+        spec: { id: 'custom_ema_v1', name: '贵州茅台_EMA趋势' },
         validation: { status: 'validated' },
-        evidence: null,
+        evidence: { status: 'backtested', bars: 240 },
       }),
-      assistantTool('run', { action: 'custom_strategy_run', strategyId: 'custom_fund_watch_v1' }),
-      tool(
-        'run',
-        'custom strategy custom_fund_watch_v1 is not runnable; status=validated. Run custom_strategy_backtest and save backtested evidence first.',
-        true,
-      ),
+      assistantTool('run', { action: 'custom_strategy_run', strategyId: 'custom_ema_v1', code: '000858' }),
+      tool('run', {
+        ...backtestResult('000858', 4, 1),
+        action: 'custom_strategy_run',
+        code: '000858',
+        strategyId: 'custom_ema_v1',
+        status: 'backtested',
+      }),
     ]
 
     const answer = maybeBuildCustomStrategySaveRunBoundaryAnswer(messages)
 
-    expect(answer).toBeNull()
+    expect(answer).toContain('策略保存与重跑完成')
+    expect(answer).toContain('strategyId：custom_ema_v1')
+    expect(answer).toContain('标的：000858')
+    expect(answer).toContain('数据覆盖')
+  })
+
+  it('builds rerun answer from custom_strategy_run evidence without a same-turn save', () => {
+    const messages: Message[] = [
+      user('换成五粮液000858重跑已保存策略。'),
+      assistantTool('run', { action: 'custom_strategy_run', strategyId: 'custom_ema_v1', code: '000858' }),
+      tool('run', {
+        ...backtestResult('000858', 4, 1),
+        action: 'custom_strategy_run',
+        code: '000858',
+        strategyId: 'custom_ema_v1',
+        status: 'backtested',
+      }),
+    ]
+
+    const answer = maybeBuildCustomStrategySaveRunBoundaryAnswer(messages)
+
+    expect(answer).toContain('策略保存与重跑完成')
+    expect(answer).toContain('strategyId：custom_ema_v1')
+    expect(answer).toContain('标的：000858')
+  })
+
+  it('does not close a natural-language save-rerun turn after save only', () => {
+    const messages: Message[] = [
+      user('保存刚才验证通过的策略，然后换一只股票重跑。'),
+      assistantTool('save', { action: 'custom_strategy_save' }),
+      tool('save', {
+        action: 'custom_strategy_save',
+        strategyId: 'custom_ema_v1',
+        version: 1,
+        status: 'backtested',
+        spec: { id: 'custom_ema_v1', name: '贵州茅台_EMA趋势' },
+        validation: { status: 'validated' },
+        evidence: { status: 'backtested', bars: 240 },
+      }),
+    ]
+
+    expect(maybeBuildCustomStrategySavedAnswer(messages)).toBeNull()
+    expect(
+      maybeBuildCustomStrategySaveAnswer(messages, [
+        { id: 'next-kline', name: 'MarketData', input: { action: 'query_kline' } },
+      ]),
+    ).toBeNull()
   })
 })
