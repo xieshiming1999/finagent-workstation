@@ -22,6 +22,7 @@ import { DashboardTool } from '../agent/tools/dashboard'
 import { MarketDataTool } from '../agent/tools/market-data'
 import { WindMcpTool } from '../agent/tools/wind-mcp'
 import { SkillTool } from '../agent/tools/skill'
+import { SourceReaderTool } from '../agent/tools/source-reader'
 import { AskUserQuestionTool } from '../agent/tools/ask-user'
 import { TaskCreateTool, TaskGetTool, TaskUpdateTool, TaskListTool, TaskOutputTool, TaskStopTool } from '../agent/tools/tasks'
 import { EnterPlanModeTool, ExitPlanModeTool } from '../agent/tools/plan-mode'
@@ -318,6 +319,7 @@ function initAgent() {
   registry.register(new ProviderRouterTool())
   registry.register(new RecoveryPlannerTool())
   registry.register(new BudgetGovernorTool())
+  registry.register(new SourceReaderTool())
   registry.register(new RunbookTool())
   registry.register(new ArtifactRegistryTool())
   registry.register(new CapabilityStatusTool(() => registry.capabilities()))
