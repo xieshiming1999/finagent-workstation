@@ -2,6 +2,7 @@ import { existsSync, mkdirSync, readFileSync, writeFileSync } from 'fs'
 import { dirname, join } from 'path'
 
 export type ArtifactKind =
+  | 'analysis'
   | 'goal'
   | 'plan_snapshot'
   | 'work_packet'
@@ -9,8 +10,12 @@ export type ArtifactKind =
   | 'api_error'
   | 'data_snapshot'
   | 'research'
+  | 'macro_evidence'
   | 'dashboard'
+  | 'strategy'
+  | 'backtest'
   | 'report'
+  | 'trade_preparation'
 
 export type ArtifactVerificationStatus = 'unverified' | 'verified' | 'stale' | 'failed' | 'unsupported'
 

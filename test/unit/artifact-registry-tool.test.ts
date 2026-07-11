@@ -1,0 +1,72 @@
+import { mkdirSync, mkdtempSync } from 'node:fs'
+import { tmpdir } from 'node:os'
+import { join } from 'node:path'
+import { describe, expect, it } from 'vitest'
+import type { ToolContext } from '../../src/agent/tool'
+import { ArtifactRegistryTool } from '../../src/agent/tools/artifact-registry'
+
+describe('ArtifactRegistryTool', () => {
+  it('registers, lists, and gets durable artifacts', async () => {
+    const ctx = tempToolContext()
+    const tool = new ArtifactRegistryTool()
+
+    const created = JSON.parse(await tool.call('artifact-1', {
+      action: 'register',
+      kind: 'analysis',
+      path: 'memory/reports/stock-analysis.md',
+      title: 'Stock analysis',
+      source: 'agent-workflow',
+      verificationStatus: 'verified',
+      freshness: { status: 'fresh' },
+      provenance: { workflow: 'stock_research' },
+      links: ['workflow:stock_research'],
+      metadata: { templateId: 'stock_research' },
+    }, ctx))
+    expect(created.contract).toBe('artifact-registry-record-v1')
+    expect(created.artifact.kind).toBe('analysis')
+    expect(created.artifact.stableRef).toMatch(/^artifact:analysis:/)
+    expect(created.artifact.verificationStatus).toBe('verified')
+
+    const list = JSON.parse(await tool.call('artifact-2', {
+      action: 'list',
+      kind: 'analysis',
+    }, ctx))
+    expect(list.contract).toBe('artifact-registry-list-v1')
+    expect(list.count).toBe(1)
+
+    const get = JSON.parse(await tool.call('artifact-3', {
+      action: 'get',
+      id: created.artifact.stableRef,
+    }, ctx))
+    expect(get.artifact.title).toBe('Stock analysis')
+  })
+
+  it('rejects incomplete register input through the tool error channel', async () => {
+    const ctx = tempToolContext()
+    await expect(new ArtifactRegistryTool().call('artifact-4', {
+      action: 'register',
+      kind: 'analysis',
+      path: 'memory/reports/stock-analysis.md',
+    }, ctx)).rejects.toThrow('requires non-empty path, title, and source')
+  })
+})
+
+function tempToolContext(): ToolContext {
+  const basePath = mkdtempSync(join(tmpdir(), 'fin-artifact-registry-tool-'))
+  const memoryDir = join(basePath, 'memory')
+  mkdirSync(memoryDir, { recursive: true })
+  return {
+    basePath,
+    workDir: basePath,
+    memoryDir,
+    bundleDir: join(basePath, 'bundle'),
+    projectLocalDir: join(basePath, '.finagent-workstation'),
+    pluginSkillPaths: [],
+    skipPermissions: false,
+    approvedTools: new Set(),
+    planMode: false,
+    readFileTimestamps: new Map(),
+    taskRegistry: {} as ToolContext['taskRegistry'],
+    teamRegistry: {} as ToolContext['teamRegistry'],
+  }
+}
