@@ -416,6 +416,14 @@ export function maybeBuildCustomStrategyRejectedValidationAnswer(messages: Messa
   ].join('\n')
 }
 
+export function maybeBuildCustomStrategyRejectedValidationBoundedAnswer(messages: Message[]): string | null {
+  return maybeBuildCustomStrategyRejectedValidationAnswer(messages, [{
+    id: 'custom-strategy-rejected-boundary-probe',
+    name: 'MarketData',
+    input: { action: 'custom_strategy_backtest' },
+  }])
+}
+
 function rejectedValidationBoundaryAnswer(): string {
   return [
     '该策略未进入可执行回测，并已停止追加代理策略、脚本、文件或额外行情工具调用。本回答基于结构化工作流状态：最近一次 StrategySpec 验证已经被标记为 blocked / unsupported。',
@@ -447,7 +455,9 @@ export function maybeBuildCustomStrategyUnsupportedProxyAnswer(messages: Message
 export function maybeBuildCustomStrategySaveAnswer(messages: Message[], proposedToolCalls: ToolUse[]): string | null {
   const lastUserIndex = findLastIndex(messages, (message) => message.role === Role.User)
   if (lastUserIndex < 0) return null
-  const state = latestFinanceWorkflowState(messages, lastUserIndex)
+  const commandState = commandStateFromLastUser(messages, lastUserIndex)
+  if (commandState && (!isStrategyState(commandState) || commandState.intentMode !== 'save')) return null
+  const state = commandState ?? latestFinanceWorkflowState(messages, lastUserIndex)
   if (!isStrategyState(state) || state?.intentMode !== 'save') return null
   if (!proposedToolCalls.some(isCustomStrategySaveOverrunToolCall)) return null
 
@@ -475,6 +485,14 @@ export function maybeBuildCustomStrategySaveAnswer(messages: Message[], proposed
     ].join('\n')
   }
   return null
+}
+
+export function maybeBuildCustomStrategySavedAnswer(messages: Message[]): string | null {
+  return maybeBuildCustomStrategySaveAnswer(messages, [{
+    id: 'custom-strategy-save-boundary-probe',
+    name: 'MarketData',
+    input: { action: 'query_kline' },
+  }])
 }
 
 function commandStateFromLastUser(messages: Message[], lastUserIndex: number): FinanceWorkflowState | null {

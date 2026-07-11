@@ -6,9 +6,11 @@ import {
   maybeBuildCustomStrategyBacktestAnswer,
   maybeBuildCustomStrategyComparisonAnswer,
   maybeBuildCustomStrategyRejectedValidationAnswer,
+  maybeBuildCustomStrategyRejectedValidationBoundedAnswer,
   maybeBuildCustomStrategyRunComparisonAnswer,
   maybeBuildCustomStrategySaveRunBoundaryAnswer,
   maybeBuildCustomStrategySaveAnswer,
+  maybeBuildCustomStrategySavedAnswer,
   maybeBuildCustomStrategyUnsupportedProxyAnswer,
   maybeBuildCustomStrategyValidateOnlyAnswer,
 } from './finance-custom-strategy-summary'
@@ -556,6 +558,10 @@ export function maybeBuildFinanceBoundedAnswer(messages: Message[]): string | nu
   }
   const customStrategySaveRunBoundaryAnswer = maybeBuildCustomStrategySaveRunBoundaryAnswer(messages.slice(lastUserIndex))
   if (customStrategySaveRunBoundaryAnswer) return customStrategySaveRunBoundaryAnswer
+  const customStrategyRejectedAnswer = maybeBuildCustomStrategyRejectedValidationBoundedAnswer(messages.slice(lastUserIndex))
+  if (customStrategyRejectedAnswer) return customStrategyRejectedAnswer
+  const customStrategySavedAnswer = maybeBuildCustomStrategySavedAnswer(messages.slice(lastUserIndex))
+  if (customStrategySavedAnswer) return customStrategySavedAnswer
   const customStrategyRunComparisonAnswer = maybeBuildCustomStrategyRunComparisonAnswer(messages.slice(lastUserIndex))
   if (customStrategyRunComparisonAnswer) return customStrategyRunComparisonAnswer
   const customStrategyComparisonAnswer = maybeBuildCustomStrategyComparisonAnswer(messages.slice(lastUserIndex))
