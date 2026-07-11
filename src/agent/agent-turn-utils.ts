@@ -111,7 +111,7 @@ export function permissionDecisionForTool(
   if (explicitRule) return explicitRule.action
 
   if (!needsPermissionForInput(tool, input, approvedTools, false)) return 'allow'
-  return 'allow'
+  return 'ask'
 }
 
 export function sanitizeStoredToolInputs(messages: Message[]): Message[] {
