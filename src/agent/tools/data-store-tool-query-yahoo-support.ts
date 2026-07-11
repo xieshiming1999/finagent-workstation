@@ -125,7 +125,7 @@ export function supportedYfinanceDatasets(): string[] {
 }
 
 export function unsupportedYfinanceDatasetMessage(requestedDataset: string) {
-  return `Unsupported yfinance dataset "${requestedDataset}". Use one of: ${supportedYfinanceDatasets().join(", ")}`;
+  return `Yfinance dataset "${requestedDataset}" is not supported. Use one of: ${supportedYfinanceDatasets().join(", ")}`;
 }
 
 export function missingYfinanceRowsMessage(

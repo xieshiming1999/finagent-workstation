@@ -17,7 +17,7 @@ describe('finance provenance formatter', () => {
       timestamp: '2026-06-16T09:31:10',
       fetchedAt: '2026-06-16T09:31:12',
       cacheStatus: 'cache',
-    }, labels)).toBe('src: tdx · as of: 2026-06-16 09:31 · fetched: 2026-06-16 09:31 · cache')
+    }, labels)).toBe('src: tdx · as of: 2026-06-16 09:31')
   })
 
   it('uses updated time when fetched time is not available', () => {
@@ -26,6 +26,6 @@ describe('finance provenance formatter', () => {
       nav_date: '2026-06-13',
       updated_at: '2026-06-16T15:30:00',
       cache_status: 'cached',
-    }, labels)).toBe('src: fund_list · as of: 2026-06-13 · updated: 2026-06-16 15:30 · cache')
+    }, labels)).toBe('src: fund_list · as of: 2026-06-13')
   })
 })
