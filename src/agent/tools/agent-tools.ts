@@ -40,6 +40,7 @@ export class AgentTool implements Tool {
   inputSchema = {
     type: 'object',
     properties: {
+      action: { type: 'string', enum: ['help', 'run'], description: 'Use "help" to inspect sub-agent delegation rules before launching; omit or use "run" to launch.' },
       description: { type: 'string', description: 'A short (3-5 word) description of the task' },
       prompt: { type: 'string', description: 'The full task prompt for the sub-agent' },
       run_in_background: { type: 'boolean', description: 'Set to true to run in background (default false)' },
@@ -59,6 +60,7 @@ export class AgentTool implements Tool {
   needsPermissions(): boolean { return false }
 
   validateInput(input: Record<string, unknown>): string | null {
+    if (String(input.action ?? 'run') === 'help') return null
     if (!input.description || !String(input.description).trim()) return 'description is required.'
     if (!input.prompt || !String(input.prompt).trim()) return 'prompt is required.'
 
@@ -76,6 +78,7 @@ export class AgentTool implements Tool {
   }
 
   async call(id: string, input: Record<string, unknown>, ctx: ToolContext): Promise<string> {
+    if (String(input.action ?? 'run') === 'help') return agentToolHelp()
     const description = String(input.description)
     const prompt = String(input.prompt)
     const runInBackground = Boolean(input.run_in_background ?? false)
@@ -258,6 +261,44 @@ export class AgentTool implements Tool {
     const teamLine = opts?.teamName ? `\nTeam: ${opts.teamName}\nMember: ${opts.memberName || description}` : ''
     return `Background agent launched.\nTask ID: ${taskId}\nDescription: ${description}\nOwnership: parent-owned-background\nParent session: ${this.parentAgent.session.id}\nSidechain: ${sidechainPath}${teamLine}\n\nUse TaskOutput(task_id:"${taskId}", block:false) only for progress checks. If the current answer depends on this agent, call TaskOutput(task_id:"${taskId}", block:true) before concluding. Use TeamList(team_name:"${opts?.teamName ?? ''}") for team state, or TaskStop(task_id:"${taskId}") to cancel.`
   }
+}
+
+function agentToolHelp(): string {
+  return JSON.stringify({
+    tool: 'Agent',
+    purpose: 'Launch a sub-agent for bounded, inspectable work that should be separated from the current turn.',
+    actions: {
+      help: 'Return this contract without launching a sub-agent.',
+      run: 'Launch a sub-agent. This is the default when action is omitted.',
+    },
+    requiredForRun: ['description', 'prompt'],
+    modes: {
+      foreground: {
+        input: { run_in_background: false },
+        result: 'Waits for the sub-agent and returns the final text plus tool-call count.',
+      },
+      background: {
+        input: { run_in_background: true },
+        result: 'Returns a Task ID. Use TaskOutput(task_id, block:true) before relying on the result.',
+        limit: MAX_CONCURRENT,
+      },
+      isolation: {
+        fork: 'Inherits parent conversation context.',
+        independent: 'Starts with fresh sub-agent context.',
+      },
+      team: 'Use team_name only with run_in_background=true after TeamCreate.',
+    },
+    constraints: [
+      'Sub-agents cannot recursively launch Agent/Team tools.',
+      'Sub-agents cannot use tools marked as requiring user interaction.',
+      'If the current answer depends on a background sub-agent, inspect TaskOutput with block:true before finalizing.',
+    ],
+    errorFeedback: [
+      'Missing description or prompt returns a validation error.',
+      'Unknown team_name returns a tool error.',
+      'Background concurrency over the limit returns a validation error.',
+    ],
+  }, null, 2)
 }
 
 function safePathSegment(value: string): string {
