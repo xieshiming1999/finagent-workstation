@@ -30,6 +30,7 @@ import { WorkflowEvidenceTool } from '../agent/tools/workflow-evidence'
 import { FinanceWorkflowStateTool } from '../agent/tools/finance-workflow-state'
 import { CapabilityStatusTool } from '../agent/tools/capability-status'
 import { ToolCatalogTool } from '../agent/tools/tool-catalog'
+import { RunbookTool } from '../agent/tools/runbook'
 import { DataProcessTool } from '../agent/tools/data-process'
 import { CronCreateTool, CronDeleteTool, CronListTool } from '../agent/tools/cron'
 import { WatchlistTool } from '../agent/tools/watchlist'
@@ -307,6 +308,7 @@ function initAgent() {
   registry.register(new EnvironmentTool())
   registry.register(new InteractionEvidenceTool())
   registry.register(new WorkflowEvidenceTool())
+  registry.register(new RunbookTool())
   registry.register(new CapabilityStatusTool(() => registry.capabilities()))
   registry.register(new FinanceWorkflowStateTool())
   // Wire session index for SessionSearchTool
