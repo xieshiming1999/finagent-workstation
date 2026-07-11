@@ -40,6 +40,11 @@ describe('interaction evidence', () => {
         answer: 'Approve',
       },
     ])
+    const pendingState = JSON.parse(readFileSync(join(ctx.memoryDir, 'interaction_pending.json'), 'utf8'))
+    expect(pendingState).toMatchObject({
+      contract: 'interaction-pending-state-v1',
+      pending: [],
+    })
   })
 })
 

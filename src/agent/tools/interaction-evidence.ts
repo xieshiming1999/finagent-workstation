@@ -1,6 +1,7 @@
 import { existsSync, readFileSync } from 'fs'
 import { join } from 'path'
 import type { Tool, ToolContext } from '../tool'
+import { readPendingInteractionState } from '../interaction-evidence'
 
 type EvidenceRow = Record<string, unknown>
 
@@ -50,7 +51,7 @@ export class InteractionEvidenceTool implements Tool {
       action,
       count: filtered.length,
       byType: countByType(filtered),
-      pending: latestPending(rows),
+      pending: pendingState(ctx, rows),
       latest: rows.at(-1) ?? null,
     })
   }
@@ -113,4 +114,9 @@ function latestPending(rows: EvidenceRow[]): EvidenceRow[] {
     if (row.type === 'user_question_pending' || row.type === 'permission_request') pending.push(row)
   }
   return pending
+}
+
+function pendingState(ctx: ToolContext, rows: EvidenceRow[]): EvidenceRow[] {
+  const state = readPendingInteractionState(ctx)
+  return state.length > 0 ? state : latestPending(rows)
 }

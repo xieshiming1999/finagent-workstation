@@ -13,6 +13,13 @@ describe('InteractionEvidenceTool', () => {
       JSON.stringify({ type: 'permission_request', requestId: 'perm-1', toolName: 'Write' }),
       JSON.stringify({ type: 'permission_resolved', requestId: 'perm-1', toolName: 'Write', approved: true }),
     ].join('\n'))
+    writeFileSync(join(ctx.memoryDir, 'interaction_pending.json'), JSON.stringify({
+      contract: 'interaction-pending-state-v1',
+      updatedAt: '2026-07-11T00:00:00.000Z',
+      pending: [
+        { type: 'user_question_pending', requestId: 'ask-snapshot', toolName: 'AskUserQuestion' },
+      ],
+    }))
 
     const tool = new InteractionEvidenceTool()
     const summary = JSON.parse(await tool.call('tool-1', { action: 'summary' }, ctx))
@@ -27,7 +34,7 @@ describe('InteractionEvidenceTool', () => {
       },
     })
     expect(summary.pending).toMatchObject([
-      { type: 'user_question_pending', requestId: 'ask-1' },
+      { type: 'user_question_pending', requestId: 'ask-snapshot' },
     ])
 
     const recent = JSON.parse(await tool.call('tool-2', {
