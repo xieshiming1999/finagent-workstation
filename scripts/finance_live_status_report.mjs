@@ -1,11 +1,11 @@
 #!/usr/bin/env node
 
-import { existsSync, readdirSync, readFileSync, statSync, writeFileSync } from 'node:fs'
+import { existsSync, mkdirSync, readdirSync, readFileSync, statSync, writeFileSync } from 'node:fs'
 import { homedir } from 'node:os'
 import { join, resolve } from 'node:path'
 
 const args = parseArgs(process.argv.slice(2))
-const repoRoot = resolve(new URL('../..', import.meta.url).pathname)
+const repoRoot = resolve(new URL('..', import.meta.url).pathname)
 const defaultInputDir = join(homedir(), '.finagent-workstation', 'manual-tests', 'finance-live-matrix')
 const inputDir = resolve(args.inputDir ?? defaultInputDir)
 const jsonOut = resolve(repoRoot, args.json ?? 'reports/integrations/finance_live_status_report_2026_06_18.json')
@@ -14,6 +14,8 @@ const mdOut = resolve(repoRoot, args.md ?? 'reports/integrations/finance_live_st
 const report = buildReport(inputDir)
 
 if (args['no-write'] !== 'true') {
+  mkdirSync(resolve(jsonOut, '..'), { recursive: true })
+  mkdirSync(resolve(mdOut, '..'), { recursive: true })
   writeFileSync(jsonOut, `${JSON.stringify(report, null, 2)}\n`, 'utf-8')
   writeFileSync(mdOut, renderMarkdown(report), 'utf-8')
 }
@@ -84,7 +86,7 @@ function readProbeRecords(dir) {
 }
 
 function currentLiveProbeIds() {
-  const matrixPath = resolve(repoRoot, 'finagent_workstation/scripts/finance_live_probe_matrix.mjs')
+  const matrixPath = resolve(repoRoot, 'scripts/finance_live_probe_matrix.mjs')
   if (!existsSync(matrixPath)) return new Set()
   const source = readFileSync(matrixPath, 'utf-8')
   return new Set([...source.matchAll(/spec\('([^']+)'/g)].map((match) => match[1]))

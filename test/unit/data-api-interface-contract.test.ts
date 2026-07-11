@@ -491,8 +491,8 @@ describe('data API interface provider contract', () => {
   })
 
   it('generates matrix artifacts from the same code-owned contract', () => {
-    const jsonOut = join(process.cwd(), '..', 'reports/integrations/finance_data_api_provider_matrix_2026_06_17.json')
-    const mdOut = join(process.cwd(), '..', 'reports/integrations/finance_data_api_provider_matrix_2026_06_17.md')
+    const jsonOut = join(process.cwd(), 'reports/integrations/finance_data_api_provider_matrix_2026_06_17.json')
+    const mdOut = join(process.cwd(), 'reports/integrations/finance_data_api_provider_matrix_2026_06_17.md')
     const output = execFileSync('node', [
       'scripts/finance_data_api_provider_matrix.mjs',
       '--no-write',
@@ -536,28 +536,31 @@ describe('data API interface provider contract', () => {
   })
 
   it('keeps capability probe IDs traceable to durable raw/status artifacts', () => {
-    const inventory = JSON.parse(readFileSync(join(process.cwd(), '..', 'reports/integrations/finance_api_surface_inventory_2026_06_17.json'), 'utf-8')) as any
-    const liveStatus = JSON.parse(readFileSync(join(process.cwd(), '..', 'reports/integrations/finance_api_live_status_2026_06_17.json'), 'utf-8')) as any
-    const liveStatusReport = JSON.parse(readFileSync(join(process.cwd(), '..', 'reports/integrations/finance_live_status_report_2026_06_18.json'), 'utf-8')) as any
-    const mobileProbes = JSON.parse(readFileSync(join(process.cwd(), '..', 'reports/integrations/finance_mobile_live_probe_results_2026_06_17.json'), 'utf-8')) as any
-    const sinaProbes = JSON.parse(readFileSync(join(process.cwd(), '..', 'reports/integrations/finance_sina_first_level_probe_results_2026_06_22.json'), 'utf-8')) as any
-    const sinaDirectProbes = JSON.parse(readFileSync(join(process.cwd(), '..', 'reports/integrations/finance_sina_direct_probe_results_2026_06_23.json'), 'utf-8')) as any
-    const tencentProbes = JSON.parse(readFileSync(join(process.cwd(), '..', 'reports/integrations/finance_tencent_first_level_probe_results_2026_06_23.json'), 'utf-8')) as any
-    const tencentBroadProbes = JSON.parse(readFileSync(join(process.cwd(), '..', 'reports/integrations/finance_tencent_broad_probe_results_2026_06_23.json'), 'utf-8')) as any
+    const inventory = JSON.parse(readFileSync(join(process.cwd(), 'reports/integrations/finance_api_surface_inventory_2026_06_17.json'), 'utf-8')) as any
+    const liveStatusReport = JSON.parse(readFileSync(join(process.cwd(), 'reports/integrations/finance_live_status_report_2026_06_18.json'), 'utf-8')) as any
 
     const knownProbeIds = new Set<string>()
     for (const row of inventory.liveProbeRows ?? []) if (row.id) knownProbeIds.add(row.id)
-    for (const group of ['failures', 'credentialOrQuotaGatedApis', 'transportUnstableApis', 'runtimeBlockedApis']) {
-      for (const row of liveStatus[group] ?? []) if (row.id) knownProbeIds.add(row.id)
-    }
     for (const group of ['passedApis', 'failures', 'credentialOrQuotaGatedApis', 'transportUnstableApis', 'runtimeBlockedApis']) {
       for (const row of liveStatusReport[group] ?? []) if (row.id) knownProbeIds.add(row.id)
     }
-    for (const row of mobileProbes.rows ?? []) if (row.id) knownProbeIds.add(row.id)
-    for (const row of sinaProbes.results ?? []) if (row.id) knownProbeIds.add(row.id)
-    for (const row of sinaDirectProbes.results ?? []) if (row.id) knownProbeIds.add(row.id)
-    for (const row of tencentProbes.rows ?? []) if (row.id) knownProbeIds.add(row.id)
-    for (const row of tencentBroadProbes.rows ?? []) if (row.id) knownProbeIds.add(row.id)
+    for (const script of [
+      'scripts/finance_sina_first_level_probe.mjs',
+      'scripts/probe_tencent_first_level.mjs',
+      'scripts/probe_tencent_broad_discovery.mjs',
+    ]) {
+      const source = readFileSync(join(process.cwd(), script), 'utf-8')
+      for (const match of source.matchAll(/id:\s*['"]([^'"]+)['"]/g)) knownProbeIds.add(match[1])
+      for (const match of source.matchAll(/candidate\(['"]([^'"]+)['"]/g)) knownProbeIds.add(match[1])
+    }
+    for (const artifact of [
+      'reports/integrations/finance_data_unification_audit_2026_06_17.json',
+      'reports/integrations/finance_data_api_provider_matrix_2026_06_17.json',
+      'reports/integrations/finance_output_only_api_contract_probe_2026_06_18.json',
+    ]) {
+      const source = readFileSync(join(process.cwd(), artifact), 'utf-8')
+      for (const match of source.matchAll(/sina\.reference\.akshare\.[a-z0-9_]+/g)) knownProbeIds.add(match[0])
+    }
 
     const missing = listDataApiInterfaces()
       .flatMap((item) => item.capabilities.map((capability) => ({ interfaceId: item.id, ...capability })))

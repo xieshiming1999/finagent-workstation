@@ -3,19 +3,18 @@
 // This script does not call providers. It turns matrix gaps into an execution
 // plan that can be run by finance_live_probe_matrix.mjs in bounded batches.
 
-import { readFileSync, writeFileSync } from 'node:fs'
+import { mkdirSync, readFileSync, writeFileSync } from 'node:fs'
 import { dirname, resolve } from 'node:path'
 import { fileURLToPath } from 'node:url'
 
 const scriptDir = dirname(fileURLToPath(import.meta.url))
-const repoRoot = resolve(scriptDir, '..', '..')
 const appRoot = resolve(scriptDir, '..')
 const args = parseArgs(process.argv.slice(2))
-const matrixPath = resolve(repoRoot, args.matrix ?? 'reports/integrations/finance_detailed_api_call_provider_matrix_2026_06_17.json')
-const liveStatusPath = resolve(repoRoot, args['live-status'] ?? 'reports/integrations/finance_live_status_report_2026_06_18.json')
+const matrixPath = resolve(appRoot, args.matrix ?? 'reports/integrations/finance_detailed_api_call_provider_matrix_2026_06_17.json')
+const liveStatusPath = resolve(appRoot, args['live-status'] ?? 'reports/integrations/finance_live_status_report_2026_06_18.json')
 const probeScriptPath = resolve(appRoot, 'scripts/finance_live_probe_matrix.mjs')
-const jsonOut = resolve(repoRoot, args.json ?? 'reports/integrations/finance_live_probe_backlog_2026_06_18.json')
-const mdOut = resolve(repoRoot, args.md ?? 'reports/integrations/finance_live_probe_backlog_2026_06_18.md')
+const jsonOut = resolve(appRoot, args.json ?? 'reports/integrations/finance_live_probe_backlog_2026_06_18.json')
+const mdOut = resolve(appRoot, args.md ?? 'reports/integrations/finance_live_probe_backlog_2026_06_18.md')
 
 const matrix = JSON.parse(readFileSync(matrixPath, 'utf-8'))
 const liveStatus = readOptionalJson(liveStatusPath)
@@ -23,6 +22,8 @@ const probeSpecs = parseProbeSpecs(readFileSync(probeScriptPath, 'utf-8'))
 const report = buildBacklog(matrix, probeSpecs, liveStatus)
 
 if (args['no-write'] !== 'true') {
+  mkdirSync(dirname(jsonOut), { recursive: true })
+  mkdirSync(dirname(mdOut), { recursive: true })
   writeFileSync(jsonOut, `${JSON.stringify(report, null, 2)}\n`, 'utf-8')
   writeFileSync(mdOut, renderMarkdown(report), 'utf-8')
 }

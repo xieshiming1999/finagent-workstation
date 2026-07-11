@@ -1,20 +1,20 @@
 #!/usr/bin/env node
 
-import { existsSync, readFileSync, writeFileSync } from 'node:fs'
+import { existsSync, mkdirSync, readFileSync, writeFileSync } from 'node:fs'
 import { dirname, resolve } from 'node:path'
 import { fileURLToPath } from 'node:url'
 
 const scriptDir = dirname(fileURLToPath(import.meta.url))
-const repoRoot = resolve(scriptDir, '..', '..')
+const repoRoot = resolve(scriptDir, '..')
 const args = parseArgs(process.argv.slice(2))
 
 const paths = {
   providerMatrix: 'reports/integrations/finance_data_api_provider_matrix_2026_06_17.json',
   detailedMatrix: 'reports/integrations/finance_detailed_api_call_provider_matrix_2026_06_17.json',
-  electronContract: 'finagent_workstation/src/agent/data/data-api-interfaces.json',
-  electronProviderPolicy: 'finagent_workstation/src/agent/data/provider-policy.ts',
-  mobileProviderPolicy: 'app/lib/agent/data_fetcher/provider_policy.dart',
-  akshareEastmoneyRegistry: 'finagent_workstation/src/agent/data/ingestion/registry-akshare-eastmoney.ts',
+  electronContract: 'src/agent/data/data-api-interfaces.json',
+  electronProviderPolicy: 'src/agent/data/provider-policy.ts',
+  mobileProviderPolicy: '../app/lib/agent/data_fetcher/provider_policy.dart',
+  akshareEastmoneyRegistry: 'src/agent/data/ingestion/registry-akshare-eastmoney.ts',
 }
 
 const jsonOut = resolve(repoRoot, args.json ?? 'reports/integrations/finance_eastmoney_akshare_separation_audit_2026_06_19.json')
@@ -23,6 +23,8 @@ const mdOut = resolve(repoRoot, args.md ?? 'reports/integrations/finance_eastmon
 const report = buildReport()
 
 if (args['no-write'] !== 'true') {
+  mkdirSync(dirname(jsonOut), { recursive: true })
+  mkdirSync(dirname(mdOut), { recursive: true })
   writeFileSync(jsonOut, `${JSON.stringify(report, null, 2)}\n`, 'utf-8')
   writeFileSync(mdOut, renderMarkdown(report), 'utf-8')
 }

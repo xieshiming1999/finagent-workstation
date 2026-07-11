@@ -1,13 +1,13 @@
 #!/usr/bin/env node
 
-import { readFileSync, writeFileSync } from 'node:fs'
+import { mkdirSync, readFileSync, writeFileSync } from 'node:fs'
 import { dirname, resolve } from 'node:path'
 import { fileURLToPath } from 'node:url'
 
 const scriptDir = dirname(fileURLToPath(import.meta.url))
-const repoRoot = resolve(scriptDir, '..', '..')
+const repoRoot = resolve(scriptDir, '..')
 const args = parseArgs(process.argv.slice(2))
-const mobileContractPath = resolve(repoRoot, 'app/lib/domain/market/providers/data_api_interface_contract.dart')
+const mobileContractPath = resolve(repoRoot, '..', 'app/lib/domain/market/providers/data_api_interface_contract.dart')
 
 const paths = {
   providerMatrix: 'reports/integrations/finance_data_api_provider_matrix_2026_06_17.json',
@@ -23,6 +23,8 @@ const mdOut = resolve(repoRoot, args.md ?? 'reports/integrations/finance_data_he
 const report = buildReport()
 
 if (args['no-write'] !== 'true') {
+  mkdirSync(resolve(jsonOut, '..'), { recursive: true })
+  mkdirSync(resolve(mdOut, '..'), { recursive: true })
   writeFileSync(jsonOut, `${JSON.stringify(report, null, 2)}\n`, 'utf-8')
   writeFileSync(mdOut, renderMarkdown(report), 'utf-8')
 }

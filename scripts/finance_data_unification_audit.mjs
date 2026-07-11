@@ -1,14 +1,15 @@
 #!/usr/bin/env node
 
-import { readFileSync, writeFileSync } from 'node:fs'
+import { mkdirSync, readFileSync, writeFileSync } from 'node:fs'
 import { dirname, resolve } from 'node:path'
 import { fileURLToPath } from 'node:url'
 
 const scriptDir = dirname(fileURLToPath(import.meta.url))
-const repoRoot = resolve(scriptDir, '..', '..')
-const electronContractPath = resolve(repoRoot, 'finagent_workstation/src/agent/data/data-api-interfaces.json')
-const electronCachePath = resolve(repoRoot, 'finagent_workstation/src/agent/data/data-api-cache-coverage.json')
-const mobileContractPath = resolve(repoRoot, 'app/lib/domain/market/providers/data_api_interface_contract.dart')
+const repoRoot = resolve(scriptDir, '..')
+const parentRoot = resolve(repoRoot, '..')
+const electronContractPath = resolve(repoRoot, 'src/agent/data/data-api-interfaces.json')
+const electronCachePath = resolve(repoRoot, 'src/agent/data/data-api-cache-coverage.json')
+const mobileContractPath = resolve(parentRoot, 'app/lib/domain/market/providers/data_api_interface_contract.dart')
 const args = parseArgs(process.argv.slice(2))
 const jsonOut = resolve(repoRoot, args.json ?? 'reports/integrations/finance_data_unification_audit_2026_06_17.json')
 const mdOut = resolve(repoRoot, args.md ?? 'reports/integrations/finance_data_unification_audit_2026_06_17.md')
@@ -18,6 +19,8 @@ const mobile = readMobileContract()
 const report = buildReport([electron, mobile])
 
 if (args['no-write'] !== 'true') {
+  mkdirSync(dirname(jsonOut), { recursive: true })
+  mkdirSync(dirname(mdOut), { recursive: true })
   writeFileSync(jsonOut, `${JSON.stringify(report, null, 2)}\n`, 'utf-8')
   writeFileSync(mdOut, renderMarkdown(report), 'utf-8')
 }

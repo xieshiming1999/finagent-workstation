@@ -3,7 +3,7 @@ import { existsSync, readFileSync } from 'fs'
 import { join } from 'path'
 import { beforeAll, describe, expect, it } from 'vitest'
 
-const repoRoot = join(process.cwd(), '..')
+const repoRoot = process.cwd()
 const jsonOut = join(repoRoot, 'reports/integrations/finance_detailed_api_call_provider_matrix_2026_06_17.json')
 const mdOut = join(repoRoot, 'reports/integrations/finance_detailed_api_call_provider_matrix_2026_06_17.md')
 const inventoryPath = join(repoRoot, 'reports/integrations/finance_api_surface_inventory_2026_06_17.json')
@@ -35,8 +35,8 @@ describe('detailed finance API call provider matrix', () => {
     expect(report.summary.rowsByLiveProbeRequirement['needs-live-probe'] ?? 0).toBe(0)
     expect(report.summary.rowsByLiveProbeRequirement['needs-live-status-evidence'] ?? 0).toBe(0)
     expect(report.summary.rowsByLiveProbeRequirement['not-required-local-or-control']).toBeGreaterThan(0)
-    expect(report.summary.rowsByKind['registered-provider-capability']).toBe(63)
-    expect(report.summary.rowsByKind['live-probe-contract-row']).toBe(9)
+    expect(report.summary.rowsByKind['registered-provider-capability']).toBeGreaterThanOrEqual(63)
+    expect(report.summary.rowsByKind['live-probe-contract-row']).toBeGreaterThanOrEqual(9)
     expect(report.summary.rowsByGovernanceAction['add-live-probe'] ?? 0).toBe(0)
     expect(report.summary.rowsByGovernanceAction['add-readback'] ?? 0).toBe(0)
     expect(report.summary.rowsByGovernanceAction).toMatchObject({

@@ -1,11 +1,11 @@
 #!/usr/bin/env node
 
-import { existsSync, readFileSync, writeFileSync } from 'node:fs'
+import { existsSync, mkdirSync, readFileSync, writeFileSync } from 'node:fs'
 import { dirname, resolve } from 'node:path'
 import { fileURLToPath } from 'node:url'
 
 const scriptDir = dirname(fileURLToPath(import.meta.url))
-const repoRoot = resolve(scriptDir, '..', '..')
+const repoRoot = resolve(scriptDir, '..')
 const args = parseArgs(process.argv.slice(2))
 
 const paths = {
@@ -13,14 +13,14 @@ const paths = {
   liveStatusReport: 'reports/integrations/finance_live_status_report_2026_06_18.json',
   unificationAudit: 'reports/integrations/finance_data_unification_audit_2026_06_17.json',
   detailedMatrix: 'reports/integrations/finance_detailed_api_call_provider_matrix_2026_06_17.json',
-  electronYahooService: 'finagent_workstation/src/domain/market/services/yahoo-market-data-service.ts',
-  electronQuoteFetcher: 'finagent_workstation/src/agent/data/fetchers/fetcher-quote.ts',
-  electronKlineFetcher: 'finagent_workstation/src/agent/data/fetchers/fetcher-kline-daily.ts',
-  mobileYahooService: 'app/lib/domain/market/services/yahoo_market_data_service.dart',
-  mobileYahooSupport: 'app/lib/domain/market/services/yahoo_market_data_support.dart',
-  electronMarketDataHelp: 'finagent_workstation/src/agent/tools/market-data-help.ts',
-  electronDataSourceSkill: 'finagent_workstation/assets/skills/data-sources/skill.md',
-  mobileMarketDataToolSchema: 'app/lib/agent/tools/market_data_tool/market_data_tool_schema.dart',
+  electronYahooService: 'src/domain/market/services/yahoo-market-data-service.ts',
+  electronQuoteFetcher: 'src/agent/data/fetchers/fetcher-quote.ts',
+  electronKlineFetcher: 'src/agent/data/fetchers/fetcher-kline-daily.ts',
+  mobileYahooService: '../app/lib/domain/market/services/yahoo_market_data_service.dart',
+  mobileYahooSupport: '../app/lib/domain/market/services/yahoo_market_data_support.dart',
+  electronMarketDataHelp: 'src/agent/tools/market-data-help.ts',
+  electronDataSourceSkill: 'assets/skills/data-sources/skill.md',
+  mobileMarketDataToolSchema: '../app/lib/agent/tools/market_data_tool/market_data_tool_schema.dart',
 }
 
 const jsonOut = resolve(repoRoot, args.json ?? 'reports/integrations/finance_yahoo_capability_audit_2026_06_19.json')
@@ -29,6 +29,8 @@ const mdOut = resolve(repoRoot, args.md ?? 'reports/integrations/finance_yahoo_c
 const report = buildReport()
 
 if (args['no-write'] !== 'true') {
+  mkdirSync(dirname(jsonOut), { recursive: true })
+  mkdirSync(dirname(mdOut), { recursive: true })
   writeFileSync(jsonOut, `${JSON.stringify(report, null, 2)}\n`, 'utf-8')
   writeFileSync(mdOut, renderMarkdown(report), 'utf-8')
 }

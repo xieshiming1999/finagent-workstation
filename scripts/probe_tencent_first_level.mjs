@@ -1,7 +1,7 @@
 import fs from 'node:fs'
 import path from 'node:path'
 
-const root = path.resolve(new URL('../..', import.meta.url).pathname)
+const root = path.resolve(new URL('..', import.meta.url).pathname)
 const outJson = path.join(root, 'reports/integrations/finance_tencent_first_level_probe_results_2026_06_23.json')
 const outMd = path.join(root, 'reports/integrations/finance_tencent_first_level_probe_results_2026_06_23.md')
 

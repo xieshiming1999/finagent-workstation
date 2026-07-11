@@ -1,21 +1,21 @@
 #!/usr/bin/env node
 
-import { readFileSync, writeFileSync } from 'node:fs'
+import { mkdirSync, readFileSync, writeFileSync } from 'node:fs'
 import { dirname, resolve } from 'node:path'
 import { fileURLToPath } from 'node:url'
 
 const scriptDir = dirname(fileURLToPath(import.meta.url))
-const repoRoot = resolve(scriptDir, '..', '..')
 const appRoot = resolve(scriptDir, '..')
+const parentRoot = resolve(appRoot, '..')
 const args = parseArgs(process.argv.slice(2))
 
 const contractPath = resolve(appRoot, 'src/agent/data/data-api-interfaces.json')
-const mobileContractPath = resolve(repoRoot, 'app/lib/domain/market/providers/data_api_interface_contract.dart')
-const inventoryPath = resolve(repoRoot, args.inventory ?? 'reports/integrations/finance_api_surface_inventory_2026_06_17.json')
-const liveStatusPath = resolve(repoRoot, args.liveStatus ?? 'reports/integrations/finance_live_status_report_2026_06_18.json')
-const mobileStatusPath = resolve(repoRoot, args.mobileStatus ?? 'reports/integrations/finance_mobile_api_status_2026_06_17.json')
-const jsonOut = resolve(repoRoot, args.json ?? 'reports/integrations/finance_detailed_api_call_provider_matrix_2026_06_17.json')
-const mdOut = resolve(repoRoot, args.md ?? 'reports/integrations/finance_detailed_api_call_provider_matrix_2026_06_17.md')
+const mobileContractPath = resolve(parentRoot, 'app/lib/domain/market/providers/data_api_interface_contract.dart')
+const inventoryPath = resolve(appRoot, args.inventory ?? 'reports/integrations/finance_api_surface_inventory_2026_06_17.json')
+const liveStatusPath = resolve(appRoot, args.liveStatus ?? 'reports/integrations/finance_live_status_report_2026_06_18.json')
+const mobileStatusPath = resolve(appRoot, args.mobileStatus ?? 'reports/integrations/finance_mobile_api_status_2026_06_17.json')
+const jsonOut = resolve(appRoot, args.json ?? 'reports/integrations/finance_detailed_api_call_provider_matrix_2026_06_17.json')
+const mdOut = resolve(appRoot, args.md ?? 'reports/integrations/finance_detailed_api_call_provider_matrix_2026_06_17.md')
 
 const contract = JSON.parse(readFileSync(contractPath, 'utf-8'))
 const inventory = JSON.parse(readFileSync(inventoryPath, 'utf-8'))
@@ -24,6 +24,8 @@ const mobileStatus = JSON.parse(readFileSync(mobileStatusPath, 'utf-8'))
 const report = buildReport({ contract, inventory, liveStatus, mobileStatus })
 
 if (args['no-write'] !== 'true') {
+  mkdirSync(dirname(jsonOut), { recursive: true })
+  mkdirSync(dirname(mdOut), { recursive: true })
   writeFileSync(jsonOut, `${JSON.stringify(report, null, 2)}\n`, 'utf-8')
   writeFileSync(mdOut, renderMarkdown(report), 'utf-8')
 }
@@ -413,6 +415,7 @@ function inferInterfaceCandidates(row) {
   if (endpoint === 'sina_classification_members_batch') add('market.classification_members')
   if (endpoint === 'sina_esg_rating_collection') add('stock.esg_rating_collection')
   if (endpoint === 'sina_fund_dividend_factor') add('fund.dividend_factor')
+  if (endpoint === 'sina_intraday_ohlcv_bars') add('market.intraday_ohlcv_bars')
   if (endpoint === 'finance_doctor') add('data.health')
   if (endpoint === 'holders' && normalizeProvider(row.provider) === 'akshare') add('stock.shareholders')
   if (endpoint === 'query_stock_shareholders' || endpoint === 'stock_shareholders' || endpoint === 'stock_equity_holders') add('stock.shareholders')
@@ -439,6 +442,9 @@ function inferInterfaceCandidates(row) {
   if (endpoint === 'stats') add('data.store_stats')
   if (endpoint === 'data_feeds') add('data.feed_status')
   if (endpoint === 'stock_risk_metrics') add('stock.risk_metrics')
+  if (endpoint === 'intraday_ohlcv_bars') add('market.intraday_ohlcv_bars')
+  if (endpoint === 'fund_money_yield') add('fund.money_yield_history')
+  if (endpoint === 'fund_dividend_factor') add('fund.dividend_factor')
   if (endpoint === 'earnings' && normalizeProvider(row.provider) === 'eastmoney') add('stock.daily_valuation')
   if (endpoint.includes('tick_chart') || endpoint === 'tdx_tick_chart' || endpoint === 'tdx_history_tick') add('stock.tick_chart_intraday')
   if (endpoint.includes('transaction') || endpoint === 'tdx_transactions' || endpoint === 'tdx_history_trans') add('stock.transactions')
@@ -958,6 +964,7 @@ function syntheticProviderSurfaceId(row) {
   if (!provider) return null
   const endpoint = slug(row.endpoint ?? row.action ?? row.family)
   if (!endpoint) return null
+  if (endpoint.startsWith('custom_strategy_') || endpoint === 'market_activity_summary') return null
   if (String(row.kind ?? '').includes('generic') || String(row.schemaStatus ?? '').includes('output-only') || String(row.validationState ?? '').includes('output-only')) {
     return `diagnostic.${provider}.${endpoint}`
   }
@@ -1252,6 +1259,15 @@ function classifyGovernanceAction({ row, interfaceDef, interfaceCoverageStatus, 
 
 function classifyUnmappedInterface(row) {
   const endpoint = String(row.canonicalEndpoint ?? row.endpoint ?? row.action ?? '').toLowerCase()
+  if (endpoint.startsWith('custom_strategy_')) return 'derived-local-analysis-surface'
+  if (endpoint === 'market_activity_summary') return 'local-readback-or-status-surface'
+  if ([
+    'macro_numeric_series_catalog',
+    'macro_research_sources',
+    'macro_research_provenance',
+    'macro_research_extract',
+    'macro_research_extraction_status',
+  ].includes(endpoint)) return 'local-readback-or-status-surface'
   if (['interfaces', 'interface_describe', 'interface_availability'].includes(endpoint)) return 'local-readback-or-status-surface'
   if (row.kind === 'query-or-local') return 'local-readback-or-status-surface'
   if (String(row.kind ?? '').includes('derived-analysis')) return 'derived-local-analysis-surface'

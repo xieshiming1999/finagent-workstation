@@ -23,6 +23,7 @@ const files = {
     'src/agent/tools/data-store-tool-remote-fetchers.ts',
     'src/agent/tools/data-store-tool-remote-screening.ts',
     'src/agent/tools/data-store-tool-remote-backtest.ts',
+    'src/agent/tools/data-store-tool-remote-sina-batch.ts',
     'src/agent/tools/data-store-tool-remote-common.ts',
   ]),
   marketSchema: read('src/agent/tools/market-data-schema.ts'),
@@ -32,7 +33,10 @@ const files = {
     'src/domain/market/services/scan-market-data-service.ts',
     'src/domain/market/providers/tradingview-market-provider.ts',
   ]),
-  bridgeRouteService: read('src/domain/market/services/bridge-finance-route-service.ts'),
+  bridgeRouteService: readMany([
+    'src/domain/market/services/bridge-finance-route-service.ts',
+    'src/domain/market/services/finance-news-data-api-service.ts',
+  ]),
   eastmoneyServices: readMany([
     'src/domain/market/services/eastmoney-market-data-action-service.ts',
     'src/domain/market/services/eastmoney-market-data-direct-action-service.ts',
@@ -49,6 +53,7 @@ const files = {
     'src/domain/market/services/fund-market-data-fetch-service.ts',
     'src/agent/data/fetchers/fetcher-fund-list.ts',
     'src/agent/data/fetchers/fetcher-fund-nav.ts',
+    'src/agent/data/fetchers/fetcher-fund-money-yield.ts',
     'src/agent/data/fetchers/fetcher-fund-holding.ts',
     'src/agent/data/fetchers/fetcher-fund-manager.ts',
     'src/agent/data/fetchers/fetcher-etf.ts',

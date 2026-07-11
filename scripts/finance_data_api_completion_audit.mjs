@@ -6,13 +6,14 @@ import { dirname, extname, join, relative, resolve } from 'node:path'
 import { fileURLToPath } from 'node:url'
 
 const scriptDir = dirname(fileURLToPath(import.meta.url))
-const repoRoot = resolve(scriptDir, '..', '..')
+const repoRoot = resolve(scriptDir, '..')
+const parentRoot = resolve(repoRoot, '..')
 const args = parseArgs(process.argv.slice(2))
 const jsonOut = resolve(repoRoot, args.json ?? 'reports/integrations/finance_data_api_completion_audit_2026_06_18.json')
 const mdOut = resolve(repoRoot, args.md ?? 'reports/integrations/finance_data_api_completion_audit_2026_06_18.md')
 
 const paths = {
-  progress: 'reports/integrations/finance_api_continuous_improvement_progress_2026_06_17.md',
+  progress: 'docs/design/integrations/finance_api_continuous_improvement_progress_2026_06_17.md',
   providerMatrix: 'reports/integrations/finance_data_api_provider_matrix_2026_06_17.json',
   detailedMatrix: 'reports/integrations/finance_detailed_api_call_provider_matrix_2026_06_17.json',
   liveProbeBacklog: 'reports/integrations/finance_live_probe_backlog_2026_06_18.json',
@@ -26,76 +27,76 @@ const paths = {
   schemaGovernanceAudit: 'reports/integrations/finance_schema_governance_audit_2026_06_17.json',
   unificationAudit: 'reports/integrations/finance_data_unification_audit_2026_06_17.json',
   outputOnlyProbe: 'reports/integrations/finance_output_only_api_contract_probe_2026_06_18.json',
-  electronContract: 'finagent_workstation/src/agent/data/data-api-interfaces.json',
-  electronCacheCoverage: 'finagent_workstation/src/agent/data/data-api-cache-coverage.json',
-  electronRouter: 'finagent_workstation/src/agent/data/data-api-interface-router.ts',
-  electronCachePolicy: 'finagent_workstation/src/agent/data/data-api-cache-policy.ts',
-  electronProviderPolicy: 'finagent_workstation/src/agent/data/provider-policy.ts',
-  electronBaseFetcher: 'finagent_workstation/src/agent/data/fetchers/base-fetcher.ts',
-  electronFetchOptions: 'finagent_workstation/src/agent/data/fetchers/fetcher-interface-utils.ts',
-  electronOutputOnlyContract: 'finagent_workstation/src/agent/data/output-only-interfaces.ts',
-  electronDataStoreQueries: 'finagent_workstation/src/agent/tools/data-store-tool-query-catalog-coverage.ts',
-  electronDataApiSkillReferenceScript: 'finagent_workstation/scripts/finance_data_api_skill_reference.mjs',
-  electronOutputOnlySkillReferenceScript: 'finagent_workstation/scripts/finance_output_only_api_skill_reference.mjs',
-  electronProviderMatrixScript: 'finagent_workstation/scripts/finance_data_api_provider_matrix.mjs',
-  electronDetailedMatrixScript: 'finagent_workstation/scripts/finance_detailed_api_call_provider_matrix.mjs',
-  electronLiveProbeBacklogScript: 'finagent_workstation/scripts/finance_live_probe_backlog.mjs',
-  electronDataHealthReportScript: 'finagent_workstation/scripts/finance_data_health_report.mjs',
-  electronWindCapabilityAuditScript: 'finagent_workstation/scripts/finance_wind_capability_audit.mjs',
-  electronYahooCapabilityAuditScript: 'finagent_workstation/scripts/finance_yahoo_capability_audit.mjs',
-  electronEastmoneyAkshareSeparationAuditScript: 'finagent_workstation/scripts/finance_eastmoney_akshare_separation_audit.mjs',
-  electronDatastoreMatrixScript: 'finagent_workstation/scripts/finance_api_datastore_matrix.mjs',
-  electronSchemaGovernanceAuditScript: 'finagent_workstation/scripts/finance_schema_governance_audit.mjs',
-  electronUnificationAuditScript: 'finagent_workstation/scripts/finance_data_unification_audit.mjs',
-  electronDataPanel: 'finagent_workstation/src/renderer/panels/DataPanel.tsx',
-  electronDataWidget: 'finagent_workstation/src/renderer/components/DataWidget.tsx',
-  mobileContract: 'app/lib/domain/market/providers/data_api_interface_contract.dart',
-  mobileRouter: 'app/lib/domain/market/providers/data_api_interface_router.dart',
-  mobileProviderPolicy: 'app/lib/agent/data_fetcher/provider_policy.dart',
-  mobileDataHealthService: 'app/lib/domain/market/services/market_data_support_service.dart',
-  mobileMarketDataToolSchema: 'app/lib/agent/tools/market_data_tool/market_data_tool_schema.dart',
-  mobileDataHealthTest: 'app/test/domain/market/services/market_data_support_service_test.dart',
-  mobileProviderBoundaryTest: 'app/test/domain/market/providers/data_api_interface_router_test.dart',
-  mobileProviderPolicyTest: 'app/test/agent/data_fetcher/provider_policy_test.dart',
-  finagentProviderPolicy: 'finagent/lib/agent/data_fetcher/provider_policy.dart',
+  electronContract: 'src/agent/data/data-api-interfaces.json',
+  electronCacheCoverage: 'src/agent/data/data-api-cache-coverage.json',
+  electronRouter: 'src/agent/data/data-api-interface-router.ts',
+  electronCachePolicy: 'src/agent/data/data-api-cache-policy.ts',
+  electronProviderPolicy: 'src/agent/data/provider-policy.ts',
+  electronBaseFetcher: 'src/agent/data/fetchers/base-fetcher.ts',
+  electronFetchOptions: 'src/agent/data/fetchers/fetcher-interface-utils.ts',
+  electronOutputOnlyContract: 'src/agent/data/output-only-interfaces.ts',
+  electronDataStoreQueries: 'src/agent/tools/data-store-tool-query-catalog-coverage.ts',
+  electronDataApiSkillReferenceScript: 'scripts/finance_data_api_skill_reference.mjs',
+  electronOutputOnlySkillReferenceScript: 'scripts/finance_output_only_api_skill_reference.mjs',
+  electronProviderMatrixScript: 'scripts/finance_data_api_provider_matrix.mjs',
+  electronDetailedMatrixScript: 'scripts/finance_detailed_api_call_provider_matrix.mjs',
+  electronLiveProbeBacklogScript: 'scripts/finance_live_probe_backlog.mjs',
+  electronDataHealthReportScript: 'scripts/finance_data_health_report.mjs',
+  electronWindCapabilityAuditScript: 'scripts/finance_wind_capability_audit.mjs',
+  electronYahooCapabilityAuditScript: 'scripts/finance_yahoo_capability_audit.mjs',
+  electronEastmoneyAkshareSeparationAuditScript: 'scripts/finance_eastmoney_akshare_separation_audit.mjs',
+  electronDatastoreMatrixScript: 'scripts/finance_api_datastore_matrix.mjs',
+  electronSchemaGovernanceAuditScript: 'scripts/finance_schema_governance_audit.mjs',
+  electronUnificationAuditScript: 'scripts/finance_data_unification_audit.mjs',
+  electronDataPanel: 'src/renderer/panels/DataPanel.tsx',
+  electronDataWidget: 'src/renderer/components/DataWidget.tsx',
+  mobileContract: '../app/lib/domain/market/providers/data_api_interface_contract.dart',
+  mobileRouter: '../app/lib/domain/market/providers/data_api_interface_router.dart',
+  mobileProviderPolicy: '../app/lib/agent/data_fetcher/provider_policy.dart',
+  mobileDataHealthService: '../app/lib/domain/market/services/market_data_support_service.dart',
+  mobileMarketDataToolSchema: '../app/lib/agent/tools/market_data_tool/market_data_tool_schema.dart',
+  mobileDataHealthTest: '../app/test/domain/market/services/market_data_support_service_test.dart',
+  mobileProviderBoundaryTest: '../app/test/domain/market/providers/data_api_interface_router_test.dart',
+  mobileProviderPolicyTest: '../app/test/agent/data_fetcher/provider_policy_test.dart',
+  finagentProviderPolicy: '../finagent/lib/agent/data_fetcher/provider_policy.dart',
 }
 
 const interfaceBackedFetchers = [
-  { path: 'finagent_workstation/src/agent/data/fetchers/fetcher-money-flow.ts', interfaceId: 'stock.money_flow' },
-  { path: 'finagent_workstation/src/agent/data/fetchers/fetcher-index-kline.ts', interfaceId: 'index.daily_kline' },
-  { path: 'finagent_workstation/src/agent/data/fetchers/fetcher-sector.ts', interfaceId: 'market.sector_ranking' },
-  { path: 'finagent_workstation/src/agent/data/fetchers/fetcher-limit-pool.ts', interfaceId: 'market.limit_pool' },
-  { path: 'finagent_workstation/src/agent/data/fetchers/fetcher-northbound.ts', interfaceId: 'market.northbound_flow' },
-  { path: 'finagent_workstation/src/agent/data/fetchers/fetcher-fund-holding.ts', interfaceId: 'fund.holding' },
-  { path: 'finagent_workstation/src/agent/data/fetchers/fetcher-fund-manager.ts', interfaceId: 'fund.manager' },
-  { path: 'finagent_workstation/src/agent/data/fetchers/fetcher-calendar.ts', interfaceId: 'calendar.trade_days' },
-  { path: 'finagent_workstation/src/agent/data/fetchers/fetcher-fundamental.ts', interfaceId: 'stock.daily_valuation' },
-  { path: 'finagent_workstation/src/agent/data/fetchers/fetcher-chip-distribution.ts', interfaceId: 'stock.chip_distribution' },
-  { path: 'finagent_workstation/src/domain/market/providers/bridge-finance-provider.ts', interfaceId: 'index.quote' },
-  { path: 'finagent_workstation/src/domain/market/services/finance-news-data-api-service.ts', interfaceId: 'news.finance_feed' },
-  { path: 'finagent_workstation/src/domain/market/services/yahoo-market-data-service.ts', interfaceId: 'global.company_profile' },
-  { path: 'finagent_workstation/src/domain/market/services/yahoo-market-data-service.ts', interfaceId: 'global.financial_statements' },
-  { path: 'finagent_workstation/src/domain/market/services/yahoo-market-data-service.ts', interfaceId: 'global.recommendations' },
-  { path: 'finagent_workstation/src/domain/market/services/yahoo-market-data-service.ts', interfaceId: 'global.holders' },
-  { path: 'finagent_workstation/src/domain/market/services/yahoo-market-data-service.ts', interfaceId: 'global.insider_transactions' },
-  { path: 'finagent_workstation/src/domain/market/services/yahoo-market-data-service.ts', interfaceId: 'global.finance_news' },
-  { path: 'finagent_workstation/src/domain/market/services/yahoo-market-data-service.ts', interfaceId: 'option.chain_snapshot' },
-  { path: 'finagent_workstation/src/domain/market/services/yahoo-market-data-service.ts', interfaceId: 'global.corporate_actions' },
-  { path: 'finagent_workstation/src/domain/market/services/wind-data-api-service.ts', interfaceId: 'wind.financial_document' },
-  { path: 'finagent_workstation/src/domain/market/services/wind-data-api-service.ts', interfaceId: 'wind.economic_series' },
-  { path: 'finagent_workstation/src/domain/market/services/wind-data-api-service.ts', interfaceId: 'wind.analytics_result' },
+  { path: 'src/agent/data/fetchers/fetcher-money-flow.ts', interfaceId: 'stock.money_flow' },
+  { path: 'src/agent/data/fetchers/fetcher-index-kline.ts', interfaceId: 'index.daily_kline' },
+  { path: 'src/agent/data/fetchers/fetcher-sector.ts', interfaceId: 'market.sector_ranking' },
+  { path: 'src/agent/data/fetchers/fetcher-limit-pool.ts', interfaceId: 'market.limit_pool' },
+  { path: 'src/agent/data/fetchers/fetcher-northbound.ts', interfaceId: 'market.northbound_flow' },
+  { path: 'src/agent/data/fetchers/fetcher-fund-holding.ts', interfaceId: 'fund.holding' },
+  { path: 'src/agent/data/fetchers/fetcher-fund-manager.ts', interfaceId: 'fund.manager' },
+  { path: 'src/agent/data/fetchers/fetcher-calendar.ts', interfaceId: 'calendar.trade_days' },
+  { path: 'src/agent/data/fetchers/fetcher-fundamental.ts', interfaceId: 'stock.daily_valuation' },
+  { path: 'src/agent/data/fetchers/fetcher-chip-distribution.ts', interfaceId: 'stock.chip_distribution' },
+  { path: 'src/domain/market/providers/bridge-finance-provider.ts', interfaceId: 'index.quote' },
+  { path: 'src/domain/market/services/finance-news-data-api-service.ts', interfaceId: 'news.finance_feed' },
+  { path: 'src/domain/market/services/yahoo-market-data-service.ts', interfaceId: 'global.company_profile' },
+  { path: 'src/domain/market/services/yahoo-market-data-service.ts', interfaceId: 'global.financial_statements' },
+  { path: 'src/domain/market/services/yahoo-market-data-service.ts', interfaceId: 'global.recommendations' },
+  { path: 'src/domain/market/services/yahoo-market-data-service.ts', interfaceId: 'global.holders' },
+  { path: 'src/domain/market/services/yahoo-market-data-service.ts', interfaceId: 'global.insider_transactions' },
+  { path: 'src/domain/market/services/yahoo-market-data-service.ts', interfaceId: 'global.finance_news' },
+  { path: 'src/domain/market/services/yahoo-market-data-service.ts', interfaceId: 'option.chain_snapshot' },
+  { path: 'src/domain/market/services/yahoo-market-data-service.ts', interfaceId: 'global.corporate_actions' },
+  { path: 'src/domain/market/services/wind-data-api-service.ts', interfaceId: 'wind.financial_document' },
+  { path: 'src/domain/market/services/wind-data-api-service.ts', interfaceId: 'wind.economic_series' },
+  { path: 'src/domain/market/services/wind-data-api-service.ts', interfaceId: 'wind.analytics_result' },
 ]
 
 const financeSkillRoots = [
-  'finagent_workstation/assets/skills',
-  'app/assets/finance/skills',
-  'finagent/assets/finance/skills',
+  'assets/skills',
+  '../app/assets/finance/skills',
+  '../finagent/assets/finance/skills',
 ]
 const financeAgentInstructionFiles = [
-  'finagent_workstation/assets/bundle/AGENTS.md',
-  'finagent_workstation/assets/bundle/chat/AGENTS.md',
-  'finagent/assets/finance/AGENTS.md',
-  'finagent/assets/finance/chat/AGENTS.md',
+  'assets/bundle/AGENTS.md',
+  'assets/bundle/chat/AGENTS.md',
+  '../finagent/assets/finance/AGENTS.md',
+  '../finagent/assets/finance/chat/AGENTS.md',
 ]
 
 const providerSpecificSkillPath = /\/(?:tushare|yfinance|wind-aifinmarket|tradingview)\//
@@ -332,7 +333,7 @@ function buildReport() {
       'local-miss',
       'isAshareSymbol',
     ]),
-    ...textContains('finagent_workstation/test/unit/market-data-persistence.test.ts', [
+    ...textContains('test/unit/market-data-persistence.test.ts', [
       'coverage-yf',
       'query_global_company_profile dataset:profile, local-hit',
       'query_global_company_profile dataset:profile, local-miss',
@@ -459,18 +460,18 @@ function buildReport() {
   addCheck(checks, problems, 'normal-fetchers-use-interface-cache-stage', 'Normal persisted desktop fetchers enter data API interfaces and check cache before provider calls', validateInterfaceBackedFetchers())
 
   addCheck(checks, problems, 'renderer-normal-routes-no-sidecar-alias', 'Normal renderer finance panels avoid compatibility sidecar aliases', scanForForbidden({
-    roots: ['finagent_workstation/src/renderer'],
+    roots: ['src/renderer'],
     pattern: /\/api\/finance\/sidecar\//,
     allow: [],
   }))
 
   addCheck(checks, problems, 'skills-generated-reference-present', 'Bundled data-source skills reference generated interface/capability tables', [
     ...requiredPathsExist([
-      'finagent_workstation/assets/skills/data-sources/references/data-api-interfaces.md',
+      'assets/skills/data-sources/references/data-api-interfaces.md',
       'app/assets/finance/skills/data-sources/references/data-api-interfaces.md',
       'finagent/assets/finance/skills/data-sources/references/data-api-interfaces.md',
     ]),
-    ...validateSkillReference('finagent_workstation/assets/skills/data-sources/references/data-api-interfaces.md'),
+    ...validateSkillReference('assets/skills/data-sources/references/data-api-interfaces.md'),
     ...validateSkillReference('app/assets/finance/skills/data-sources/references/data-api-interfaces.md'),
     ...validateSkillReference('finagent/assets/finance/skills/data-sources/references/data-api-interfaces.md'),
   ])
@@ -997,7 +998,7 @@ function addCheck(checks, problems, id, description, candidateProblems) {
 
 function requiredPathsExist(pathList) {
   return pathList
-    .filter((item) => !existsSync(resolve(repoRoot, item)))
+    .filter((item) => !existsSync(resolve(repoRoot, item)) && !existsSync(resolve(parentRoot, item)))
     .map((item) => `missing required artifact: ${item}`)
 }
 
@@ -1021,7 +1022,9 @@ function sleepMs(ms) {
 }
 
 function readText(path) {
-  return readFileSync(resolve(repoRoot, path), 'utf-8')
+  const localPath = resolve(repoRoot, path)
+  if (existsSync(localPath)) return readFileSync(localPath, 'utf-8')
+  return readFileSync(resolve(parentRoot, path), 'utf-8')
 }
 
 function textContains(path, snippets) {

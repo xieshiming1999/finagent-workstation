@@ -11,7 +11,7 @@ import { fileURLToPath } from 'node:url'
 import { matrixDefinitions } from './finance_api_datastore_matrix_manifest.mjs'
 
 const scriptDir = dirname(fileURLToPath(import.meta.url))
-const repoRoot = join(scriptDir, '..', '..')
+const repoRoot = join(scriptDir, '..')
 const args = parseArgs(process.argv.slice(2).filter((arg) => arg !== '--'))
 
 const inventoryPath = resolveExistingPath(args.inventory ?? 'reports/integrations/finance_api_surface_inventory_2026_06_17.json')
@@ -47,7 +47,7 @@ const report = {
     inventory: inventoryPath,
     electronStatus: electronStatusPath,
     mobileStatus: mobileStatusPath,
-    matrix: 'finagent_workstation/scripts/finance_api_datastore_matrix_manifest.mjs',
+    matrix: 'scripts/finance_api_datastore_matrix_manifest.mjs',
   },
   summary: {
     inventoryRows: rows.length,

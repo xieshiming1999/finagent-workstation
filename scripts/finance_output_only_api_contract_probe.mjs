@@ -1,13 +1,13 @@
 #!/usr/bin/env node
 
-import { writeFileSync } from 'node:fs'
+import { mkdirSync, writeFileSync } from 'node:fs'
 import { dirname, resolve } from 'node:path'
 import { fileURLToPath } from 'node:url'
 import ts from 'typescript'
 import { readFileSync } from 'node:fs'
 
 const scriptDir = dirname(fileURLToPath(import.meta.url))
-const repoRoot = resolve(scriptDir, '..', '..')
+const repoRoot = resolve(scriptDir, '..')
 const args = parseArgs(process.argv.slice(2))
 const jsonOut = resolve(repoRoot, args.json ?? 'reports/integrations/finance_output_only_api_contract_probe_2026_06_18.json')
 const mdOut = resolve(repoRoot, args.md ?? 'reports/integrations/finance_output_only_api_contract_probe_2026_06_18.md')
@@ -34,6 +34,8 @@ const report = {
 }
 
 if (args['no-write'] !== 'true') {
+  mkdirSync(dirname(jsonOut), { recursive: true })
+  mkdirSync(dirname(mdOut), { recursive: true })
   writeFileSync(jsonOut, `${JSON.stringify(report, null, 2)}\n`, 'utf-8')
   writeFileSync(mdOut, renderMarkdown(report), 'utf-8')
 }
@@ -216,7 +218,7 @@ function runCase(testCase) {
 }
 
 function loadOutputOnlyModule() {
-  const sourcePath = resolve(repoRoot, 'finagent_workstation/src/agent/data/output-only-interfaces.ts')
+  const sourcePath = resolve(repoRoot, 'src/agent/data/output-only-interfaces.ts')
   const source = readFileSync(sourcePath, 'utf-8')
   const js = ts.transpileModule(source, {
     compilerOptions: { module: ts.ModuleKind.CommonJS, target: ts.ScriptTarget.ES2022, esModuleInterop: true },
