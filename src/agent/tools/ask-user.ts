@@ -1,4 +1,5 @@
 import type { Tool, ToolContext } from '../tool'
+import { appendInteractionEvidence } from '../interaction-evidence'
 
 export class AskUserQuestionTool implements Tool {
   name = 'AskUserQuestion'
@@ -33,6 +34,7 @@ export class AskUserQuestionTool implements Tool {
   private pendingResolve: ((answer: string) => void) | null = null
   private emitEvent: ((event: Record<string, unknown>) => void) | null = null
   private pendingQuestion: { question: string; options: string[]; requestId: string } | null = null
+  private pendingContext: ToolContext | null = null
 
   setEventEmitter(fn: (event: Record<string, unknown>) => void) {
     this.emitEvent = fn
@@ -40,9 +42,21 @@ export class AskUserQuestionTool implements Tool {
 
   respondToQuestion(answer: string) {
     if (this.pendingResolve) {
+      const pending = this.pendingQuestion
+      if (pending && this.pendingContext) {
+        appendInteractionEvidence(this.pendingContext, {
+          type: 'user_question_resolved',
+          requestId: pending.requestId,
+          toolName: this.name,
+          question: pending.question,
+          options: pending.options,
+          answer,
+        })
+      }
       this.pendingResolve(answer)
       this.pendingResolve = null
       this.pendingQuestion = null
+      this.pendingContext = null
     }
   }
 
@@ -57,8 +71,7 @@ export class AskUserQuestionTool implements Tool {
     }
     return null
   }
-
-    async call(_id: string, input: Record<string, unknown>): Promise<string> {
+  async call(_id: string, input: Record<string, unknown>, ctx: ToolContext): Promise<string> {
     const normalized = normalizeAskInput(input)
     const question = normalized.question
     const options = normalized.options
@@ -70,13 +83,29 @@ export class AskUserQuestionTool implements Tool {
       requestId: _id,
     })
     this.pendingQuestion = { question, options, requestId: _id }
+    this.pendingContext = ctx
+    appendInteractionEvidence(ctx, {
+      type: 'user_question_pending',
+      requestId: _id,
+      toolName: this.name,
+      question,
+      options,
+    })
 
     return new Promise<string>((resolve) => {
       this.pendingResolve = resolve
       setTimeout(() => {
         if (this.pendingResolve === resolve) {
+          appendInteractionEvidence(ctx, {
+            type: 'user_question_timeout',
+            requestId: _id,
+            toolName: this.name,
+            question,
+            options,
+          })
           this.pendingResolve = null
           this.pendingQuestion = null
+          this.pendingContext = null
           resolve('(User did not respond within timeout)')
         }
       }, 300_000)

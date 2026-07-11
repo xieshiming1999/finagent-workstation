@@ -1,6 +1,7 @@
 import type { AgentEvent } from './agent-event'
 import { toolMessage, type ToolUse } from './message'
 import type { Tool, ToolContext, ToolRegistry } from './tool'
+import { appendInteractionEvidence, inputKeys } from './interaction-evidence'
 
 export interface ToolExecutionResult {
   name: string
@@ -88,8 +89,23 @@ export async function* executeToolCalls(args: ExecuteToolCallsArgs): AsyncGenera
     }
 
     if (permission === 'ask') {
+      appendInteractionEvidence(ctx, {
+        type: 'permission_request',
+        requestId: tc.id,
+        toolName: tc.name,
+        inputKeys: inputKeys(tc.input),
+      })
       yield { type: 'tool-confirm-request', name: tc.name, input: tc.input, requestId: tc.id }
       const confirmResult = await waitForPermissionConfirmation(tc.id)
+      appendInteractionEvidence(ctx, {
+        type: 'permission_resolved',
+        requestId: tc.id,
+        toolName: tc.name,
+        approved: confirmResult.approved,
+        alwaysAllow: confirmResult.alwaysAllow,
+        rejectReason: confirmResult.rejectReason,
+        inputKeys: inputKeys(tc.input),
+      })
       if (!confirmResult.approved) {
         const reason = confirmResult.rejectReason
         const content = reason ? `Tool use was rejected by the user. Feedback: ${reason}` : 'Tool use was rejected by the user.'
