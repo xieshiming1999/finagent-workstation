@@ -27,6 +27,7 @@ import { EnterPlanModeTool, ExitPlanModeTool } from '../agent/tools/plan-mode'
 import { EnvironmentTool } from '../agent/tools/environment'
 import { InteractionEvidenceTool } from '../agent/tools/interaction-evidence'
 import { WorkflowEvidenceTool } from '../agent/tools/workflow-evidence'
+import { WorkflowVerifierTool } from '../agent/tools/workflow-verifier'
 import { FinanceWorkflowStateTool } from '../agent/tools/finance-workflow-state'
 import { CapabilityStatusTool } from '../agent/tools/capability-status'
 import { ToolCatalogTool } from '../agent/tools/tool-catalog'
@@ -309,6 +310,7 @@ function initAgent() {
   registry.register(new EnvironmentTool())
   registry.register(new InteractionEvidenceTool())
   registry.register(new WorkflowEvidenceTool())
+  registry.register(new WorkflowVerifierTool())
   registry.register(new RunbookTool())
   registry.register(new ArtifactRegistryTool())
   registry.register(new CapabilityStatusTool(() => registry.capabilities()))
