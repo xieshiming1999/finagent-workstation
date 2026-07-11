@@ -110,9 +110,13 @@ function moduleDescriptors(capabilities: ToolCapabilitySummary[]): CapabilityMod
     const moduleId = moduleIdForTool(capability.name)
     groups.set(moduleId, [...(groups.get(moduleId) ?? []), capability])
   }
-  return [...groups.entries()]
+  const modules = [...groups.entries()]
     .map(([id, tools]) => ({ ...moduleTemplate(id), runtime: 'finagent-workstation' as const, tools }))
-    .sort((a, b) => a.id.localeCompare(b.id))
+  const marketData = capabilities.filter((item) => item.name === 'MarketData')
+  if (marketData.length > 0) {
+    modules.push({ ...moduleTemplate('strategy-runtime'), runtime: 'finagent-workstation' as const, tools: marketData })
+  }
+  return modules.sort((a, b) => a.id.localeCompare(b.id))
 }
 
 function moduleIdForTool(toolName: string): string {
@@ -205,6 +209,16 @@ function moduleTemplate(id: string): Omit<CapabilityModuleDescriptor, 'runtime' 
       healthEvidence: 'Workflow state, pending approval, and broker/provider status must be visible before action.',
       limitations: 'Real side effects require explicit approval and configured provider state.',
       discovery: 'Use Runbook and FinanceWorkflowState before trade tools.',
+    },
+    'strategy-runtime': {
+      id: 'strategy-runtime',
+      title: 'StrategySpec validation, backtest, save, read, and rerun',
+      schema: 'provider-module-descriptor-v1',
+      permissionClass: 'read-only computation plus strategy artifact writes',
+      cacheDataContract: 'Agent-created strategies must flow through StrategySpec, validation report, data coverage, backtest or fund observation evidence, saved artifact, and readback/run evidence before reuse.',
+      healthEvidence: 'WorkflowVerifier(strategy_backtest), ArtifactRegistry, FinanceWorkflowState, and MarketData custom_strategy_* results expose lifecycle status, unsupported parts, assumptions, and data coverage.',
+      limitations: 'Workstation strategy execution can use richer local data and views, but unsupported indicators, macro prose, news sentiment, arbitrary code, or broker actions must remain rejected unless the StrategySpec contract explicitly supports them.',
+      discovery: 'Call Runbook(action:"get", workflow:"strategy_backtest"), ToolCatalog(action:"detail", tool:"MarketData"), then MarketData(action:"custom_strategy_help") before validate/backtest/save/run.',
     },
     'sub-agent': {
       id: 'sub-agent',

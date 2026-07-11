@@ -80,6 +80,31 @@ describe('ToolCatalogTool', () => {
     })
   })
 
+  it('exposes strategy runtime as a dedicated module', async () => {
+    const registry = new ToolRegistry()
+    registry.register(marketDataTool())
+    registry.register(new ToolCatalogTool(() => registry.capabilities()))
+    const catalog = registry.get('ToolCatalog')!
+
+    const modules = JSON.parse(await catalog.call('modules-strategy', {
+      action: 'modules',
+    }, {} as ToolContext))
+    expect(modules.modules).toEqual(expect.arrayContaining([
+      expect.objectContaining({ id: 'strategy-runtime' }),
+    ]))
+
+    const module = JSON.parse(await catalog.call('module-strategy', {
+      action: 'module',
+      module: 'strategy-runtime',
+    }, {} as ToolContext))
+
+    expect(module.module.title).toContain('StrategySpec')
+    expect(module.module.discovery).toContain('custom_strategy_help')
+    expect(module.module.tools).toEqual(expect.arrayContaining([
+      expect.objectContaining({ name: 'MarketData' }),
+    ]))
+  })
+
   it('Agent help describes delegation modes without launching a sub-agent', async () => {
     const help = JSON.parse(await new AgentTool().call('agent-help', {
       action: 'help',
@@ -107,6 +132,26 @@ function exampleTool(): Tool {
       type: 'object',
       properties: {
         action: { type: 'string', enum: ['run', 'help'] },
+      },
+    },
+    async call() {
+      return 'ok'
+    },
+  }
+}
+
+function marketDataTool(): Tool {
+  return {
+    name: 'MarketData',
+    description: 'Market data and strategy runtime tool',
+    isReadOnly: true,
+    inputSchema: {
+      type: 'object',
+      properties: {
+        action: {
+          type: 'string',
+          enum: ['help', 'custom_strategy_help', 'custom_strategy_validate'],
+        },
       },
     },
     async call() {
