@@ -33,6 +33,13 @@ describe('CapabilityStatusTool', () => {
         toolErrorCount: 1,
         uiArtifactCount: 1,
       },
+      runtimeState: {
+        contract: 'agent-runtime-state-v1',
+        state: 'waiting_for_user',
+        observed: {
+          pendingInteractions: 1,
+        },
+      },
     })
   })
 
@@ -80,6 +87,7 @@ describe('CapabilityStatusTool', () => {
     const summary = JSON.parse(await tool.call('cap-4', { action: 'summary' }, ctx))
 
     expect(summary.health.repeatedFailureCount).toBe(1)
+    expect(summary.runtimeState.state).toBe('blocked')
     expect(summary.session.repeatedFailedToolCalls).toEqual([
       expect.objectContaining({
         toolName: 'MarketData',

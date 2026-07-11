@@ -119,6 +119,12 @@ function buildSummary(
     pendingInteractions,
     session,
     artifacts,
+    runtimeState: deriveRuntimeState({
+      pendingInteractions,
+      session,
+      uiArtifactCount: Number((artifacts.pages as JsonObject).count ?? 0) +
+        Number((artifacts.dashboards as JsonObject).count ?? 0),
+    }),
     guidance: 'Use evaluate to check whether selected evidence classes are present before final workflow claims.',
   }
 }
@@ -189,17 +195,23 @@ function readCurrentSession(ctx: ToolContext, limit: number): JsonObject {
 
   const recentFailedTools: JsonObject[] = []
   const toolUsesById = new Map<string, JsonObject>()
+  const resolvedToolUseIds = new Set<string>()
   const repeatedFailuresBySignature = new Map<string, JsonObject>()
   let toolCallCount = 0
   let toolErrorCount = 0
+  let lastRole = ''
+  let lastAssistantHadToolUse = false
+  let lastToolResultIsError = false
   for (const line of readFileSync(file, 'utf8').split('\n')) {
     const text = line.trim()
     if (!text) continue
     try {
       const decoded = JSON.parse(text) as JsonObject
       if (decoded.type !== 'message') continue
+      lastRole = String(decoded.role ?? '')
       if (Array.isArray(decoded.toolUses)) {
         toolCallCount += decoded.toolUses.length
+        lastAssistantHadToolUse = lastRole === 'assistant' && decoded.toolUses.length > 0
         for (const item of decoded.toolUses) {
           if (item && typeof item === 'object' && !Array.isArray(item)) {
             const row = item as JsonObject
@@ -209,6 +221,11 @@ function readCurrentSession(ctx: ToolContext, limit: number): JsonObject {
         }
       }
       const result = decoded.toolResult ?? decoded.tool_result
+      if (result && typeof result === 'object' && !Array.isArray(result)) {
+        const toolUseId = String((result as JsonObject).toolUseId ?? '')
+        if (toolUseId) resolvedToolUseIds.add(toolUseId)
+        lastToolResultIsError = (result as JsonObject).isError === true
+      }
       if (result && typeof result === 'object' && !Array.isArray(result) && (result as JsonObject).isError === true) {
         toolErrorCount++
         const toolUseId = String((result as JsonObject).toolUseId ?? '')
@@ -246,9 +263,75 @@ function readCurrentSession(ctx: ToolContext, limit: number): JsonObject {
     exists: true,
     toolCallCount,
     toolErrorCount,
+    lastRole,
+    lastAssistantHadToolUse,
+    lastToolResultIsError,
+    unresolvedToolCallCount: toolUsesById.size - resolvedToolUseIds.size,
     recentFailedTools,
     repeatedFailureCount: repeatedFailedToolCalls.length,
     repeatedFailedToolCalls,
+  }
+}
+
+function deriveRuntimeState(input: {
+  pendingInteractions: JsonObject[]
+  session: JsonObject
+  uiArtifactCount: number
+}): JsonObject {
+  const pendingTypes = input.pendingInteractions.map((item) => String(item.type ?? '').toLowerCase())
+  let state = 'idle'
+  let reason = 'No active session evidence is visible.'
+  let nextAction = 'Start a workflow or inspect ToolCatalog/Runbook before broad action.'
+
+  if (pendingTypes.some((type) => type.includes('approval') || type.includes('permission'))) {
+    state = 'waiting_for_approval'
+    reason = 'A structured approval or permission interaction is pending.'
+    nextAction = 'Resolve the pending approval before continuing the workflow.'
+  } else if (input.pendingInteractions.length > 0) {
+    state = 'waiting_for_user'
+    reason = 'A structured user question is pending.'
+    nextAction = 'Answer the pending user question before continuing.'
+  } else if (Number(input.session.unresolvedToolCallCount ?? 0) > 0) {
+    state = 'using_tool'
+    reason = 'At least one tool call has no visible result yet.'
+    nextAction = 'Wait for the tool result or inspect WorkflowEvidence for missing output.'
+  } else if (Number(input.session.repeatedFailureCount ?? 0) > 0) {
+    state = 'blocked'
+    reason = 'Repeated identical failed tool calls are visible.'
+    nextAction = 'Stop repeating the same call; inspect help/status or choose a recovery path.'
+  } else if (Number(input.session.toolErrorCount ?? 0) > 0) {
+    state = 'blocked'
+    reason = 'Failed tool results are visible in the current session.'
+    nextAction = 'Inspect recentFailedTools and recover before final claims.'
+  } else if (input.session.lastRole === 'tool' && input.session.lastToolResultIsError !== true) {
+    state = 'verifying_result'
+    reason = 'The latest visible event is a successful tool result.'
+    nextAction = 'Verify evidence and synthesize the result before finalizing.'
+  } else if (input.session.lastRole === 'assistant' &&
+    input.session.lastAssistantHadToolUse !== true &&
+    (Number(input.session.toolCallCount ?? 0) > 0 || input.uiArtifactCount > 0)) {
+    state = 'complete'
+    reason = 'The latest assistant message follows collected tool or UI evidence.'
+    nextAction = 'Use CapabilityStatus(action:"evaluate") or WorkflowEvidence before relying on completion.'
+  } else if (Number(input.session.toolCallCount ?? 0) > 0) {
+    state = 'thinking'
+    reason = 'Tool evidence exists but no terminal assistant synthesis is visible.'
+    nextAction = 'Continue reasoning or inspect workflow evidence.'
+  }
+
+  return {
+    contract: 'agent-runtime-state-v1',
+    state,
+    reason,
+    nextAction,
+    observed: {
+      pendingInteractions: input.pendingInteractions.length,
+      toolCalls: Number(input.session.toolCallCount ?? 0),
+      toolErrors: Number(input.session.toolErrorCount ?? 0),
+      repeatedFailures: Number(input.session.repeatedFailureCount ?? 0),
+      uiArtifacts: input.uiArtifactCount,
+      lastRole: String(input.session.lastRole ?? ''),
+    },
   }
 }
 

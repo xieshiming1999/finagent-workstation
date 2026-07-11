@@ -33,6 +33,9 @@ export class WorkflowEvidenceTool implements Tool {
     }
 
     const limit = Math.max(1, Math.min(100, Number(input.limit ?? 20) || 20))
+    const pendingInteractions = readPendingInteractionState(ctx)
+    const session = readCurrentSession(ctx, limit)
+    const artifacts = listArtifacts(ctx, limit)
     return JSON.stringify({
       contract: 'workflow-evidence-summary-v1',
       sources: {
@@ -43,9 +46,15 @@ export class WorkflowEvidenceTool implements Tool {
           join(ctx.basePath, 'memory', 'dashboards'),
         ],
       },
-      pendingInteractions: readPendingInteractionState(ctx),
-      session: readCurrentSession(ctx, limit),
-      artifacts: listArtifacts(ctx, limit),
+      pendingInteractions,
+      session,
+      artifacts,
+      runtimeState: deriveRuntimeState({
+        pendingInteractions,
+        session,
+        uiArtifactCount: Number((artifacts.pages as JsonObject).count ?? 0) +
+          Number((artifacts.dashboards as JsonObject).count ?? 0),
+      }),
       guidance: 'Use this summary to verify tool calls, failures, pending human input, and UI artifacts. It is evidence, not a substitute for a full app workflow check.',
     })
   }
@@ -83,6 +92,11 @@ function readCurrentSession(ctx: ToolContext, limit: number): JsonObject {
   let toolCallCount = 0
   let toolResultCount = 0
   let toolErrorCount = 0
+  let lastRole = ''
+  let lastAssistantHadToolUse = false
+  let lastToolResultIsError = false
+  const toolUseIds = new Set<string>()
+  const resolvedToolUseIds = new Set<string>()
   for (const line of readFileSync(file, 'utf8').split('\n')) {
     const text = line.trim()
     if (!text) continue
@@ -90,6 +104,7 @@ function readCurrentSession(ctx: ToolContext, limit: number): JsonObject {
       const decoded = JSON.parse(text) as JsonObject
       if (decoded.type !== 'message') continue
       messageCount++
+      lastRole = String(decoded.role ?? '')
       const item: JsonObject = { role: decoded.role }
       if (decoded.timestamp) item.timestamp = decoded.timestamp
       if (typeof decoded.content === 'string' && decoded.content.trim()) {
@@ -97,18 +112,28 @@ function readCurrentSession(ctx: ToolContext, limit: number): JsonObject {
       }
       if (Array.isArray(decoded.toolUses) && decoded.toolUses.length > 0) {
         toolCallCount += decoded.toolUses.length
+        lastAssistantHadToolUse = lastRole === 'assistant'
         item.toolUses = decoded.toolUses
           .filter((tool): tool is JsonObject => Boolean(tool) && typeof tool === 'object' && !Array.isArray(tool))
           .map((tool) => ({
             name: tool.name,
             input: compactValue(tool.input),
           }))
+        for (const tool of decoded.toolUses) {
+          if (tool && typeof tool === 'object' && !Array.isArray(tool)) {
+            const id = String((tool as JsonObject).id ?? '')
+            if (id) toolUseIds.add(id)
+          }
+        }
       }
       const result = decoded.toolResult ?? decoded.tool_result
       if (result && typeof result === 'object' && !Array.isArray(result)) {
         toolResultCount++
         const row = result as JsonObject
         const isError = row.isError === true
+        lastToolResultIsError = isError
+        const toolUseId = String(row.toolUseId ?? '')
+        if (toolUseId) resolvedToolUseIds.add(toolUseId)
         if (isError) toolErrorCount++
         item.toolResult = {
           isError,
@@ -129,6 +154,10 @@ function readCurrentSession(ctx: ToolContext, limit: number): JsonObject {
     toolCallCount,
     toolResultCount,
     toolErrorCount,
+    lastRole,
+    lastAssistantHadToolUse,
+    lastToolResultIsError,
+    unresolvedToolCallCount: toolUseIds.size - resolvedToolUseIds.size,
     recent,
   }
 }
@@ -172,4 +201,61 @@ function compactValue(value: unknown): unknown {
 
 function truncate(value: string, max: number): string {
   return value.length <= max ? value : `${value.slice(0, max)}...`
+}
+
+function deriveRuntimeState(input: {
+  pendingInteractions: JsonObject[]
+  session: JsonObject
+  uiArtifactCount: number
+}): JsonObject {
+  const pendingTypes = input.pendingInteractions.map((item) => String(item.type ?? '').toLowerCase())
+  let state = 'idle'
+  let reason = 'No active session evidence is visible.'
+  let nextAction = 'Start a workflow or inspect tool help before broad action.'
+
+  if (pendingTypes.some((type) => type.includes('approval') || type.includes('permission'))) {
+    state = 'waiting_for_approval'
+    reason = 'A structured approval or permission interaction is pending.'
+    nextAction = 'Resolve the pending approval before continuing the workflow.'
+  } else if (input.pendingInteractions.length > 0) {
+    state = 'waiting_for_user'
+    reason = 'A structured user question is pending.'
+    nextAction = 'Answer the pending user question before continuing.'
+  } else if (Number(input.session.unresolvedToolCallCount ?? 0) > 0) {
+    state = 'using_tool'
+    reason = 'At least one tool call has no visible result yet.'
+    nextAction = 'Wait for the tool result or inspect session evidence for missing output.'
+  } else if (Number(input.session.toolErrorCount ?? 0) > 0) {
+    state = 'blocked'
+    reason = 'Failed tool results are visible in the current session.'
+    nextAction = 'Inspect failed tool results and recover before final claims.'
+  } else if (input.session.lastRole === 'tool' && input.session.lastToolResultIsError !== true) {
+    state = 'verifying_result'
+    reason = 'The latest visible event is a successful tool result.'
+    nextAction = 'Verify evidence and synthesize the result before finalizing.'
+  } else if (input.session.lastRole === 'assistant' &&
+    input.session.lastAssistantHadToolUse !== true &&
+    (Number(input.session.toolCallCount ?? 0) > 0 || input.uiArtifactCount > 0)) {
+    state = 'complete'
+    reason = 'The latest assistant message follows collected tool or UI evidence.'
+    nextAction = 'Use WorkflowEvidence or CapabilityStatus evaluation before relying on completion.'
+  } else if (Number(input.session.toolCallCount ?? 0) > 0) {
+    state = 'thinking'
+    reason = 'Tool evidence exists but no terminal assistant synthesis is visible.'
+    nextAction = 'Continue reasoning or inspect workflow evidence.'
+  }
+
+  return {
+    contract: 'agent-runtime-state-v1',
+    state,
+    reason,
+    nextAction,
+    observed: {
+      pendingInteractions: input.pendingInteractions.length,
+      toolCalls: Number(input.session.toolCallCount ?? 0),
+      toolErrors: Number(input.session.toolErrorCount ?? 0),
+      uiArtifacts: input.uiArtifactCount,
+      lastRole: String(input.session.lastRole ?? ''),
+    },
+  }
 }

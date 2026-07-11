@@ -57,6 +57,13 @@ describe('WorkflowEvidenceTool', () => {
         toolResultCount: 1,
         toolErrorCount: 1,
       },
+      runtimeState: {
+        contract: 'agent-runtime-state-v1',
+        state: 'waiting_for_user',
+        observed: {
+          toolErrors: 1,
+        },
+      },
     })
     expect(summary.artifacts.dashboards.count).toBe(1)
     expect(summary.artifacts.pages.count).toBe(1)
