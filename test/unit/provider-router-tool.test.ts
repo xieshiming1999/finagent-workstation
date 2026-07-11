@@ -58,6 +58,55 @@ describe('ProviderRouterTool', () => {
     ]))
   })
 
+  it('merges runtime provider health by default', async () => {
+    const result = JSON.parse(await new ProviderRouterTool(() => [
+      {
+        provider: 'tdx',
+        status: 'runtime_unavailable',
+        reason: 'runtime probe failed',
+        source: 'test-runtime-health',
+      },
+    ]).call('router-runtime-health', {
+      action: 'route',
+      task: 'quote',
+    }, tempToolContext()))
+
+    expect(result.order[0]).toBe('eastmoneyDirect')
+    expect(result.providerHealthSource).toMatchObject({
+      runtimeEnabled: true,
+      runtimeRows: 1,
+      manualRows: 0,
+    })
+    expect(result.providerHealth).toEqual(expect.arrayContaining([
+      expect.objectContaining({
+        provider: 'tdx',
+        reason: expect.stringContaining('runtime_unavailable'),
+      }),
+    ]))
+  })
+
+  it('can disable runtime provider health for diagnostics', async () => {
+    const result = JSON.parse(await new ProviderRouterTool(() => [
+      {
+        provider: 'tdx',
+        status: 'runtime_unavailable',
+        reason: 'runtime probe failed',
+        source: 'test-runtime-health',
+      },
+    ]).call('router-runtime-health-off', {
+      action: 'route',
+      task: 'quote',
+      includeRuntimeHealth: false,
+    }, tempToolContext()))
+
+    expect(result.order[0]).toBe('tdx')
+    expect(result.providerHealth).toEqual([])
+    expect(result.providerHealthSource).toMatchObject({
+      runtimeEnabled: false,
+      runtimeRows: 0,
+    })
+  })
+
   it('rejects unsupported task through the tool error channel', async () => {
     await expect(new ProviderRouterTool().call('router-3', {
       action: 'route',

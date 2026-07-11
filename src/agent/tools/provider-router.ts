@@ -6,7 +6,10 @@ import {
   type FinanceProvider,
   type ProviderGates,
 } from '../data/provider-policy'
+import { globalApiStats, type ApiCallRecord } from '../data/resilience'
 import type { Tool, ToolContext } from '../tool'
+
+export type ProviderHealthProvider = () => Array<Record<string, unknown>>
 
 const TASKS: FinanceDataTask[] = [
   'quote',
@@ -39,6 +42,8 @@ const RAW_ORDERS: Record<FinanceDataTask, FinanceProvider[]> = {
 }
 
 export class ProviderRouterTool implements Tool {
+  constructor(private readonly runtimeHealthProvider: ProviderHealthProvider = runtimeProviderHealthRows) {}
+
   name = 'ProviderRouter'
   description = 'Explain code-owned finance provider routing order, provider gates, skipped providers, and serial-call requirements.'
   isReadOnly = true
@@ -67,6 +72,10 @@ export class ProviderRouterTool implements Tool {
         items: { type: 'object' },
         description: 'Optional health rows: provider, status, reason. unhealthy/blocked/quota_exhausted/credential_missing statuses are skipped.',
       },
+      includeRuntimeHealth: {
+        type: 'boolean',
+        description: 'Default true. Merge recent runtime API health from the app statistics store so provider health can affect routing without manual rows.',
+      },
       gates: {
         type: 'object',
         description: 'Optional provider gates: windConfigured, windQuotaAvailable, tushareConfigured, tusharePermissionLikely, allowAkshareCompatibility, allowBroadAkshare.',
@@ -87,7 +96,7 @@ export class ProviderRouterTool implements Tool {
     if (!task) {
       throw new Error('ProviderRouter(action:"route") requires a supported task. Use action="tasks" to inspect tasks.')
     }
-    return JSON.stringify(route(task, input))
+    return JSON.stringify(route(task, input, this.runtimeHealthProvider))
   }
 }
 
@@ -103,9 +112,14 @@ function help(): Record<string, unknown> {
   }
 }
 
-function route(task: FinanceDataTask, input: Record<string, unknown>): Record<string, unknown> {
+function route(
+  task: FinanceDataTask,
+  input: Record<string, unknown>,
+  runtimeHealthProvider: ProviderHealthProvider,
+): Record<string, unknown> {
   const gates = gatesFromInput(input)
-  const healthBlocks = healthBlocksFromInput(input)
+  const healthRows = combinedHealthRows(input, runtimeHealthProvider)
+  const healthBlocks = healthBlocksFromRows(healthRows)
   const effectiveGates = {
     ...gates,
     temporarilyBlockedProviders: [
@@ -136,14 +150,26 @@ function route(task: FinanceDataTask, input: Record<string, unknown>): Record<st
       routeEffect: 'skipped',
       reason,
     })),
+    providerHealthSource: providerHealthSource(input, healthRows),
     nextAction: order.length === 0
       ? 'No provider is currently allowed. Use cache/readback, configure credentials, or clear temporary provider blocks before retrying.'
       : 'Use providers in returned order; do not override order from prompt knowledge.',
   }
 }
 
-function healthBlocksFromInput(input: Record<string, unknown>): Partial<Record<FinanceProvider, string>> {
-  if (!Array.isArray(input.providerHealth)) return {}
+function combinedHealthRows(
+  input: Record<string, unknown>,
+  runtimeHealthProvider: ProviderHealthProvider,
+): Array<Record<string, unknown>> {
+  const rows = Array.isArray(input.providerHealth)
+    ? input.providerHealth.filter((row): row is Record<string, unknown> =>
+      !!row && typeof row === 'object' && !Array.isArray(row))
+    : []
+  if (input.includeRuntimeHealth === false) return [...rows]
+  return [...rows, ...runtimeHealthProvider()]
+}
+
+function healthBlocksFromRows(rows: Array<Record<string, unknown>>): Partial<Record<FinanceProvider, string>> {
   const blocked = new Set([
     'unhealthy',
     'blocked',
@@ -153,16 +179,57 @@ function healthBlocksFromInput(input: Record<string, unknown>): Partial<Record<F
     'credential_missing',
   ])
   const out: Partial<Record<FinanceProvider, string>> = {}
-  for (const row of input.providerHealth) {
-    if (!row || typeof row !== 'object' || Array.isArray(row)) continue
-    const item = row as Record<string, unknown>
-    const [provider] = normalizeFinanceProviders([item.provider])
+  for (const row of rows) {
+    const [provider] = normalizeFinanceProviders([row.provider])
     if (!provider) continue
-    const status = String(item.status ?? '').trim()
+    const status = String(row.status ?? '').trim()
     if (!blocked.has(status)) continue
-    out[provider] = `health_${status}:${String(item.reason ?? 'provider health blocked routing')}`
+    out[provider] = `health_${status}:${String(row.reason ?? 'provider health blocked routing')}`
   }
   return out
+}
+
+export function runtimeProviderHealthRows(records: ApiCallRecord[] = globalApiStats.getRecent(30)): Array<Record<string, unknown>> {
+  const byProvider: Record<string, ApiCallRecord[]> = {}
+  for (const record of records) {
+    const [provider] = normalizeFinanceProviders([record.source])
+    if (!provider) continue
+    ;(byProvider[provider] ??= []).push(record)
+  }
+  return Object.entries(byProvider).map(([provider, providerRecords]) => {
+    const failures = providerRecords.filter((record) => !record.success)
+    const status = runtimeHealthStatus(providerRecords, failures)
+    return {
+      provider,
+      status,
+      reason: status === 'ready'
+        ? `runtime health ready: ${providerRecords.length - failures.length}/${providerRecords.length} recent calls succeeded`
+        : `runtime health ${status}: ${failures.length}/${providerRecords.length} recent calls failed${failures[0]?.error ? ` (${failures[0].error})` : ''}`,
+      source: 'globalApiStats',
+      total: providerRecords.length,
+      success: providerRecords.length - failures.length,
+      failures: failures.length,
+      lastRequest: providerRecords[0]?.timestamp,
+    }
+  })
+}
+
+function runtimeHealthStatus(records: ApiCallRecord[], failures: ApiCallRecord[]): string {
+  if (failures.length <= 0) return 'ready'
+  const successes = records.length - failures.length
+  if (successes <= 0) return 'runtime_unavailable'
+  if (failures.length / records.length >= 0.5) return 'transport_unstable'
+  return 'degraded'
+}
+
+function providerHealthSource(input: Record<string, unknown>, rows: Array<Record<string, unknown>>): Record<string, unknown> {
+  return {
+    manualRows: Array.isArray(input.providerHealth) ? input.providerHealth.length : 0,
+    runtimeRows: input.includeRuntimeHealth === false
+      ? 0
+      : rows.length - (Array.isArray(input.providerHealth) ? input.providerHealth.length : 0),
+    runtimeEnabled: input.includeRuntimeHealth !== false,
+  }
 }
 
 function gatesFromInput(input: Record<string, unknown>): ProviderGates {
