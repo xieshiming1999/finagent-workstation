@@ -39,6 +39,22 @@ describe('ArtifactRegistryTool', () => {
       id: created.artifact.stableRef,
     }, ctx))
     expect(get.artifact.title).toBe('Stock analysis')
+
+    const graph = JSON.parse(await tool.call('artifact-graph', {
+      action: 'graph',
+      kind: 'analysis',
+    }, ctx))
+    expect(graph.contract).toBe('artifact-evidence-graph-v1')
+    expect(graph.artifactCount).toBe(1)
+    expect(graph.nodes).toEqual(expect.arrayContaining([
+      expect.objectContaining({ id: created.artifact.stableRef }),
+    ]))
+    expect(graph.edges).toEqual(expect.arrayContaining([
+      expect.objectContaining({
+        from: created.artifact.stableRef,
+        relation: 'from_source',
+      }),
+    ]))
   })
 
   it('rejects incomplete register input through the tool error channel', async () => {

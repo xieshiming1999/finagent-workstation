@@ -36,7 +36,7 @@ export class ArtifactRegistryTool implements Tool {
     properties: {
       action: {
         type: 'string',
-        enum: ['help', 'list', 'get', 'register'],
+        enum: ['help', 'list', 'get', 'register', 'graph'],
       },
       kind: {
         type: 'string',
@@ -74,6 +74,7 @@ export class ArtifactRegistryTool implements Tool {
     if (action === 'list') return JSON.stringify(listArtifacts(registry, input))
     if (action === 'get') return JSON.stringify(getArtifact(registry, input))
     if (action === 'register') return JSON.stringify(registerArtifact(registry, input))
+    if (action === 'graph') return JSON.stringify(graphArtifacts(registry, input))
     throw new Error(`Invalid ArtifactRegistry action "${action}". Use action="help" for supported actions.`)
   }
 }
@@ -81,12 +82,13 @@ export class ArtifactRegistryTool implements Tool {
 function help(): Record<string, unknown> {
   return {
     contract: 'artifact-registry-help-v1',
-    actions: ['help', 'list', 'get', 'register'],
+    actions: ['help', 'list', 'get', 'register', 'graph'],
     kinds: ARTIFACT_KINDS,
     guidance: [
       'Register artifacts after creating durable workflow outputs; do not rely only on chat text.',
       'Use provenance and freshness to explain where evidence came from and whether it is reusable.',
       'Use get/list before reusing an existing artifact in later turns.',
+      'Use graph to inspect claim/evidence/source relationships before citing a prior artifact.',
     ],
   }
 }
@@ -141,6 +143,52 @@ function registerArtifact(registry: ArtifactRegistry, input: Record<string, unkn
   return {
     contract: 'artifact-registry-record-v1',
     artifact: record,
+  }
+}
+
+function graphArtifacts(registry: ArtifactRegistry, input: Record<string, unknown>): Record<string, unknown> {
+  const kind = parseKind(input.kind, false)
+  const limit = Math.max(1, Math.min(100, Number(input.limit ?? 50) || 50))
+  const records = registry.list(kind).slice(0, limit)
+  const nodes = new Map<string, Record<string, unknown>>()
+  const edges: Record<string, unknown>[] = []
+
+  function addNode(id: string, type: string, data: Record<string, unknown>): void {
+    if (!id.trim()) return
+    nodes.set(id, { id, type, ...data })
+  }
+
+  for (const artifact of records) {
+    const artifactId = artifact.stableRef
+    addNode(artifactId, 'artifact', {
+      kind: artifact.kind,
+      title: artifact.title,
+      verificationStatus: artifact.verificationStatus,
+      freshness: artifact.freshness,
+    })
+    const sourceId = `source:${artifact.source}`
+    addNode(sourceId, 'source', { source: artifact.source })
+    edges.push({ from: artifactId, to: sourceId, relation: 'from_source' })
+
+    for (const [key, value] of Object.entries(artifact.provenance ?? {})) {
+      if (typeof value !== 'string' || !value.trim()) continue
+      const nodeId = `${key}:${value}`
+      addNode(nodeId, key, { value })
+      edges.push({ from: artifactId, to: nodeId, relation: 'proves_with' })
+    }
+    for (const link of artifact.links ?? []) {
+      addNode(link, link.startsWith('artifact:') ? 'artifact_ref' : 'reference', { value: link })
+      edges.push({ from: artifactId, to: link, relation: 'links_to' })
+    }
+  }
+  return {
+    contract: 'artifact-evidence-graph-v1',
+    artifactCount: records.length,
+    nodeCount: nodes.size,
+    edgeCount: edges.length,
+    nodes: [...nodes.values()],
+    edges,
+    guidance: 'Use this graph to connect claims, artifacts, source/provider evidence, freshness, and missing links before reusing prior analysis.',
   }
 }
 
