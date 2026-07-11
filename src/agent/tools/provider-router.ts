@@ -62,6 +62,11 @@ export class ProviderRouterTool implements Tool {
         type: 'array',
         items: { type: 'string' },
       },
+      providerHealth: {
+        type: 'array',
+        items: { type: 'object' },
+        description: 'Optional health rows: provider, status, reason. unhealthy/blocked/quota_exhausted/credential_missing statuses are skipped.',
+      },
       gates: {
         type: 'object',
         description: 'Optional provider gates: windConfigured, windQuotaAvailable, tushareConfigured, tusharePermissionLikely, allowAkshareCompatibility, allowBroadAkshare.',
@@ -100,14 +105,22 @@ function help(): Record<string, unknown> {
 
 function route(task: FinanceDataTask, input: Record<string, unknown>): Record<string, unknown> {
   const gates = gatesFromInput(input)
+  const healthBlocks = healthBlocksFromInput(input)
+  const effectiveGates = {
+    ...gates,
+    temporarilyBlockedProviders: [
+      ...(gates.temporarilyBlockedProviders ?? []),
+      ...Object.keys(healthBlocks) as FinanceProvider[],
+    ],
+  }
   const preferred = normalizeFinanceProviders(input.preferredProviders)
-  const order = providerOrder(task, gates, preferred)
+  const order = providerOrder(task, effectiveGates, preferred)
   const base = RAW_ORDERS[task]
   const skipped = base
     .filter((provider) => !order.includes(provider))
     .map((provider) => ({
       provider,
-      reason: skipReason(provider, gates, preferred),
+      reason: healthBlocks[provider] ?? skipReason(provider, effectiveGates, preferred),
     }))
   return {
     contract: 'provider-router-route-v1',
@@ -117,11 +130,39 @@ function route(task: FinanceDataTask, input: Record<string, unknown>): Record<st
     preferredProviders: preferred,
     skipped,
     serialProviders: order.filter(requiresSerialCalls),
-    gates,
+    gates: effectiveGates,
+    providerHealth: Object.entries(healthBlocks).map(([provider, reason]) => ({
+      provider,
+      routeEffect: 'skipped',
+      reason,
+    })),
     nextAction: order.length === 0
       ? 'No provider is currently allowed. Use cache/readback, configure credentials, or clear temporary provider blocks before retrying.'
       : 'Use providers in returned order; do not override order from prompt knowledge.',
   }
+}
+
+function healthBlocksFromInput(input: Record<string, unknown>): Partial<Record<FinanceProvider, string>> {
+  if (!Array.isArray(input.providerHealth)) return {}
+  const blocked = new Set([
+    'unhealthy',
+    'blocked',
+    'runtime_unavailable',
+    'transport_unstable',
+    'quota_exhausted',
+    'credential_missing',
+  ])
+  const out: Partial<Record<FinanceProvider, string>> = {}
+  for (const row of input.providerHealth) {
+    if (!row || typeof row !== 'object' || Array.isArray(row)) continue
+    const item = row as Record<string, unknown>
+    const [provider] = normalizeFinanceProviders([item.provider])
+    if (!provider) continue
+    const status = String(item.status ?? '').trim()
+    if (!blocked.has(status)) continue
+    out[provider] = `health_${status}:${String(item.reason ?? 'provider health blocked routing')}`
+  }
+  return out
 }
 
 function gatesFromInput(input: Record<string, unknown>): ProviderGates {

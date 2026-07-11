@@ -36,6 +36,28 @@ describe('ProviderRouterTool', () => {
     ]))
   })
 
+  it('uses provider health to skip unhealthy provider', async () => {
+    const result = JSON.parse(await new ProviderRouterTool().call('router-health', {
+      action: 'route',
+      task: 'quote',
+      providerHealth: [
+        {
+          provider: 'tdx',
+          status: 'runtime_unavailable',
+          reason: 'gotdx sidecar unavailable',
+        },
+      ],
+    }, tempToolContext()))
+
+    expect(result.order[0]).toBe('eastmoneyDirect')
+    expect(result.providerHealth).toEqual(expect.arrayContaining([
+      expect.objectContaining({
+        provider: 'tdx',
+        reason: expect.stringContaining('runtime_unavailable'),
+      }),
+    ]))
+  })
+
   it('rejects unsupported task through the tool error channel', async () => {
     await expect(new ProviderRouterTool().call('router-3', {
       action: 'route',
