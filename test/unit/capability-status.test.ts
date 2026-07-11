@@ -69,6 +69,25 @@ describe('CapabilityStatusTool', () => {
       requiredEvidence: ['made_up'],
     }, ctx)).rejects.toThrow('Unsupported requiredEvidence "made_up"')
   })
+
+  it('reports repeated identical failed tool calls', async () => {
+    const ctx = tempToolContext()
+    seedRepeatedFailureEvidence(ctx)
+    const registry = new ToolRegistry()
+    registry.register(new CapabilityStatusTool(() => registry.capabilities()))
+
+    const tool = registry.get('CapabilityStatus')!
+    const summary = JSON.parse(await tool.call('cap-4', { action: 'summary' }, ctx))
+
+    expect(summary.health.repeatedFailureCount).toBe(1)
+    expect(summary.session.repeatedFailedToolCalls).toEqual([
+      expect.objectContaining({
+        toolName: 'MarketData',
+        count: 3,
+        warning: expect.stringContaining('Stop repeating this call'),
+      }),
+    ])
+  })
 })
 
 function seedEvidence(ctx: ToolContext): void {
@@ -91,6 +110,24 @@ function seedEvidence(ctx: ToolContext): void {
     pending: [{ type: 'user_question_pending', requestId: 'ask-1' }],
   }))
   writeFileSync(join(ctx.memoryDir, 'dashboards', 'market.html'), '<html>market</html>')
+}
+
+function seedRepeatedFailureEvidence(ctx: ToolContext): void {
+  mkdirSync(join(ctx.basePath, 'sessions'), { recursive: true })
+  const rows: string[] = []
+  for (let i = 1; i <= 3; i++) {
+    rows.push(JSON.stringify({
+      type: 'message',
+      role: 'assistant',
+      toolUses: [{ id: `call-${i}`, name: 'MarketData', input: { action: 'query_quote' } }],
+    }))
+    rows.push(JSON.stringify({
+      type: 'message',
+      role: 'tool',
+      toolResult: { toolUseId: `call-${i}`, content: 'symbols required', isError: true },
+    }))
+  }
+  writeFileSync(join(ctx.basePath, 'sessions', 'current.jsonl'), rows.join('\n'))
 }
 
 function tempToolContext(): ToolContext {

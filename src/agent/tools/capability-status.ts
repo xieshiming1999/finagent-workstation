@@ -114,6 +114,7 @@ function buildSummary(
       toolCallCount: Number(session.toolCallCount ?? 0),
       uiArtifactCount: Number((artifacts.pages as JsonObject).count ?? 0) +
         Number((artifacts.dashboards as JsonObject).count ?? 0),
+      repeatedFailureCount: Number(session.repeatedFailureCount ?? 0),
     },
     pendingInteractions,
     session,
@@ -187,6 +188,8 @@ function readCurrentSession(ctx: ToolContext, limit: number): JsonObject {
   if (!existsSync(file)) return { exists: false, toolCallCount: 0, toolErrorCount: 0, recentFailedTools: [] }
 
   const recentFailedTools: JsonObject[] = []
+  const toolUsesById = new Map<string, JsonObject>()
+  const repeatedFailuresBySignature = new Map<string, JsonObject>()
   let toolCallCount = 0
   let toolErrorCount = 0
   for (const line of readFileSync(file, 'utf8').split('\n')) {
@@ -195,12 +198,36 @@ function readCurrentSession(ctx: ToolContext, limit: number): JsonObject {
     try {
       const decoded = JSON.parse(text) as JsonObject
       if (decoded.type !== 'message') continue
-      if (Array.isArray(decoded.toolUses)) toolCallCount += decoded.toolUses.length
+      if (Array.isArray(decoded.toolUses)) {
+        toolCallCount += decoded.toolUses.length
+        for (const item of decoded.toolUses) {
+          if (item && typeof item === 'object' && !Array.isArray(item)) {
+            const row = item as JsonObject
+            const id = String(row.id ?? '')
+            if (id) toolUsesById.set(id, { name: row.name, input: row.input })
+          }
+        }
+      }
       const result = decoded.toolResult ?? decoded.tool_result
       if (result && typeof result === 'object' && !Array.isArray(result) && (result as JsonObject).isError === true) {
         toolErrorCount++
+        const toolUseId = String((result as JsonObject).toolUseId ?? '')
+        const toolUse = toolUsesById.get(toolUseId)
+        const signature = toolFailureSignature(toolUse)
+        if (signature) {
+          const existing = repeatedFailuresBySignature.get(signature) ?? {
+            toolName: toolUse?.name,
+            input: toolUse?.input,
+            count: 0,
+            latestToolUseId: toolUseId,
+          }
+          existing.count = Number(existing.count ?? 0) + 1
+          existing.latestToolUseId = toolUseId
+          repeatedFailuresBySignature.set(signature, existing)
+        }
         recentFailedTools.push({
           toolUseId: (result as JsonObject).toolUseId,
+          ...(toolUse?.name ? { toolName: toolUse.name } : {}),
           content: truncate(String((result as JsonObject).content ?? ''), 240),
         })
         if (recentFailedTools.length > limit) recentFailedTools.shift()
@@ -209,7 +236,32 @@ function readCurrentSession(ctx: ToolContext, limit: number): JsonObject {
       // Ignore malformed rows; session repair is owned elsewhere.
     }
   }
-  return { exists: true, toolCallCount, toolErrorCount, recentFailedTools }
+  const repeatedFailedToolCalls = [...repeatedFailuresBySignature.values()]
+    .filter((row) => Number(row.count ?? 0) >= 3)
+    .map((row) => ({
+      ...row,
+      warning: `Same tool/input failed ${String(row.count)} times. Stop repeating this call; inspect help/status or change arguments before retrying.`,
+    }))
+  return {
+    exists: true,
+    toolCallCount,
+    toolErrorCount,
+    recentFailedTools,
+    repeatedFailureCount: repeatedFailedToolCalls.length,
+    repeatedFailedToolCalls,
+  }
+}
+
+function toolFailureSignature(toolUse: JsonObject | undefined): string | null {
+  const name = String(toolUse?.name ?? '')
+  if (!name) return null
+  let input = ''
+  try {
+    input = JSON.stringify(toolUse?.input ?? {})
+  } catch {
+    input = String(toolUse?.input ?? '')
+  }
+  return `${name}::${input}`
 }
 
 function listArtifacts(ctx: ToolContext, limit: number): JsonObject {
