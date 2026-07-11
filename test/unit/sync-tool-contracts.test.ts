@@ -34,6 +34,17 @@ function makeCtx(basePath: string): ToolContext {
 }
 
 describe('sync tool contracts', () => {
+  it('UIControl help is available before a renderer handler is registered', async () => {
+    const result = JSON.parse(await new UIControlTool().call('ui-help', {
+      action: 'help',
+    }, makeCtx(mkdtempSync(join(tmpdir(), 'fin-ui-help-')))))
+
+    expect(result.contract).toBe('ui-control-help-v1')
+    expect(result.actions.pages).toContain('openPage')
+    expect(result.actions.liveUpdate).toContain('pushData')
+    expect(result.observation.join(' ')).toContain('observed=false')
+  })
+
   it('WebView help is available without an existing panel id', async () => {
     const tool = new WebViewTool()
 

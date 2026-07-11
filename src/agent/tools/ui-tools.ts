@@ -36,6 +36,24 @@ export class UIControlTool implements Tool {
     properties: {
       action: {
         type: 'string',
+        enum: [
+          'help',
+          'showQuote',
+          'showTable',
+          'showChart',
+          'showHtml',
+          'openPage',
+          'navigate',
+          'addDashboard',
+          'selectDashboard',
+          'addPage',
+          'closePage',
+          'removePage',
+          'removeDashboard',
+          'openPanel',
+          'closePanel',
+          'pushData',
+        ],
         description: 'UI action to perform (e.g., showQuote, showTable, showChart, showHtml, openPage, closePage, openPanel, closePanel, pushData)',
       },
       params: {
@@ -64,6 +82,8 @@ export class UIControlTool implements Tool {
   async call(_id: string, input: Record<string, unknown>, ctx: ToolContext): Promise<string> {
     const action = String(input.action)
     const params = (input.params ?? input.payload ?? {}) as Record<string, unknown>
+
+    if (action === 'help') return uiControlHelp()
 
     if (!this.emitEvent) {
       return toolError('UIControl not available: no UI handler registered.')
@@ -318,6 +338,42 @@ function hashString(value: string): number {
 
 function normalizeUrl(url: string): string {
   return url.split('?')[0].replace(/^file:\/\//, '').replace(/\/+$/, '')
+}
+
+function uiControlHelp(): string {
+  return JSON.stringify({
+    tool: 'UIControl',
+    contract: 'ui-control-help-v1',
+    purpose: 'Open or update in-app UI surfaces and return observable renderer feedback when available.',
+    actions: {
+      inline: ['showQuote', 'showTable', 'showChart', 'showHtml'],
+      pages: ['openPage', 'navigate', 'addDashboard', 'selectDashboard', 'addPage', 'closePage', 'removePage', 'removeDashboard'],
+      panels: ['openPanel', 'closePanel'],
+      liveUpdate: ['pushData'],
+    },
+    requiredFields: {
+      showChart: ['params.dataFile'],
+      openPage: ['params.path or params.url'],
+      addPage: ['params.path'],
+      closePage: ['params.id or params.name'],
+      openPanel: ['params.panel or params.id'],
+      pushData: ['params.channel', 'params.data'],
+    },
+    pathRules: [
+      'Generated HTML pages should usually live under memory/pages or memory/dashboards.',
+      'Relative paths resolve from the runtime base path.',
+      'For memory-relative pages, pass a path such as memory/pages/report.html.',
+    ],
+    observation: [
+      'openPage/addPage/openPanel wait briefly for renderer panel evidence.',
+      'If observed=false, inspect UIQuery or WebView list before claiming the UI opened.',
+    ],
+    errorFeedback: [
+      'Missing path/id/dataFile returns a tool error.',
+      'Missing files return a tool error with the resolved path.',
+      'Invalid chart JSON returns a tool error with expected shape.',
+    ],
+  }, null, 2)
 }
 
 export class UIQueryTool implements Tool {
