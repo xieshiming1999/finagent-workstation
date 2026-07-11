@@ -24,7 +24,7 @@ describe('ToolCatalogTool', () => {
       expect.objectContaining({
         name: 'ToolCatalog',
         permission: 'read-only',
-        actions: ['detail', 'help', 'list'],
+        actions: ['detail', 'help', 'list', 'module', 'modules'],
       }),
     ]))
 
@@ -38,6 +38,27 @@ describe('ToolCatalogTool', () => {
         actionValues: ['help', 'run'],
       },
     })
+
+    const modules = JSON.parse(await catalog.call('modules-1', {
+      action: 'modules',
+    }, {} as ToolContext))
+    expect(modules).toMatchObject({
+      contract: 'capability-module-result-v1',
+      action: 'modules',
+    })
+    expect(modules.modules).toEqual(expect.arrayContaining([
+      expect.objectContaining({ id: 'runtime-tool' }),
+    ]))
+
+    const module = JSON.parse(await catalog.call('module-1', {
+      action: 'module',
+      module: 'runtime-tool',
+    }, {} as ToolContext))
+    expect(module.module).toMatchObject({
+      schema: 'provider-module-descriptor-v1',
+      runtime: 'finagent-workstation',
+    })
+    expect(module.module.tools.length).toBeGreaterThan(0)
   })
 
   it('exposes Agent delegation help through generated capability details', async () => {

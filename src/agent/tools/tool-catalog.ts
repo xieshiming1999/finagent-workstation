@@ -10,10 +10,11 @@ export class ToolCatalogTool implements Tool {
     properties: {
       action: {
         type: 'string',
-        enum: ['help', 'list', 'detail'],
-        description: 'help, list all tool capabilities, or detail for one tool',
+        enum: ['help', 'list', 'detail', 'modules', 'module'],
+        description: 'help, list all tool capabilities, detail one tool, list capability modules, or detail one module',
       },
       tool: { type: 'string', description: 'Tool name for detail action' },
+      module: { type: 'string', description: 'Module id for module action' },
     },
   }
 
@@ -22,10 +23,37 @@ export class ToolCatalogTool implements Tool {
   async call(_id: string, input: Record<string, unknown>, _ctx: ToolContext): Promise<string> {
     const action = String(input.action ?? 'list')
     if (action === 'help') return helpText()
-    if (action !== 'list' && action !== 'detail') {
+    if (!['list', 'detail', 'modules', 'module'].includes(action)) {
       throw new Error(`Invalid ToolCatalog action "${action}". Use action="help" for supported actions.`)
     }
     const capabilities = this.capabilitiesProvider().sort((a, b) => a.name.localeCompare(b.name))
+    if (action === 'modules' || action === 'module') {
+      const modules = moduleDescriptors(capabilities)
+      if (action === 'module') {
+        const moduleId = String(input.module ?? '').trim()
+        if (!moduleId) throw new Error('ToolCatalog(action:"module") requires module. Use action="modules" first.')
+        const found = modules.find((module) => module.id === moduleId)
+        if (!found) {
+          throw new Error(`Capability module "${moduleId}" is not registered. Use ToolCatalog(action:"modules") for available modules.`)
+        }
+        return JSON.stringify({
+          contract: 'capability-module-result-v1',
+          action,
+          module: found,
+        })
+      }
+      return JSON.stringify({
+        contract: 'capability-module-result-v1',
+        action,
+        count: modules.length,
+        modules: modules.map((module) => ({
+          id: module.id,
+          title: module.title,
+          permissionClass: module.permissionClass,
+          toolCount: module.tools.length,
+        })),
+      })
+    }
     if (action === 'detail') {
       const name = String(input.tool ?? '').trim()
       if (!name) throw new Error('ToolCatalog detail requires "tool". Use action="list" to inspect tool names.')
@@ -58,7 +86,156 @@ export class ToolCatalogTool implements Tool {
 function helpText(): string {
   return JSON.stringify({
     contract: 'tool-catalog-help-v1',
-    actions: ['list', 'detail'],
-    guidance: 'Use list to inspect registered tools and action values. Use detail with a tool name before calling broad or unfamiliar tools.',
+    actions: ['list', 'detail', 'modules', 'module'],
+    guidance: 'Use list/detail for individual tools. Use modules/module to inspect provider modules, cache/permission behavior, health dependencies, and runtime limitations before broad or unfamiliar work.',
   })
+}
+
+interface CapabilityModuleDescriptor {
+  id: string
+  title: string
+  schema: 'provider-module-descriptor-v1'
+  runtime: 'finagent-workstation'
+  permissionClass: string
+  cacheDataContract: string
+  healthEvidence: string
+  limitations: string
+  discovery: string
+  tools: ToolCapabilitySummary[]
+}
+
+function moduleDescriptors(capabilities: ToolCapabilitySummary[]): CapabilityModuleDescriptor[] {
+  const groups = new Map<string, ToolCapabilitySummary[]>()
+  for (const capability of capabilities) {
+    const moduleId = moduleIdForTool(capability.name)
+    groups.set(moduleId, [...(groups.get(moduleId) ?? []), capability])
+  }
+  return [...groups.entries()]
+    .map(([id, tools]) => ({ ...moduleTemplate(id), runtime: 'finagent-workstation' as const, tools }))
+    .sort((a, b) => a.id.localeCompare(b.id))
+}
+
+function moduleIdForTool(toolName: string): string {
+  const exact: Record<string, string> = {
+    MarketData: 'finance-data',
+    DataStore: 'finance-data',
+    ProviderRouter: 'finance-data',
+    BudgetGovernor: 'finance-data',
+    Research: 'research-source',
+    WebFetch: 'research-source',
+    SourceReader: 'research-source',
+    Runbook: 'workflow-harness',
+    WorkflowVerifier: 'workflow-harness',
+    WorkflowEvidence: 'workflow-harness',
+    FinanceWorkflowState: 'workflow-harness',
+    RecoveryPlanner: 'workflow-harness',
+    AgentSelfDebug: 'workflow-harness',
+    InteractionEvidence: 'workflow-harness',
+    ArtifactRegistry: 'artifact',
+    UIControl: 'ui-artifact',
+    UIQuery: 'ui-artifact',
+    WebView: 'ui-artifact',
+    XueqiuTrade: 'trading',
+    Portfolio: 'trading',
+    Agent: 'sub-agent',
+    TaskOutput: 'sub-agent',
+    AskUserQuestion: 'interaction',
+  }
+  return exact[toolName] ?? 'runtime-tool'
+}
+
+function moduleTemplate(id: string): Omit<CapabilityModuleDescriptor, 'runtime' | 'tools'> {
+  const templates: Record<string, Omit<CapabilityModuleDescriptor, 'runtime' | 'tools'>> = {
+    'finance-data': {
+      id: 'finance-data',
+      title: 'Finance data providers, sidecars, and cache',
+      schema: 'provider-module-descriptor-v1',
+      permissionClass: 'read-only provider/cache',
+      cacheDataContract: 'Use local reusable data first when freshness and coverage are sufficient; provider paths must expose source/as-of/fetched-at when available.',
+      healthEvidence: 'ProviderRouter, BudgetGovernor, API stats, sidecar health, and data provenance rows explain provider order, gates, and skips.',
+      limitations: 'Workstation may use Python/gotdx sidecars and richer provider matrices; availability depends on config, runtime processes, credentials, network, and quotas.',
+      discovery: 'Call ProviderRouter(action:"tasks"), BudgetGovernor(action:"status"), and ToolCatalog(action:"detail", tool:"DataStore") before broad provider calls.',
+    },
+    'research-source': {
+      id: 'research-source',
+      title: 'Research, web, macro, and source ingestion',
+      schema: 'provider-module-descriptor-v1',
+      permissionClass: 'read-only network',
+      cacheDataContract: 'Persist durable source evidence or artifact records when content is reused in analysis.',
+      healthEvidence: 'BudgetGovernor, source-reader evidence, and tool errors expose quota/network/source failures.',
+      limitations: 'Some sites require browser interaction, provider-specific access, or source-specific extraction.',
+      discovery: 'Use tool help before fetching broad source collections.',
+    },
+    'workflow-harness': {
+      id: 'workflow-harness',
+      title: 'Workflow state, runbooks, verification, recovery, and debugging',
+      schema: 'provider-module-descriptor-v1',
+      permissionClass: 'read-only plus state writes',
+      cacheDataContract: 'Workflow state and evidence live under runtime memory; do not infer intent from prompt text.',
+      healthEvidence: 'Runtime state, pending interactions, repeated failures, and verifier output are agent-visible.',
+      limitations: 'Verifier coverage is contract-based; domain-specific checks must be added per workflow family.',
+      discovery: 'Start with Runbook, FinanceWorkflowState, WorkflowVerifier, AgentSelfDebug, and RecoveryPlanner.',
+    },
+    artifact: {
+      id: 'artifact',
+      title: 'Durable artifacts',
+      schema: 'provider-module-descriptor-v1',
+      permissionClass: 'state write',
+      cacheDataContract: 'Artifacts record kind, path, provenance, freshness, verification status, links, and owner task.',
+      healthEvidence: 'ArtifactRegistry list/get shows reusable outputs and verification state.',
+      limitations: 'Structural UI rendering depends on artifact kind and app surface.',
+      discovery: 'Use ArtifactRegistry(action:"help").',
+    },
+    'ui-artifact': {
+      id: 'ui-artifact',
+      title: 'UI pages, dashboards, full views, and visual observation',
+      schema: 'provider-module-descriptor-v1',
+      permissionClass: 'UI interaction',
+      cacheDataContract: 'Generated pages should be linked as dashboard/report artifacts when reused.',
+      healthEvidence: 'UI tool results and workflow evidence show created/opened artifacts.',
+      limitations: 'Workstation can expose full views and tables, but WebView display success still needs observable UI evidence.',
+      discovery: 'Use UI tool help and ArtifactRegistry links.',
+    },
+    trading: {
+      id: 'trading',
+      title: 'Trade preparation and simulated trading',
+      schema: 'provider-module-descriptor-v1',
+      permissionClass: 'approval/side-effect boundary',
+      cacheDataContract: 'Trade-preparation artifacts must separate analysis, sizing, approval, and execution evidence.',
+      healthEvidence: 'Workflow state, pending approval, and broker/provider status must be visible before action.',
+      limitations: 'Real side effects require explicit approval and configured provider state.',
+      discovery: 'Use Runbook and FinanceWorkflowState before trade tools.',
+    },
+    'sub-agent': {
+      id: 'sub-agent',
+      title: 'Sub-agent tasks and handoff',
+      schema: 'provider-module-descriptor-v1',
+      permissionClass: 'runtime task',
+      cacheDataContract: 'Task output should become structured evidence or an artifact before parent completion.',
+      healthEvidence: 'Task state and TaskOutput determine whether dependent work is complete.',
+      limitations: 'Output validation depends on task contract.',
+      discovery: 'Use Agent/TaskOutput help and workflow verifier.',
+    },
+    interaction: {
+      id: 'interaction',
+      title: 'User questions and approvals',
+      schema: 'provider-module-descriptor-v1',
+      permissionClass: 'requires user input',
+      cacheDataContract: 'Pending interaction state is evidence; do not hide answers in test code.',
+      healthEvidence: 'InteractionEvidence and runtimeState expose pending user input.',
+      limitations: 'Requires deliberate operator/user answer.',
+      discovery: 'Use InteractionEvidence and AgentSelfDebug.',
+    },
+    'runtime-tool': {
+      id: 'runtime-tool',
+      title: 'General runtime tools',
+      schema: 'provider-module-descriptor-v1',
+      permissionClass: 'tool-specific',
+      cacheDataContract: 'Inspect each tool detail before use.',
+      healthEvidence: 'Tool result errors and CapabilityStatus summarize failures.',
+      limitations: 'Behavior is tool-specific.',
+      discovery: 'Use ToolCatalog(action:"detail").',
+    },
+  }
+  return templates[id] ?? templates['runtime-tool']
 }
