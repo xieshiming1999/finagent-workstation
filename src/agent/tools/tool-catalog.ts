@@ -50,6 +50,7 @@ export class ToolCatalogTool implements Tool {
           id: module.id,
           title: module.title,
           permissionClass: module.permissionClass,
+          agentPaths: module.agentPaths,
           toolCount: module.tools.length,
         })),
       })
@@ -96,6 +97,8 @@ interface CapabilityModuleDescriptor {
   title: string
   schema: 'provider-module-descriptor-v1'
   runtime: 'finagent-workstation'
+  agentPaths: Array<'chat' | 'event'>
+  usability: string
   permissionClass: string
   cacheDataContract: string
   healthEvidence: string
@@ -154,6 +157,8 @@ function moduleTemplate(id: string): Omit<CapabilityModuleDescriptor, 'runtime' 
       id: 'finance-data',
       title: 'Finance data providers, sidecars, and cache',
       schema: 'provider-module-descriptor-v1',
+      agentPaths: ['chat', 'event'],
+      usability: 'Available to chat and event agents through ToolCatalog/ProviderRouter. Event usage should stay bounded for scheduled refresh, watchlist, monitor, probe, and recovery workflows.',
       permissionClass: 'read-only provider/cache',
       cacheDataContract: 'Use local reusable data first when freshness and coverage are sufficient; provider paths must expose source/as-of/fetched-at when available.',
       healthEvidence: 'ProviderRouter, BudgetGovernor, API stats, sidecar health, and data provenance rows explain provider order, gates, and skips.',
@@ -164,6 +169,8 @@ function moduleTemplate(id: string): Omit<CapabilityModuleDescriptor, 'runtime' 
       id: 'research-source',
       title: 'Research, web, macro, and source ingestion',
       schema: 'provider-module-descriptor-v1',
+      agentPaths: ['chat', 'event'],
+      usability: 'Available to chat and event agents. Event usage should prefer bounded source refresh or macro update tasks, not broad unattended browsing.',
       permissionClass: 'read-only network',
       cacheDataContract: 'Persist durable source evidence or artifact records when content is reused in analysis.',
       healthEvidence: 'BudgetGovernor, source-reader evidence, and tool errors expose quota/network/source failures.',
@@ -174,6 +181,8 @@ function moduleTemplate(id: string): Omit<CapabilityModuleDescriptor, 'runtime' 
       id: 'workflow-harness',
       title: 'Workflow state, runbooks, verification, recovery, and debugging',
       schema: 'provider-module-descriptor-v1',
+      agentPaths: ['chat', 'event'],
+      usability: 'Available to chat and event agents for typed state, verification, recovery, and debugging. Do not replace this with prompt-text parsing.',
       permissionClass: 'read-only plus state writes',
       cacheDataContract: 'Workflow state and evidence live under runtime memory; do not infer intent from prompt text.',
       healthEvidence: 'Runtime state, pending interactions, repeated failures, and verifier output are agent-visible.',
@@ -184,6 +193,8 @@ function moduleTemplate(id: string): Omit<CapabilityModuleDescriptor, 'runtime' 
       id: 'artifact',
       title: 'Durable artifacts',
       schema: 'provider-module-descriptor-v1',
+      agentPaths: ['chat', 'event'],
+      usability: 'Available to chat and event agents for durable outputs. Event-created artifacts must remain inspectable from later chat sessions.',
       permissionClass: 'state write',
       cacheDataContract: 'Artifacts record kind, path, provenance, freshness, verification status, links, and owner task.',
       healthEvidence: 'ArtifactRegistry list/get shows reusable outputs and verification state.',
@@ -194,6 +205,8 @@ function moduleTemplate(id: string): Omit<CapabilityModuleDescriptor, 'runtime' 
       id: 'ui-artifact',
       title: 'UI pages, dashboards, full views, and visual observation',
       schema: 'provider-module-descriptor-v1',
+      agentPaths: ['chat', 'event'],
+      usability: 'Chat can create and inspect UI artifacts. Event agent may update or queue UI artifacts only when the runtime has a valid UI bridge.',
       permissionClass: 'UI interaction',
       cacheDataContract: 'Generated pages should be linked as dashboard/report artifacts when reused.',
       healthEvidence: 'UI tool results and workflow evidence show created/opened artifacts.',
@@ -204,6 +217,8 @@ function moduleTemplate(id: string): Omit<CapabilityModuleDescriptor, 'runtime' 
       id: 'trading',
       title: 'Trade preparation and simulated trading',
       schema: 'provider-module-descriptor-v1',
+      agentPaths: ['chat', 'event'],
+      usability: 'Chat handles trade preparation and user approval. Event agent may monitor or review, but must not execute trade side effects without explicit approval state.',
       permissionClass: 'approval/side-effect boundary',
       cacheDataContract: 'Trade-preparation artifacts must separate analysis, sizing, approval, and execution evidence.',
       healthEvidence: 'Workflow state, pending approval, and broker/provider status must be visible before action.',
@@ -214,6 +229,8 @@ function moduleTemplate(id: string): Omit<CapabilityModuleDescriptor, 'runtime' 
       id: 'strategy-runtime',
       title: 'StrategySpec validation, backtest, save, read, and rerun',
       schema: 'provider-module-descriptor-v1',
+      agentPaths: ['chat', 'event'],
+      usability: 'Chat can design, validate, backtest, save, and rerun strategies. Event agent can monitor saved strategy conditions and recovery state when configured.',
       permissionClass: 'read-only computation plus strategy artifact writes',
       cacheDataContract: 'Agent-created strategies must flow through StrategySpec, validation report, data coverage, backtest or fund observation evidence, saved artifact, and readback/run evidence before reuse.',
       healthEvidence: 'WorkflowVerifier(strategy_backtest), ArtifactRegistry, FinanceWorkflowState, and MarketData custom_strategy_* results expose lifecycle status, unsupported parts, assumptions, and data coverage.',
@@ -224,6 +241,8 @@ function moduleTemplate(id: string): Omit<CapabilityModuleDescriptor, 'runtime' 
       id: 'sub-agent',
       title: 'Sub-agent tasks and handoff',
       schema: 'provider-module-descriptor-v1',
+      agentPaths: ['chat'],
+      usability: 'Primary use is chat-agent decomposition. Event-agent sub-agent use must be explicit and bounded to avoid unattended recursion.',
       permissionClass: 'runtime task',
       cacheDataContract: 'Task output should become structured evidence or an artifact before parent completion.',
       healthEvidence: 'Task state and TaskOutput determine whether dependent work is complete.',
@@ -234,6 +253,8 @@ function moduleTemplate(id: string): Omit<CapabilityModuleDescriptor, 'runtime' 
       id: 'interaction',
       title: 'User questions and approvals',
       schema: 'provider-module-descriptor-v1',
+      agentPaths: ['chat', 'event'],
+      usability: 'Both paths can expose pending user questions or approvals. Test automation should inspect and answer deliberately instead of hidden fixed-choice parsing.',
       permissionClass: 'requires user input',
       cacheDataContract: 'Pending interaction state is evidence; do not hide answers in test code.',
       healthEvidence: 'InteractionEvidence and runtimeState expose pending user input.',
@@ -244,6 +265,8 @@ function moduleTemplate(id: string): Omit<CapabilityModuleDescriptor, 'runtime' 
       id: 'runtime-tool',
       title: 'General runtime tools',
       schema: 'provider-module-descriptor-v1',
+      agentPaths: ['chat', 'event'],
+      usability: 'Availability is tool-specific. Inspect detail and module metadata before use.',
       permissionClass: 'tool-specific',
       cacheDataContract: 'Inspect each tool detail before use.',
       healthEvidence: 'Tool result errors and CapabilityStatus summarize failures.',

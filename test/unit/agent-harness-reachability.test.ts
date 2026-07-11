@@ -54,9 +54,19 @@ describe('agent harness reachability', () => {
 
     expect(modules.contract).toBe('capability-module-result-v1')
     expect(modules.modules).toEqual(expect.arrayContaining([
-      expect.objectContaining({ id: 'finance-data' }),
-      expect.objectContaining({ id: 'workflow-harness' }),
-      expect.objectContaining({ id: 'artifact' }),
+      expect.objectContaining({ id: 'finance-data', agentPaths: ['chat', 'event'] }),
+      expect.objectContaining({ id: 'workflow-harness', agentPaths: ['chat', 'event'] }),
+      expect.objectContaining({ id: 'artifact', agentPaths: ['chat', 'event'] }),
+    ]))
+    const workflowModule = JSON.parse(await catalog!.call('catalog-workflow', {
+      action: 'module',
+      module: 'workflow-harness',
+    }, tempContext()))
+    expect(workflowModule.module.usability).toContain('chat and event agents')
+    expect(workflowModule.module.tools.map((tool: { name: string }) => tool.name)).toEqual(expect.arrayContaining([
+      'WorkflowVerifier',
+      'FinanceWorkflowState',
+      'RecoveryPlanner',
     ]))
   })
 
