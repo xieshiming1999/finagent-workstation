@@ -1,7 +1,7 @@
 import { describe, expect, it } from 'vitest'
 import { readdirSync, readFileSync, statSync } from 'fs'
 import { join } from 'path'
-import { needsPermissionForInput, requiresUserInteraction, toolError, type Tool } from '../../src/agent/tool'
+import { ToolRegistry, needsPermissionForInput, requiresUserInteraction, summarizeToolCapability, toolError, type Tool } from '../../src/agent/tool'
 import { AskUserQuestionTool } from '../../src/agent/tools/ask-user'
 import { canDelegateToolToSubAgent } from '../../src/agent/tools/agent-tools'
 import { FileReadTool } from '../../src/agent/tools/file-read'
@@ -100,6 +100,55 @@ describe('requiresUserInteraction', () => {
   it('still blocks recursive delegation tools even without interaction metadata', () => {
     expect(canDelegateToolToSubAgent(tool('Agent', false))).toBe(false)
     expect(canDelegateToolToSubAgent(tool('TeamCreate', false))).toBe(false)
+  })
+})
+
+describe('tool capability summaries', () => {
+  it('summarizes interaction, permission, schema keys, and action discovery from code', () => {
+    const tool: Tool = {
+      name: 'Example',
+      description: 'Example broad tool',
+      isReadOnly: false,
+      requiresUserInteraction: true,
+      inputSchema: {
+        type: 'object',
+        required: ['action'],
+        properties: {
+          action: { type: 'string', enum: ['help', 'run'] },
+          symbol: { type: 'string' },
+        },
+      },
+      needsPermissions(input) {
+        return input.action === 'run'
+      },
+      async call() { return 'ok' },
+    }
+
+    expect(summarizeToolCapability(tool)).toMatchObject({
+      name: 'Example',
+      readOnly: false,
+      canParallel: false,
+      requiresUserInteraction: true,
+      permission: 'input-dependent',
+      schema: {
+        propertyNames: ['action', 'symbol'],
+        required: ['action'],
+        actionValues: ['help', 'run'],
+      },
+    })
+  })
+
+  it('exposes registry capabilities for progressive discovery', () => {
+    const registry = new ToolRegistry()
+    registry.register(new AskUserQuestionTool())
+
+    const ask = registry.capabilities().find((capability) => capability.name === 'AskUserQuestion')
+    expect(ask).toMatchObject({
+      readOnly: true,
+      requiresUserInteraction: true,
+      permission: 'read-only',
+    })
+    expect(ask?.schema.propertyNames).toContain('question')
   })
 })
 

@@ -43,6 +43,20 @@ export interface Tool {
   call(id: string, input: Record<string, unknown>, ctx: ToolContext): Promise<string>
 }
 
+export interface ToolCapabilitySummary {
+  name: string
+  description: string
+  readOnly: boolean
+  canParallel: boolean
+  requiresUserInteraction: boolean
+  permission: 'read-only' | 'trusted-runtime' | 'input-dependent' | 'write-or-side-effect'
+  schema: {
+    propertyNames: string[]
+    required: string[]
+    actionValues: string[]
+  }
+}
+
 export function requiresUserInteraction(tool: Tool): boolean {
   return tool.requiresUserInteraction === true
 }
@@ -97,6 +111,10 @@ export class ToolRegistry {
     return Array.from(this.tools.values())
   }
 
+  capabilities(): ToolCapabilitySummary[] {
+    return this.list().map((tool) => summarizeToolCapability(tool))
+  }
+
   toOpenAI(): Array<{ type: 'function'; function: { name: string; description: string; parameters: Record<string, unknown> } }> {
     return this.list().map((t) => ({
       type: 'function' as const,
@@ -115,4 +133,49 @@ export class ToolRegistry {
     }
     return undefined
   }
+}
+
+export function summarizeToolCapability(tool: Tool): ToolCapabilitySummary {
+  return {
+    name: tool.name,
+    description: tool.description,
+    readOnly: tool.isReadOnly,
+    canParallel: tool.canParallel ?? tool.isReadOnly,
+    requiresUserInteraction: requiresUserInteraction(tool),
+    permission: permissionSummary(tool),
+    schema: summarizeToolSchema(tool.inputSchema),
+  }
+}
+
+function permissionSummary(tool: Tool): ToolCapabilitySummary['permission'] {
+  if (isDefaultTrustedRuntimeTool(tool)) return 'trusted-runtime'
+  if (tool.needsPermissions) return 'input-dependent'
+  if (tool.isReadOnly) return 'read-only'
+  return 'write-or-side-effect'
+}
+
+function summarizeToolSchema(schema: Record<string, unknown>): ToolCapabilitySummary['schema'] {
+  const properties = objectRecord(schema.properties)
+  return {
+    propertyNames: Object.keys(properties).sort(),
+    required: stringArray(schema.required).sort(),
+    actionValues: actionEnumValues(properties).sort(),
+  }
+}
+
+function actionEnumValues(properties: Record<string, unknown>): string[] {
+  const action = objectRecord(properties.action)
+  return stringArray(action.enum)
+}
+
+function objectRecord(value: unknown): Record<string, unknown> {
+  return value && typeof value === 'object' && !Array.isArray(value)
+    ? value as Record<string, unknown>
+    : {}
+}
+
+function stringArray(value: unknown): string[] {
+  return Array.isArray(value)
+    ? value.filter((item): item is string => typeof item === 'string')
+    : []
 }
