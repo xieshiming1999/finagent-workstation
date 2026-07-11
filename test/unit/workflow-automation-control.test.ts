@@ -27,6 +27,11 @@ import { ResearchTool } from "../../src/agent/tools/research";
 import { WatchlistTool } from "../../src/agent/tools/watchlist";
 import { PortfolioTool } from "../../src/agent/tools/portfolio";
 import { AskUserQuestionTool } from "../../src/agent/tools/ask-user";
+import { ArtifactRegistryTool } from "../../src/agent/tools/artifact-registry";
+import { FinanceWorkflowStateTool } from "../../src/agent/tools/finance-workflow-state";
+import { RunbookTool } from "../../src/agent/tools/runbook";
+import { ToolCatalogTool } from "../../src/agent/tools/tool-catalog";
+import { WorkflowVerifierTool } from "../../src/agent/tools/workflow-verifier";
 import {
   SessionSearchTool,
   setSessionIndex,
@@ -179,6 +184,33 @@ function makeFinanceControl(
     getBasePath: () => basePath,
     getPanelState: async () => [
       { id: "api-health", type: "api-health", isActive: true },
+    ],
+  });
+  return { agent, control, llm };
+}
+
+function makeStrategyHarnessControl(
+  basePath: string,
+  llm = new MockLLM([{ text: "hello" }]),
+) {
+  const registry = new ToolRegistry();
+  registry.register(new NamedTool("MarketData"));
+  registry.register(new RunbookTool());
+  registry.register(new FinanceWorkflowStateTool());
+  registry.register(new ArtifactRegistryTool());
+  registry.register(new WorkflowVerifierTool());
+  registry.register(new ToolCatalogTool(() => registry.capabilities()));
+  const agent = new Agent({
+    llm,
+    tools: registry,
+    basePath,
+    skipPermissions: true,
+  });
+  const control = new WorkflowAutomationControl({
+    getAgent: () => agent,
+    getBasePath: () => basePath,
+    getPanelState: async () => [
+      { id: "trace", type: "workflow-trace", isActive: true },
     ],
   });
   return { agent, control, llm };
@@ -447,6 +479,131 @@ describe("WorkflowAutomationControl", () => {
     });
     expect(report.rawLineCount).toBeGreaterThan(0);
     expect(report.uiEvidence.paths).toContain("[0].id");
+  });
+
+  it("runs strategy-runtime discovery and verifier through workflow automation", async () => {
+    process.env.FINAGENT_WORKSTATION_WORKFLOW_AUTOMATION = "1";
+    const { control } = makeStrategyHarnessControl(
+      basePath,
+      new MockLLM([
+        {
+          toolCalls: [
+            {
+              id: "catalog",
+              name: "ToolCatalog",
+              arguments: { action: "module", module: "strategy-runtime" },
+            },
+          ],
+        },
+        {
+          toolCalls: [
+            {
+              id: "runbook",
+              name: "Runbook",
+              arguments: { action: "get", workflow: "strategy_backtest" },
+            },
+          ],
+        },
+        {
+          toolCalls: [
+            {
+              id: "state",
+              name: "FinanceWorkflowState",
+              arguments: {
+                action: "save",
+                id: "workstation-strategy-workflow-state",
+                status: "active",
+                workflowState: {
+                  workflowKind: "strategy_review",
+                  assetClass: "stock",
+                  intentMode: "backtest",
+                  executionMode: "preview_only",
+                  confirmationState: "none",
+                  safetyBoundary: "read-only strategy validation",
+                  evidenceRefs: ["StrategySpec", "validation_report"],
+                  subject: "600519",
+                },
+                requiredEvidence: ["StrategySpec", "validation_report"],
+                completedSteps: ["runbook", "capability_discovery"],
+              },
+            },
+          ],
+        },
+        {
+          toolCalls: [
+            {
+              id: "artifact",
+              name: "ArtifactRegistry",
+              arguments: {
+                action: "register",
+                kind: "strategy",
+                path: "memory/strategies/workstation_strategy_runtime.json",
+                title: "Workstation strategy runtime smoke",
+                source: "workflow-automation",
+                verificationStatus: "verified",
+                provenance: {
+                  contract: "StrategySpec",
+                  evidence: "custom_strategy_help",
+                },
+              },
+            },
+          ],
+        },
+        {
+          toolCalls: [
+            {
+              id: "verifier",
+              name: "WorkflowVerifier",
+              arguments: {
+                action: "check",
+                workflow: "strategy_backtest",
+                requireWorkflowState: true,
+                providerHealth: [{ provider: "local", status: "healthy" }],
+              },
+            },
+          ],
+        },
+        {
+          text: "Strategy runtime discovery, typed workflow state, artifact registration, and WorkflowVerifier all passed before finalizing.",
+        },
+      ]),
+    );
+
+    const result = await control.runScenario({
+      id: "workstation-strategy-runtime-contract-smoke",
+      prompt:
+        "Discover the strategy runtime contract, save typed workflow state, register the strategy artifact, and verify before final answer.",
+      expectTools: [
+        "ToolCatalog",
+        "Runbook",
+        "FinanceWorkflowState",
+        "ArtifactRegistry",
+        "WorkflowVerifier",
+      ],
+      expectToolResultContains: [
+        "strategy-runtime",
+        "strategy_backtest",
+        "workflow-state-record-v1",
+        "artifact-registry-record-v1",
+        "workflow-verifier-check-v1",
+      ],
+      expectFinalContains: ["Strategy runtime discovery", "WorkflowVerifier"],
+      expectNoToolErrors: true,
+      expectUiStateKeys: ["[0].id"],
+      allowPendingUserQuestion: false,
+    });
+
+    expect(result.ok).toBe(true);
+    expect(result.scenarioReportPath && existsSync(result.scenarioReportPath)).toBe(true);
+    const report = JSON.parse(readFileSync(result.scenarioReportPath!, "utf-8"));
+    expect(report.toolCalls.map((call: { name: string }) => call.name))
+      .toEqual(expect.arrayContaining([
+        "ToolCatalog",
+        "Runbook",
+        "FinanceWorkflowState",
+        "ArtifactRegistry",
+        "WorkflowVerifier",
+      ]));
   });
 
   it("captures optional UI screenshot artifacts into workflow reports", async () => {
