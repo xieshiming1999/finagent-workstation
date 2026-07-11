@@ -45,6 +45,6 @@ describe('PromptBuilder tool capability disclosure', () => {
     ])
 
     expect(prompt).toContain('# Available Tools')
-    expect(prompt).toContain('- ToolCatalog [read-only, parallel-ok, actions=detail|help|list]:')
+    expect(prompt).toContain('- ToolCatalog [read-only, parallel-ok, actions=detail|help|list|module|modules]:')
   })
 })
