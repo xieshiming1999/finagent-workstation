@@ -16,6 +16,7 @@ describe('sidebar store product surface contract', () => {
       'watchlist',
       'fund-pulse',
       'fund-watchlist',
+      'factor-radar',
       'news',
       'data',
       'strategy-library',
@@ -25,6 +26,7 @@ describe('sidebar store product surface contract', () => {
     ])
 
     expect(defaultSidebarWidgetTypes.map(sidebarWidgetCategory)).toEqual([
+      'user',
       'user',
       'user',
       'user',
@@ -92,6 +94,7 @@ describe('sidebar store product surface contract', () => {
       pulse: ['src/renderer/components/MarketPulseWidget.tsx'],
       watchlist: ['src/renderer/components/WatchlistWidget.tsx'],
       'fund-pulse': ['src/renderer/components/FundPulseWidget.tsx'],
+      'factor-radar': ['src/renderer/components/MacroFactorRadarWidget.tsx'],
       news: ['src/renderer/components/NewsFeedWidget.tsx'],
       research: ['src/renderer/components/ResearchWorkspaceWidget.tsx'],
       data: ['src/renderer/components/DataWidget.tsx', 'src/renderer/panels/DataPanel.tsx'],
