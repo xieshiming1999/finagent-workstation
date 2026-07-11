@@ -26,6 +26,7 @@ import { TaskCreateTool, TaskGetTool, TaskUpdateTool, TaskListTool, TaskOutputTo
 import { EnterPlanModeTool, ExitPlanModeTool } from '../agent/tools/plan-mode'
 import { EnvironmentTool } from '../agent/tools/environment'
 import { InteractionEvidenceTool } from '../agent/tools/interaction-evidence'
+import { ToolCatalogTool } from '../agent/tools/tool-catalog'
 import { DataProcessTool } from '../agent/tools/data-process'
 import { CronCreateTool, CronDeleteTool, CronListTool } from '../agent/tools/cron'
 import { WatchlistTool } from '../agent/tools/watchlist'
@@ -260,6 +261,7 @@ function initAgent() {
   })
 
   const registry = new ToolRegistry()
+  registry.register(new ToolCatalogTool(() => registry.capabilities()))
   registry.register(new EchoTool())
   registry.register(new FileReadTool())
   registry.register(new FileWriteTool())
