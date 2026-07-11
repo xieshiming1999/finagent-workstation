@@ -13,7 +13,7 @@ vi.mock('../../src/agent/data/fetchers/fetcher-quote', () => ({
 }))
 
 vi.mock('../../src/agent/data/ingestion/registry', () => ({
-  ingestEndpointResult: vi.fn(() => ({ rows: 2 })),
+  ingestEndpointResult: vi.fn(() => ({ count: 2 })),
 }))
 
 vi.mock('../../src/main/sidecar', () => ({

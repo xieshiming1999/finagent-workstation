@@ -34,7 +34,7 @@ describe('industry fetcher', () => {
 
     expect(result.source).toBe('eastmoney')
     expect(result.data).toMatchObject([{ code: '600519', industry_l1: '白酒' }])
-    expect(fetchSectorStocksMock).toHaveBeenCalledWith({ code: 'BK0475', name: '白酒', changePct: 1, turnoverRate: null, upCount: null, downCount: null, leadingStock: null, leadingChangePct: null }, 'industry')
+    expect(fetchSectorStocksMock).toHaveBeenCalledWith({ code: 'BK0475', name: '白酒' }, 'industry', 200, 15000)
     expect(globalThis.fetch).not.toHaveBeenCalledWith(expect.stringContaining('stock_board_industry_cons_em'), expect.anything())
   })
 
@@ -56,6 +56,6 @@ describe('industry fetcher', () => {
       expect.anything(),
     )
     expect(globalThis.fetch).not.toHaveBeenCalledWith(expect.stringContaining('stock_board_industry_cons_em'), expect.anything())
-    expect(fetchSectorStocksMock).toHaveBeenCalledWith({ code: 'BK0475', name: '白酒' }, 'industry')
+    expect(fetchSectorStocksMock).toHaveBeenCalledWith({ code: 'BK0475', name: '白酒' }, 'industry', 200, 15000)
   })
 })

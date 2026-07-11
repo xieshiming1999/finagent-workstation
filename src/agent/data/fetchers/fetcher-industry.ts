@@ -1,5 +1,5 @@
 import type { FetchResult } from './base-fetcher'
-import { fetchSectorStocks } from '../eastmoney-fetcher'
+import { fetchSectors, fetchSectorStocks } from '../eastmoney-fetcher'
 import { timeoutForEastmoneyBackedUrl } from '../provider-timeouts'
 
 const SIDECAR_AKSHARE = 'http://127.0.0.1:19800/akshare'
@@ -15,15 +15,8 @@ export async function fetchIndustryMap(opts: {
   perBoardDelayMs?: number
   onProgress?: (progress: { board: string; index: number; total: number; rows: number; failed: number }) => void
 } = {}): Promise<FetchResult<IndustryMapRow>> {
-  let boards: Array<{ code: string; name: string }> = []
-  const url = `${SIDECAR_AKSHARE}/stock_board_industry_name_em?_provider=eastmoney`
-  const res = await fetch(url, { signal: AbortSignal.timeout(timeoutForEastmoneyBackedUrl(url)) })
-  if (!res.ok) throw new Error(`AkShare industry map failed: ${res.status}`)
-  const json = await res.json() as any
-  boards = ((json.data ?? json) as Array<Record<string, unknown>>).map((board) => ({
-    code: String(board['板块代码'] ?? board.code ?? ''),
-    name: String(board['板块名称'] ?? board.name ?? ''),
-  })).filter((board) => board.code && board.name)
+  let boards = await fetchDirectIndustryBoards()
+  if (boards.length === 0) boards = await fetchAkshareIndustryBoards()
 
   const now = new Date().toISOString()
   const allRows: IndustryMapRow[] = []
@@ -61,4 +54,26 @@ export async function fetchIndustryMap(opts: {
   }
 
   return { data: allRows, source: 'eastmoney', fetchedAt: now }
+}
+
+async function fetchDirectIndustryBoards(): Promise<Array<{ code: string; name: string }>> {
+  try {
+    return (await fetchSectors('industry')).map((board) => ({
+      code: String(board.code ?? ''),
+      name: String(board.name ?? ''),
+    })).filter((board) => board.code && board.name)
+  } catch {
+    return []
+  }
+}
+
+async function fetchAkshareIndustryBoards(): Promise<Array<{ code: string; name: string }>> {
+  const url = `${SIDECAR_AKSHARE}/stock_board_industry_name_em?_provider=eastmoney`
+  const res = await fetch(url, { signal: AbortSignal.timeout(timeoutForEastmoneyBackedUrl(url)) })
+  if (!res.ok) throw new Error(`AkShare industry map failed: ${res.status}`)
+  const json = await res.json() as any
+  return ((json.data ?? json) as Array<Record<string, unknown>>).map((board) => ({
+    code: String(board['板块代码'] ?? board.code ?? ''),
+    name: String(board['板块名称'] ?? board.name ?? ''),
+  })).filter((board) => board.code && board.name)
 }

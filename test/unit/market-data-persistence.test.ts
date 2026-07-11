@@ -589,12 +589,15 @@ describe("MarketData direct action persistence", () => {
       { action: "query_kline", code: "AAPL", adjust: "none" },
       ctx,
     );
-    expect(klineReadback).toContain("AAPL daily kline");
-    expect(klineReadback).toContain("interface:stock.daily_kline");
-    expect(klineReadback).toContain("provider:yfinance");
-    expect(klineReadback).toContain("schema:kline_daily");
-    expect(klineReadback).toContain("asOf:2026-06-03");
-    expect(klineReadback).toContain("fetchedAt:");
+    expect(JSON.parse(klineReadback)).toEqual(expect.objectContaining({
+      contract: "market-kline-result-v1",
+      action: "query_kline",
+      code: "AAPL",
+      interfaceId: "stock.daily_kline",
+      canonicalSchema: "kline_daily",
+      provenance: expect.objectContaining({ provider: "yfinance", asOf: "2026-06-03" }),
+      rows: expect.any(Array),
+    }));
     const optionKlineReadback = await dataStoreTool.call(
       "q-yf-option-kline",
       { action: "query_option_daily_kline", code: "AAPL260619C00100000" },
@@ -1766,21 +1769,23 @@ describe("MarketData direct action persistence", () => {
           } as Response;
         }
         if (url.includes("/api/qt/clist/get")) {
+          const body = {
+            data: {
+              diff: [
+                {
+                  f12: "510300",
+                  f14: "沪深300ETF",
+                  f2: 4.2,
+                  f3: 0.72,
+                  f5: 100000,
+                },
+              ],
+            },
+          };
           return {
             ok: true,
-            json: async () => ({
-              data: {
-                diff: [
-                  {
-                    f12: "510300",
-                    f14: "沪深300ETF",
-                    f2: 4.2,
-                    f3: 0.72,
-                    f5: 100000,
-                  },
-                ],
-              },
-            }),
+            json: async () => body,
+            text: async () => JSON.stringify(body),
           } as Response;
         }
         throw new Error(`unexpected fetch: ${url}`);
@@ -2426,6 +2431,12 @@ describe("MarketData direct action persistence", () => {
       await import("../../src/agent/tools/market-data");
     const tool = new MarketDataTool();
     const ctx = makeCtx(basePath);
+    const strictEastmoney = {
+      provider: "eastmoney",
+      providerMode: "strict",
+      allowFallback: false,
+      skipCache: true,
+    };
 
     await expect(
       tool.call(
@@ -2433,6 +2444,7 @@ describe("MarketData direct action persistence", () => {
         {
           action: "dragon_tiger",
           limit: 5,
+          ...strictEastmoney,
         },
         ctx,
       ),
@@ -2443,6 +2455,7 @@ describe("MarketData direct action persistence", () => {
         {
           action: "northbound",
           limit: 5,
+          ...strictEastmoney,
         },
         ctx,
       ),
@@ -2454,6 +2467,7 @@ describe("MarketData direct action persistence", () => {
           action: "northbound",
           code: "600519",
           limit: 5,
+          ...strictEastmoney,
         },
         ctx,
       ),
@@ -2464,6 +2478,7 @@ describe("MarketData direct action persistence", () => {
         {
           action: "hot_rank",
           limit: 5,
+          ...strictEastmoney,
         },
         ctx,
       ),
@@ -2474,6 +2489,7 @@ describe("MarketData direct action persistence", () => {
         {
           action: "flow_rank",
           limit: 1,
+          ...strictEastmoney,
         },
         ctx,
       ),
@@ -2484,6 +2500,7 @@ describe("MarketData direct action persistence", () => {
         {
           action: "limit_down",
           limit: 5,
+          ...strictEastmoney,
         },
         ctx,
       ),
@@ -2494,6 +2511,7 @@ describe("MarketData direct action persistence", () => {
         {
           action: "unusual",
           limit: 5,
+          ...strictEastmoney,
         },
         ctx,
       ),
@@ -3735,13 +3753,17 @@ describe("MarketData direct action persistence", () => {
         ctx,
       ),
     ).resolves.toContain("RBL8 quote snapshots");
-    await expect(
-      dataStoreTool.call(
-        "q-ex-kline",
-        { action: "query_kline", code: "RBL8", adjust: "none" },
-        ctx,
-      ),
-    ).resolves.toContain("RBL8 daily kline");
+    const exKlineReadback = await dataStoreTool.call(
+      "q-ex-kline",
+      { action: "query_kline", code: "RBL8", adjust: "none" },
+      ctx,
+    );
+    expect(JSON.parse(exKlineReadback)).toEqual(expect.objectContaining({
+      contract: "market-kline-result-v1",
+      action: "query_kline",
+      code: "RBL8",
+      rows: expect.any(Array),
+    }));
     const exListReadback = await dataStoreTool.call(
       "q-ex-list",
       { action: "stock_list", market: "EXT:30", type: "extended" },

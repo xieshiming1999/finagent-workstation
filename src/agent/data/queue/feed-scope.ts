@@ -1,6 +1,6 @@
 import { existsSync, readFileSync } from 'fs'
 import { join } from 'path'
-import { supportsMoneyFundYield, supportsOrdinaryFundNav } from '../fund-category'
+import { normalizeFundCategory, supportsMoneyFundYield, supportsOrdinaryFundNav } from '../fund-category'
 
 export interface FeedScopeConfig {
   feed_type: string
@@ -132,11 +132,11 @@ function resolveAllFundFeedCodes(feedType: string, store: FeedCodeStore): string
   const filtered = rows.filter((row) => {
     const code = String(row.code ?? '').trim()
     if (!/^\d{6}$/.test(code)) return false
-    if (!row.fund_category) return false
-    if (feedType === 'fund_money_yield') return supportsMoneyFundYield(row.fund_category)
-    if (feedType === 'fund_nav') return supportsOrdinaryFundNav(row.fund_category)
+    const category = normalizeFundCategory(row)
+    if (feedType === 'fund_money_yield') return supportsMoneyFundYield(category)
+    if (feedType === 'fund_nav') return supportsOrdinaryFundNav(category)
     if (feedType === 'fund_holding') {
-      return supportsOrdinaryFundNav(row.fund_category) && !['bond'].includes(String(row.fund_category))
+      return supportsOrdinaryFundNav(category) && category !== 'bond'
     }
     return true
   })

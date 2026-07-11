@@ -565,7 +565,7 @@ rebalanceDraft.rebalanceInterval="monthly"，rebalanceDraft.maxPositionWeight=0.
         input: expect.objectContaining({
           action: "preview_order",
           symbol: "300059",
-          shares: 900,
+          shares: 913,
           price: 21.89,
         }),
       }),

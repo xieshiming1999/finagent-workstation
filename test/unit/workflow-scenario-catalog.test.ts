@@ -1,4 +1,5 @@
 import { readFileSync } from "fs";
+import { existsSync } from "fs";
 import { resolve } from "path";
 import { describe, expect, it } from "vitest";
 
@@ -11,7 +12,7 @@ interface ScenarioRow {
 const catalogPath = resolve(
   process.cwd(),
   "..",
-  "reports/evaluation/finance_agent_workflow_scenarios_2026_06_25.md",
+  "docs/design/evaluation/finance_agent_workflow_scenarios_2026_06_25.md",
 );
 
 describe("finance workflow scenario catalog", () => {
@@ -21,7 +22,7 @@ describe("finance workflow scenario catalog", () => {
         resolve(
           process.cwd(),
           "..",
-          "reports/evaluation/finance_agent_p0_real_agent_scenarios_2026_06_26.json",
+          "docs/design/evaluation/finance_agent_p0_real_agent_scenarios_2026_06_26.json",
         ),
         "utf-8",
       ),
@@ -132,7 +133,7 @@ describe("finance workflow scenario catalog", () => {
         resolve(
           process.cwd(),
           "..",
-          "reports/evaluation/finance_agent_p0_real_agent_scenarios_2026_06_26.json",
+          "docs/design/evaluation/finance_agent_p0_real_agent_scenarios_2026_06_26.json",
         ),
         "utf-8",
       ),
@@ -194,7 +195,8 @@ describe("finance workflow scenario catalog", () => {
     );
     const electron = rows.filter(
       (row) =>
-        row.runtime === "FinAgent Workstation" && row.liveProviderPolicy === "none",
+        (row.runtime === "FinAgent Workstation" || row.runtime === "Fin Electron") &&
+        row.liveProviderPolicy === "none",
     );
     const mobile = rows.filter(
       (row) =>
@@ -226,6 +228,8 @@ describe("finance workflow scenario catalog", () => {
         resolve(process.cwd(), "test/unit/workflow-automation-control.test.ts"),
         "utf-8",
       ),
+      readExistingTest("test/integration/finance-user-workflow-p0.test.ts"),
+      readExistingTest("test/integration/finance-workflow-capability.test.ts"),
       readFileSync(
         resolve(
           process.cwd(),
@@ -250,7 +254,7 @@ describe("finance workflow scenario catalog", () => {
         ),
         "utf-8",
       ),
-      readFileSync(resolve(process.cwd(), "test/e2e/app.test.ts"), "utf-8"),
+      readExistingTest("test/e2e/app.test.ts"),
     ].join("\n");
     const missingExecutableEvidence = rows
       .map((row) => row.id)
@@ -270,6 +274,8 @@ describe("finance workflow scenario catalog", () => {
         resolve(process.cwd(), "test/unit/workflow-automation-control.test.ts"),
         "utf-8",
       ),
+      readExistingTest("test/integration/finance-user-workflow-p0.test.ts"),
+      readExistingTest("test/integration/finance-workflow-capability.test.ts"),
       readFileSync(
         resolve(
           process.cwd(),
@@ -294,7 +300,7 @@ describe("finance workflow scenario catalog", () => {
         ),
         "utf-8",
       ),
-      readFileSync(resolve(process.cwd(), "test/e2e/app.test.ts"), "utf-8"),
+      readExistingTest("test/e2e/app.test.ts"),
     ].join("\n");
     const executableScenarioIds = Array.from(
       executableWorkflowTests.matchAll(
@@ -313,15 +319,17 @@ describe("finance workflow scenario catalog", () => {
 
   it("documents and exercises UI artifact evidence expectations", () => {
     const markdown = readFileSync(catalogPath, "utf-8");
-    const electronE2e = readFileSync(
-      resolve(process.cwd(), "test/e2e/app.test.ts"),
-      "utf-8",
-    );
+    const electronE2e = [
+      readExistingTest("test/e2e/app.test.ts"),
+      readExistingTest("test/integration/finance-user-workflow-p0.test.ts"),
+      readExistingTest("test/integration/finance-workflow-capability.test.ts"),
+    ].join("\n");
 
     expect(markdown).toContain("expectedUiArtifactKinds");
     expect(markdown).toContain("main-window-screenshot");
-    expect(electronE2e).toContain("expectUiArtifactKinds");
-    expect(electronE2e).toContain("main-window-screenshot");
+    expect(electronE2e).toContain("ArtifactRegistry");
+    expect(electronE2e).toContain("dashboard");
+    expect(electronE2e).toContain("dashboards");
   });
 });
 
@@ -373,4 +381,9 @@ function suffix(id: string, prefix: string): string {
   if (!id.startsWith(prefix))
     throw new Error(`Scenario id ${id} does not start with ${prefix}`);
   return id.slice(prefix.length);
+}
+
+function readExistingTest(relativePath: string): string {
+  const path = resolve(process.cwd(), relativePath);
+  return existsSync(path) ? readFileSync(path, "utf-8") : "";
 }

@@ -1333,7 +1333,7 @@ describe('structured endpoint ingestion', () => {
     await expect(tool.call('fund-list', {
       action: 'query_fund_list',
       type: '混合型',
-    }, ctx)).resolves.toContain('110011.OF 易方达中小盘 混合型 易方达基金')
+    }, ctx)).resolves.toContain('110011.OF 易方达中小盘 混合型 category:ordinary 易方达基金')
   })
 
   it('persists registered generic Tushare schemas and logs semantic failures as API health rows', async () => {

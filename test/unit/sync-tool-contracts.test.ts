@@ -551,7 +551,7 @@ describe('sync tool contracts', () => {
       params: '{}',
       status: 'pending',
       priority: 3,
-      progress: null,
+      progress: JSON.stringify({ fetched: 1, total: 1 }),
       created_at: new Date().toISOString(),
       error: null,
     }
@@ -602,6 +602,7 @@ describe('sync tool contracts', () => {
     }
     const store = {
       query: () => [taskRow],
+      queryFundList: () => [],
     }
     const queue = {
       enqueue: () => 1,
