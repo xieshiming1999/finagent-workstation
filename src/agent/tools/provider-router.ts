@@ -191,7 +191,46 @@ function combinedHealthRows(
       !!row && typeof row === 'object' && !Array.isArray(row))
     : []
   if (input.includeRuntimeHealth === false) return [...rows]
-  return [...rows, ...contractProviderHealthRows(task), ...runtimeHealthProvider()]
+  return [...rows, ...descriptorProviderHealthRows(task, 'workstation'), ...contractProviderHealthRows(task), ...runtimeHealthProvider()]
+}
+
+export function descriptorProviderHealthRows(task: FinanceDataTask, runtime: 'workstation' | 'mobile'): Array<Record<string, unknown>> {
+  return RAW_ORDERS[task].flatMap((provider) => {
+    const descriptor = descriptorForProvider(provider)
+    if (!descriptor) return []
+    const status = descriptorBlockingStatus(descriptor, runtime)
+    if (!status) return []
+    return [{
+      provider,
+      status: status.status,
+      reason: `descriptor ${status.status}: ${descriptor.provider} ${status.reason}`,
+      source: 'providerModuleDescriptor',
+      descriptorProvider: descriptor.provider,
+      descriptorCategory: descriptor.category,
+      descriptorStatus: descriptor.status,
+      runtimeAvailability: descriptor.runtimeAvailability,
+    }]
+  })
+}
+
+function descriptorBlockingStatus(
+  descriptor: ReturnType<typeof descriptorForProvider>,
+  runtime: 'workstation' | 'mobile',
+): { status: string; reason: string } | null {
+  if (!descriptor) return null
+  if (descriptor.status === 'disabled' || descriptor.status === 'not-supported') {
+    return {
+      status: 'blocked',
+      reason: `is ${descriptor.status}`,
+    }
+  }
+  if (!descriptor.runtimeAvailability.includes(runtime)) {
+    return {
+      status: 'runtime_unavailable',
+      reason: `is unavailable for ${runtime}; availability=${descriptor.runtimeAvailability.join(',')}`,
+    }
+  }
+  return null
 }
 
 function healthBlocksFromRows(rows: Array<Record<string, unknown>>): Partial<Record<FinanceProvider, string>> {
@@ -332,6 +371,7 @@ function providerHealthSource(input: Record<string, unknown>, rows: Array<Record
       ? 0
       : rows.length - (Array.isArray(input.providerHealth) ? input.providerHealth.length : 0),
     contractRows: rows.filter((row) => row.source === 'dataApiInterfaceContract').length,
+    descriptorRows: rows.filter((row) => row.source === 'providerModuleDescriptor').length,
     runtimeEnabled: input.includeRuntimeHealth !== false,
   }
 }
