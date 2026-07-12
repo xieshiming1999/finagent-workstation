@@ -442,6 +442,40 @@ describe('macro evidence workflow summary', () => {
     ])
   })
 
+  it('does not treat broad macro themes as stock quote recovery targets', () => {
+    const messages = [
+      userMessage('macro energy attribution'),
+      assistantMessage('', [
+        { id: 'factor', name: 'DataStore', input: { action: 'query_macro_factors', target: 'energy' } },
+        { id: 'attr', name: 'DataStore', input: { action: 'query_macro_attribution', target: 'energy' } },
+        { id: 'sources', name: 'DataStore', input: { action: 'query_macro_research_evidence', family: 'commodity_research' } },
+      ]),
+      toolMessage('factor', JSON.stringify({
+        action: 'query_macro_factors',
+        rows: [{
+          title: 'Energy inventory evidence',
+          family: 'commodity_research',
+          sourceDataTime: '2026-07-01',
+          affectedAssets: ['oil', 'energy equities', 'funds'],
+          confidenceEffect: 'Raises monitoring priority for energy-sensitive assets.',
+        }],
+      })),
+      toolMessage('attr', JSON.stringify({ action: 'query_macro_attribution', rows: [] })),
+      toolMessage('sources', JSON.stringify({
+        action: 'query_macro_research_evidence',
+        rows: [{ source_name: 'EIA', family: 'commodity_research' }],
+      })),
+    ]
+
+    expect(buildFinanceRecovery(messages)).toBeNull()
+    const interception = maybeInterceptFinanceToolCalls(messages, [
+      { id: 'research', name: 'Research', input: { action: 'search', query: 'energy commodity report' } },
+    ])
+
+    expect(interception?.autoToolCalls?.map((call) => call.input.action)).not.toContain('search')
+    expect(interception?.autoToolCalls?.map((call) => call.input.action)).not.toContain('query_quote')
+  })
+
   it('redirects generic fallback to stock quote evidence when named-stock macro evidence is incomplete', () => {
     const messages = [
       macroStockUser('贵州茅台'),
