@@ -540,6 +540,7 @@ function HealthTab({
         </div>
       </div>
       <HealthQueues health={health} />
+      <ProviderCapabilityMatrix health={health} />
       <div className="rounded border overflow-hidden" style={{ borderColor: 'var(--border)' }}>
         <div className="px-2 py-1 text-xs font-medium" style={{ background: 'var(--bg-secondary)' }}>{t('providerHealth')}</div>
         <table className="w-full text-xs">
@@ -643,6 +644,54 @@ function HealthTab({
           </table>
         </div>
       )}
+    </div>
+  )
+}
+
+function ProviderCapabilityMatrix({ health }: { health: InterfaceHealth }) {
+  const t = useT()
+  const providerRows = [...(health.providerRows ?? [])].sort((a, b) => {
+    const score = (row: InterfaceHealth['providerRows'][number]) =>
+      row.supported * 10 + row.gated * 3 + row.outputOnly - row.disabled - row.notSupported - row.unstable
+    return score(b) - score(a) || a.provider.localeCompare(b.provider)
+  })
+  if (providerRows.length === 0) return null
+  return (
+    <div className="rounded border overflow-hidden" style={{ borderColor: 'var(--border)' }}>
+      <div className="px-2 py-1 text-xs font-medium" style={{ background: 'var(--bg-secondary)' }}>{t('providerCapabilityMatrix')}</div>
+      <table className="w-full text-xs">
+        <thead style={{ background: 'var(--bg-secondary)' }}>
+          <tr>
+            <th className="text-left p-2 font-medium">{t('providersLabel')}</th>
+            <th className="text-right p-2 font-medium">{t('supportedLabel')}</th>
+            <th className="text-right p-2 font-medium">{t('gatedLabel')}</th>
+            <th className="text-right p-2 font-medium">{t('outputOnlyLabel')}</th>
+            <th className="text-right p-2 font-medium">{t('unstableLabel')}</th>
+            <th className="text-right p-2 font-medium">{t('policyDisabledQueue')}</th>
+            <th className="text-right p-2 font-medium">{t('blockedLabel')}</th>
+            <th className="text-left p-2 font-medium">{t('nextAction')}</th>
+          </tr>
+        </thead>
+        <tbody>
+          {providerRows.map((row) => (
+            <tr key={`provider-matrix-${row.provider}`} className="border-t align-top" style={{ borderColor: 'var(--border)' }}>
+              <td className="p-2 font-mono" style={{ color: row.health === 'ready' ? 'var(--green)' : row.health === 'attention' ? 'var(--accent)' : 'var(--text-tertiary)' }}>{row.provider}</td>
+              <td className="p-2 text-right font-mono">{fmtN(row.supported)}</td>
+              <td className="p-2 text-right font-mono">{fmtN(row.gated)}</td>
+              <td className="p-2 text-right font-mono">{fmtN(row.outputOnly)}</td>
+              <td className="p-2 text-right font-mono">{fmtN(row.unstable)}</td>
+              <td className="p-2 text-right font-mono">{fmtN(row.disabled)}</td>
+              <td className="p-2 text-right font-mono">{fmtN(row.notSupported)}</td>
+              <td className="p-2" style={{ color: 'var(--text-tertiary)' }}>
+                <div>{row.nextAction ?? t('providerRouteRuleDefault')}</div>
+                {row.liveProbeCount != null && (
+                  <div className="text-[10px] font-mono">{fmtN(row.livePassed ?? 0)} / {fmtN(row.liveProbeCount)} {t('passedLabel')}</div>
+                )}
+              </td>
+            </tr>
+          ))}
+        </tbody>
+      </table>
     </div>
   )
 }
