@@ -100,6 +100,16 @@ export function collectMacroEvidence(messages: Message[]): MacroEvidence {
       continue
     }
     const action = text(decoded.action)
+    const sourceReaderMacroPayload = sourceReaderMacroPayloadFrom(decoded)
+    if (sourceReaderMacroPayload) {
+      sawMacroAction = true
+      factorLines.push(...factorRows(sourceReaderMacroPayload))
+      reliabilityLines.push(...reliabilityRows(sourceReaderMacroPayload))
+      assetImpactLines.push(...assetImpactRows(sourceReaderMacroPayload))
+      decisionLines.push(...decisionRows(sourceReaderMacroPayload))
+      evidenceLines.push(...evidenceRows(sourceReaderMacroPayload))
+      continue
+    }
     if (action === 'query_finance_news') {
       const line = financeNewsPayloadLine(decoded)
       if (line) newsLines.push(line)
@@ -535,6 +545,31 @@ function factorRows(payload: Record<string, unknown>): string[] {
   }).filter(Boolean)
 }
 
+function sourceReaderMacroPayloadFrom(payload: Record<string, unknown>): Record<string, unknown> | null {
+  const contract = text(payload.contract)
+  if (
+    contract !== 'source-reader-macro-evidence-result-v1' &&
+    contract !== 'source-reader-macro-numeric-evidence-result-v1'
+  ) return null
+  const record = isRecord(payload.record) ? payload.record : null
+  if (!record) return null
+  const numeric = isRecord(record.numericSeries) ? record.numericSeries : {}
+  const row = {
+    ...record,
+    ...numeric,
+    sourceName: record.sourceName ?? record.source,
+    sourceDataTime: record.sourceDataTime ?? record.sourceDate,
+    evidenceTier: record.evidenceTier ?? record.evidenceClass,
+    sourceType: record.sourceType ?? record.evidenceClass,
+    status: record.status ?? record.freshness,
+  }
+  return {
+    action: 'source_reader_macro_evidence',
+    status: 'ok',
+    rows: [row],
+  }
+}
+
 function sourceRows(payload: Record<string, unknown>): string[] {
   return rows(payload).map((row) => {
     const name = text(row.providerName ?? row.provider)
@@ -865,4 +900,8 @@ function compact(value: string, maxLength: number): string {
 
 function text(value: unknown): string {
   return String(value ?? '').trim()
+}
+
+function isRecord(value: unknown): value is Record<string, unknown> {
+  return !!value && typeof value === 'object' && !Array.isArray(value)
 }

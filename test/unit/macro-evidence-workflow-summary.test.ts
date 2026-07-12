@@ -212,6 +212,62 @@ describe('macro evidence workflow summary', () => {
     expect(answer).toContain('不能直接编译成可执行交易信号')
   })
 
+  it('cites SourceReader official numeric macro evidence artifact', () => {
+    const answer = maybeBuildFinanceBoundedAnswer([
+      userMessage('use numeric macro evidence artifact'),
+      assistantMessage('', [
+        {
+          id: 'numeric-artifact',
+          name: 'SourceReader',
+          input: { action: 'macroNumericEvidence', topic: 'oil inventory pressure' },
+        },
+      ]),
+      toolMessage('numeric-artifact', JSON.stringify({
+        contract: 'source-reader-macro-numeric-evidence-result-v1',
+        record: {
+          contract: 'macro-evidence-record-v1',
+          id: 'macro:eia',
+          source: 'EIA',
+          provider: 'eia',
+          title: 'EIA official series WCESTUS1',
+          sourceDate: '2026-07-03',
+          topic: 'oil inventory pressure',
+          region: 'US/global',
+          assetClass: 'commodity/equity/fund',
+          keyClaims: [
+            'US commercial crude oil inventories WCESTUS1 = 420000 MBBL as of 2026-07-03.',
+          ],
+          affectedAssets: ['oil', 'energy equities', 'A-shares'],
+          confidenceEffect: 'Adds official inventory context.',
+          freshness: 'ok',
+          evidenceClass: 'official-numeric-series',
+          numericSeries: {
+            seriesId: 'WCESTUS1',
+            metricName: 'US commercial crude oil inventories',
+            value: 420000,
+            unit: 'MBBL',
+            frequency: 'weekly',
+            sourceDataTime: '2026-07-03',
+            fetchedAt: '2026-07-12T02:00:00Z',
+            provider: 'eia',
+            status: 'ok',
+          },
+          fetchedAt: '2026-07-12T02:00:00Z',
+          tradeBoundary: 'Macro numeric evidence is context, hypothesis, and invalidation input. It is not a direct buy/sell rule.',
+          missingEvidence: ['No second official source attached.'],
+        },
+      })),
+    ])
+
+    expect(answer).toContain('EIA official series WCESTUS1')
+    expect(answer).toContain('value=420000 MBBL')
+    expect(answer).toContain('2026-07-03')
+    expect(answer).toContain('official-numeric-series')
+    expect(answer).toContain('oil')
+    expect(answer).toContain('No second official source attached')
+    expect(answer).toContain('不能直接编译成可执行交易信号')
+  })
+
   it('uses EIA only as stock and fund macro context alongside instrument evidence', () => {
     const answer = maybeBuildFinanceBoundedAnswer([
       userMessage('stock and fund macro context with EIA'),
