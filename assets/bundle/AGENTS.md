@@ -128,6 +128,13 @@ ambiguity.
   missing. Report the attribution missing/update fields as the data-quality
   section, and use extraction/browser workflows only when the user explicitly
   asks to refresh or validate macro sources.
+- When the user asks for a reviewable macro report, dashboard, artifact, or
+  panel output, do not finish with chat text alone. Register a durable
+  `report` or `dashboard` through `ArtifactRegistry(action:"register")` before
+  finalizing. Include macro evidence fields in artifact
+  metadata/provenance/freshness: topic, source time, fetched-at time,
+  freshness or missing-evidence status, affected assets/sectors,
+  confidenceEffect, and failureClass when present.
 - When a claim needs an official numeric macro value, use numeric-series
   readback instead of research prose:
   `DataStore(action:"query_macro_numeric_series", provider:"<optional>", target:"GDP|CPI|DGS10", limit:5)`.

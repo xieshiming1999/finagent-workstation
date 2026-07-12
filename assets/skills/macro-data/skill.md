@@ -151,6 +151,19 @@ Macro factors are context for analysis. They are not executable buy/sell
 signals and should not be converted into StrategySpec conditions unless a later
 strategy contract explicitly supports that factor type.
 
+If the requested output is a reviewable macro report, dashboard, artifact, or
+panel, register the durable output before the final answer:
+
+```text
+ArtifactRegistry(action: "register", kind: "report", title: "...", source: "macro workflow", metadata: {...}, provenance: {...}, freshness: {...})
+```
+
+The artifact metadata/provenance/freshness must include the structured macro
+evidence that affects the conclusion: topic, source time, fetched-at time,
+freshness or missing-evidence status, affected assets/sectors, confidence
+effect, and failure class when present. Do not rely on chat text alone for a
+requested reviewable macro report or dashboard.
+
 ### A0.1 Root-cause attribution
 
 When the user asks why a market, stock, fund, or strategy result may be moving,

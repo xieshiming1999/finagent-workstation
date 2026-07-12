@@ -29,6 +29,10 @@ describe('RunbookTool', () => {
     }, ctx))
     expect(macro.requiredEvidence).toContain('macro-evidence-record-v1')
     expect(macro.allowedTools).toContain('SourceReader')
+    expect(macro.artifactTypes).toContain('report')
+    expect(macro.outputRequirements).toContain(
+      'When the user asks for a reviewable report, dashboard, artifact, or panel output, create or register a durable report/dashboard artifact through ArtifactRegistry before finalizing.',
+    )
     expect(macro.approvalBoundary).toContain('not a direct buy/sell rule')
   })
 

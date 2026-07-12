@@ -6,6 +6,7 @@ type Runbook = {
   requiredEvidence: string[]
   allowedTools: string[]
   artifactTypes: string[]
+  outputRequirements?: string[]
   approvalBoundary: string
   failureHandling: string[]
   firstPassPlan?: string[]
@@ -92,7 +93,12 @@ const RUNBOOKS: Record<string, Runbook> = {
       'DataStore',
       'Research',
     ],
-    artifactTypes: ['macro_evidence', 'research', 'data_evidence'],
+    artifactTypes: ['macro_evidence', 'research', 'data_evidence', 'report', 'dashboard'],
+    outputRequirements: [
+      'For an ordinary chat answer, disclose macro source, source time, fetched-at, freshness/missing-evidence state, affected assets, confidence effect, and no-direct-trade boundary in text.',
+      'When the user asks for a reviewable report, dashboard, artifact, or panel output, create or register a durable report/dashboard artifact through ArtifactRegistry before finalizing.',
+      'The report/dashboard artifact must carry structured macro evidence fields in metadata/provenance/freshness: topic, sourceDataTime or sourceTime, fetchedAt, freshnessStatus, affectedAssets, missingEvidence, confidenceEffect, and failureClass when present.',
+    ],
     approvalBoundary: 'Macro evidence is context, hypothesis, and invalidation input. It is not a direct buy/sell rule.',
     failureHandling: [
       'Use SourceReader(action:"read") or a governed macro/data readback before citing a source.',
