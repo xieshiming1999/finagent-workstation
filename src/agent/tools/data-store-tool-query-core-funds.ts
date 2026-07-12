@@ -77,8 +77,21 @@ export function queryFundNav(
   ds: DataStore,
   input: Record<string, unknown>,
 ): string {
-  const code = stringInput(input, ["code", "symbol", "fundCode"]) ?? "";
-  if (!code) return "code required";
+  const codes = codeListInput(input, ["code", "symbol", "fundCode", "codes", "symbols", "fundCodes"]);
+  if (codes.length === 0) {
+    throw new Error('code required for query_fund_nav. Example: DataStore(action:"query_fund_nav", code:"110011") or DataStore(action:"query_fund_nav", codes:"110011,000001")');
+  }
+  if (codes.length > 1) {
+    return codes.slice(0, 12).map((code) => querySingleFundNav(ds, input, code)).join("\n\n");
+  }
+  return querySingleFundNav(ds, input, codes[0]);
+}
+
+function querySingleFundNav(
+  ds: DataStore,
+  input: Record<string, unknown>,
+  code: string,
+): string {
   const range = dateRangeInput(input);
   const rows = ds.queryFundNav(code, {
     ...range,
@@ -115,8 +128,21 @@ export function queryFundMoneyYield(
   ds: DataStore,
   input: Record<string, unknown>,
 ): string {
-  const code = stringInput(input, ["code", "symbol", "fundCode"]) ?? "";
-  if (!code) return "code required";
+  const codes = codeListInput(input, ["code", "symbol", "fundCode", "codes", "symbols", "fundCodes"]);
+  if (codes.length === 0) {
+    throw new Error('code required for query_fund_money_yield. Example: DataStore(action:"query_fund_money_yield", code:"000009") or DataStore(action:"query_fund_money_yield", codes:"000009")');
+  }
+  if (codes.length > 1) {
+    return codes.slice(0, 12).map((code) => querySingleFundMoneyYield(ds, input, code)).join("\n\n");
+  }
+  return querySingleFundMoneyYield(ds, input, codes[0]);
+}
+
+function querySingleFundMoneyYield(
+  ds: DataStore,
+  input: Record<string, unknown>,
+  code: string,
+): string {
   const range = dateRangeInput(input);
   const rows = ds.queryFundMoneyYield(code, {
     ...range,

@@ -60,6 +60,37 @@ describe('WorkflowVerifierTool', () => {
     expect(result.checks.find((item: { id: string }) => item.id === 'artifact_evidence').message).toContain('Artifact evidence is optional')
   })
 
+  it('requires fund-specific readback evidence for fund selection', async () => {
+    const ctx = tempToolContext()
+    seedSessionCalls(ctx, [
+      { id: 'tool-1', name: 'DataStore', input: { action: 'query_macro_factors', target: 'bond funds' }, result: '{"status":"ok"}' },
+    ])
+
+    const missingResult = JSON.parse(await new WorkflowVerifierTool().call('verify-fund-missing', {
+      action: 'check',
+      workflow: 'fund_selection',
+    }, ctx))
+
+    expect(missingResult.passed).toBe(false)
+    expect(missingResult.missing).toContain('fund_identity_evidence')
+    expect(missingResult.missing).toContain('fund_nav_or_yield_evidence')
+
+    seedSessionCalls(ctx, [
+      { id: 'tool-1', name: 'DataStore', input: { action: 'query_fund_list', limit: 20 }, result: 'fund_list | interface:fund.identity_list' },
+      { id: 'tool-2', name: 'DataStore', input: { action: 'query_fund_nav', code: '000083', limit: 60 }, result: '000083 fund NAV | interface:fund.nav_history' },
+      { id: 'tool-3', name: 'DataStore', input: { action: 'query_macro_factors', target: 'bond funds' }, result: '{"status":"ok"}' },
+    ])
+
+    const passedResult = JSON.parse(await new WorkflowVerifierTool().call('verify-fund-pass', {
+      action: 'check',
+      workflow: 'fund_selection',
+    }, ctx))
+
+    expect(passedResult.passed).toBe(true)
+    expect(passedResult.missing).toEqual([])
+    expect(passedResult.observed.workflowSpecific.navOrYield.action).toBe('query_fund_nav')
+  })
+
   it('rejects stock selection when saved workflow state belongs to stock research', async () => {
     const ctx = tempToolContext()
     seedSession(ctx, 'DataProcess')
@@ -276,24 +307,35 @@ function seedMacroEvidence(ctx: ToolContext): void {
 }
 
 function seedSession(ctx: ToolContext, toolName: string): void {
+  seedSessionCalls(ctx, [
+    { id: 'tool-1', name: toolName, input: {}, result: '{}' },
+  ])
+}
+
+function seedSessionCalls(ctx: ToolContext, calls: Array<{
+  id: string
+  name: string
+  input: Record<string, unknown>
+  result: string
+  isError?: boolean
+}>): void {
   const dir = join(ctx.basePath, 'sessions')
   mkdirSync(dir, { recursive: true })
-  writeFileSync(join(dir, 'current.jsonl'), [
+  const lines = [
     JSON.stringify({
       type: 'message',
       role: 'assistant',
-      toolUses: [
-        { id: 'tool-1', name: toolName, input: {} },
-      ],
+      toolUses: calls.map((call) => ({ id: call.id, name: call.name, input: call.input })),
     }),
-    JSON.stringify({
+    ...calls.map((call) => JSON.stringify({
       type: 'message',
       role: 'tool',
       toolResult: {
-        toolUseId: 'tool-1',
-        content: '{}',
-        isError: false,
+        toolUseId: call.id,
+        content: call.result,
+        isError: call.isError === true,
       },
-    }),
-  ].join('\n'), 'utf-8')
+    })),
+  ]
+  writeFileSync(join(dir, 'current.jsonl'), lines.join('\n'), 'utf-8')
 }

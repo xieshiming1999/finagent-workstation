@@ -15,8 +15,6 @@ DataStore(action: "query_fund_list", limit: 50)
 DataStore(action: "query_fund_performance", limit: 50)
 DataStore(action: "query_fund_nav", code: "110011", limit: 60)
 DataStore(action: "query_fund_money_yield", code: "000009", limit: 60)
-DataStore(action: "query_macro_factors", assets: "bond funds", family: "rates_liquidity", limit: 10)
-DataStore(action: "query_macro_attribution", assets: "bond funds", family: "rates_liquidity", limit: 10)
 DataStore(action: "fetch", type: "fund_list")
 DataStore(action: "fetch", type: "fund_performance")
 DataStore(action: "fetch", type: "fund_nav", code: "110011")
@@ -60,6 +58,15 @@ report observed facts, interpretation, missing evidence, confidence, and source
 coverage. Do not present fund analysis as a validated strategy, monitor rule,
 定投 rule, or trade plan until a StrategySpec/watchlist/monitor contract is
 created separately.
+
+For broad fund selection, the final answer must be a fund observation
+shortlist. Use fund identity/type, NAV or money-yield, performance, holdings or
+missing-holding reason, risk, source time, fetched-at, provider, and cache
+status as the primary evidence. Macro/news evidence is secondary context only;
+put it after the candidates when it is relevant, and do not let it replace the
+fund candidate table. Run `WorkflowVerifier(action:"check",
+workflow:"fund_selection")` before finalizing and follow any missing-evidence
+message it returns.
 
 For fund categories exposed to rates, liquidity, currency, country, commodity,
 sector, or index/passive-flow effects, read the governed macro factor layer

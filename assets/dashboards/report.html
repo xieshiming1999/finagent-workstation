@@ -115,6 +115,24 @@ function hasRenderableSection(section) {
   return false;
 }
 
+function renderVisibleError(message, detail) {
+  return '<div class="text-block" style="border-color:var(--red);color:var(--text-bright);">' +
+    '<strong>Report render error</strong><br>' +
+    escapeHtml(message || 'Unknown render error') +
+    (detail ? '<br><span style="color:var(--text-dim);">' + escapeHtml(detail) + '</span>' : '') +
+    '</div>';
+}
+
+function renderErrorFallback(error) {
+  var c = document.getElementById('content');
+  if (!c) return;
+  var title = nonEmpty(CONFIG.title) ? CONFIG.title : document.title;
+  c.innerHTML = '<div class="report-header"><div class="report-title">' +
+    escapeHtml(title || 'Report') +
+    '</div></div>' +
+    renderVisibleError(error && error.message, error && error.stack);
+}
+
 function renderCandidateTable(candidates) {
   var rows = candidates.map(function(candidate) {
     var code = candidateValue(candidate, ['code', 'symbol']);
@@ -211,6 +229,19 @@ function renderFlexibleTable(table) {
   });
   html += '</tbody></table>';
   return html;
+}
+
+function normalizeTableCells(row, headers, columns) {
+  if (Array.isArray(row)) return row;
+  if (!row || typeof row !== 'object') return [row];
+  if (columns.length) {
+    return columns.map(function(column) {
+      var key = column && typeof column === 'object' ? column.key : column;
+      return row[key];
+    });
+  }
+  if (headers.length) return headers.map(function(header) { return row[header]; });
+  return Object.keys(row).map(function(key) { return row[key]; });
 }
 
 function renderList(items) {
@@ -636,7 +667,12 @@ function inferSectionType(section) {
   return '';
 }
 
-render();
+try {
+  render();
+} catch (error) {
+  renderErrorFallback(error);
+  throw error;
+}
 </script>
 </body>
 </html>

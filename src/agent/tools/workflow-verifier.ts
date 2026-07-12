@@ -12,6 +12,20 @@ type WorkflowSpec = {
   macroEvidenceRecord?: boolean
 }
 
+type SessionEvidence = {
+  toolCallCount: number
+  toolErrorCount: number
+  toolNames: string[]
+  calls: ToolCallEvidence[]
+}
+
+type ToolCallEvidence = {
+  name: string
+  input: Record<string, unknown>
+  result?: string
+  isError?: boolean
+}
+
 const WORKFLOWS: Record<string, WorkflowSpec> = {
   market_overview: {
     requiredAnyTools: ['MarketData', 'DataStore', 'Research'],
@@ -38,6 +52,7 @@ const WORKFLOWS: Record<string, WorkflowSpec> = {
   fund_selection: {
     requiredAnyTools: ['MarketData', 'DataStore', 'DataProcess', 'Research'],
     artifactKinds: ['analysis', 'data_snapshot'],
+    artifactRequired: false,
     approvalBoundary: 'no_trade',
   },
   strategy_backtest: {
@@ -180,6 +195,7 @@ function checkWorkflow(
     required: input.requireWorkflowState || !!input.workflowStateId,
   })
   const providerHealthEvidence = providerHealthEvidenceFor(input.providerHealth)
+  const workflowSpecificEvidence = workflowSpecificEvidenceFor(input.workflow, session)
   const toolNames = new Set(session.toolNames)
   const usedRequiredTool = input.spec.requiredAnyTools.some((name) => toolNames.has(name))
   const checks = [
@@ -213,6 +229,7 @@ function checkWorkflow(
       providerHealthEvidence.passedMessage ?? 'Provider health is valid.',
       providerHealthEvidence.reason ?? 'Provider health contains blocking evidence.',
     ),
+    ...workflowSpecificEvidence.checks,
   ]
   const missing = checks.filter((item) => !item.passed).map((item) => item.id)
   return {
@@ -227,6 +244,7 @@ function checkWorkflow(
       artifact: artifactEvidence.artifact ?? null,
       workflowState: workflowStateEvidence.record ?? null,
       providerHealth: providerHealthEvidence.observed,
+      workflowSpecific: workflowSpecificEvidence.observed,
     },
     nextAction: missing.length === 0
       ? 'Final answer may cite the verified workflow evidence.'
@@ -234,10 +252,12 @@ function checkWorkflow(
   }
 }
 
-function readSession(ctx: ToolContext, limit: number): { toolCallCount: number; toolErrorCount: number; toolNames: string[] } {
+function readSession(ctx: ToolContext, limit: number): SessionEvidence {
   const file = join(ctx.basePath, 'sessions', 'current.jsonl')
-  if (!existsSync(file)) return { toolCallCount: 0, toolErrorCount: 0, toolNames: [] }
+  if (!existsSync(file)) return { toolCallCount: 0, toolErrorCount: 0, toolNames: [], calls: [] }
   const toolNames = new Set<string>()
+  const pendingCalls = new Map<string, ToolCallEvidence>()
+  const calls: ToolCallEvidence[] = []
   let toolCallCount = 0
   let toolErrorCount = 0
   for (const line of readFileSync(file, 'utf8').split('\n').slice(0, limit)) {
@@ -249,20 +269,122 @@ function readSession(ctx: ToolContext, limit: number): { toolCallCount: number; 
         toolCallCount += decoded.toolUses.length
         for (const item of decoded.toolUses) {
           if (item && typeof item === 'object' && !Array.isArray(item)) {
-            const name = (item as Record<string, unknown>).name
+            const record = item as Record<string, unknown>
+            const name = record.name
             if (typeof name === 'string') toolNames.add(name)
+            if (typeof name === 'string') {
+              const evidence: ToolCallEvidence = {
+                name,
+                input: objectValue(record.input) ?? {},
+              }
+              const id = typeof record.id === 'string' ? record.id : ''
+              if (id) pendingCalls.set(id, evidence)
+              calls.push(evidence)
+            }
           }
         }
       }
       const result = decoded.toolResult ?? decoded.tool_result
-      if (result && typeof result === 'object' && !Array.isArray(result) && (result as Record<string, unknown>).isError === true) {
-        toolErrorCount++
+      if (result && typeof result === 'object' && !Array.isArray(result)) {
+        const resultRecord = result as Record<string, unknown>
+        const isError = resultRecord.isError === true
+        if (isError) toolErrorCount++
+        const toolUseId = typeof resultRecord.toolUseId === 'string' ? resultRecord.toolUseId : ''
+        const evidence = toolUseId ? pendingCalls.get(toolUseId) : undefined
+        if (evidence) {
+          evidence.result = typeof resultRecord.content === 'string'
+            ? resultRecord.content
+            : JSON.stringify(resultRecord.content ?? '')
+          evidence.isError = isError
+        }
       }
     } catch {
       // Session repair is owned elsewhere.
     }
   }
-  return { toolCallCount, toolErrorCount, toolNames: [...toolNames] }
+  return { toolCallCount, toolErrorCount, toolNames: [...toolNames], calls }
+}
+
+function workflowSpecificEvidenceFor(workflow: string, session: SessionEvidence): {
+  checks: ReturnType<typeof check>[]
+  observed: Record<string, unknown>
+} {
+  if (workflow === 'fund_selection') return fundSelectionEvidenceFor(session)
+  return { checks: [], observed: {} }
+}
+
+function fundSelectionEvidenceFor(session: SessionEvidence): {
+  checks: ReturnType<typeof check>[]
+  observed: Record<string, unknown>
+} {
+  const fundList = successfulAction(session, 'query_fund_list')
+  const performance = successfulAction(session, 'query_fund_performance')
+  const navOrYield = successfulAction(session, 'query_fund_nav') || successfulAction(session, 'query_fund_money_yield')
+  const holding = successfulAction(session, 'query_fund_holding')
+  const macroOnlyCount = session.calls.filter((call) => {
+    const action = String(call.input.action ?? '')
+    return action.startsWith('query_macro') || action === 'query_finance_news'
+  }).length
+  return {
+    checks: [
+      check(
+        'fund_identity_evidence',
+        !!fundList,
+        'Fund identity/category readback is visible.',
+        'Fund selection needs query_fund_list evidence before finalizing.',
+      ),
+      check(
+        'fund_return_evidence',
+        !!performance || !!navOrYield,
+        'Fund return evidence is visible.',
+        'Fund selection needs query_fund_performance or NAV/money-yield readback before finalizing.',
+      ),
+      check(
+        'fund_nav_or_yield_evidence',
+        !!navOrYield,
+        'Fund NAV or money-yield evidence is visible.',
+        'Fund selection needs ordinary NAV or money-fund yield evidence before finalizing.',
+      ),
+      check(
+        'fund_holding_or_missing_reason',
+        !!holding || !!navOrYield,
+        'Fund holding evidence is visible or NAV/yield evidence is enough for a bounded first pass.',
+        'Fund selection needs holding evidence or an explicit missing-holding reason before finalizing.',
+      ),
+      check(
+        'fund_primary_evidence_not_macro_only',
+        !!fundList && !!navOrYield && macroOnlyCount < session.toolCallCount,
+        'Fund evidence is primary; macro/news evidence may be secondary context.',
+        'Fund selection cannot finalize as a macro/news-only answer. Use fund identity, NAV/yield, performance, risk, data time, fetched-at, provider/cache, and keep macro/news as secondary context.',
+      ),
+    ],
+    observed: {
+      fundList: summarizeCall(fundList),
+      performance: summarizeCall(performance),
+      navOrYield: summarizeCall(navOrYield),
+      holding: summarizeCall(holding),
+      macroOrNewsCalls: macroOnlyCount,
+    },
+  }
+}
+
+function successfulAction(session: SessionEvidence, action: string): ToolCallEvidence | undefined {
+  return session.calls.find((call) => {
+    if (call.isError) return false
+    if (String(call.input.action ?? '') !== action) return false
+    const result = call.result ?? ''
+    return !result.startsWith('Skipped:')
+  })
+}
+
+function summarizeCall(call: ToolCallEvidence | undefined): Record<string, unknown> | null {
+  if (!call) return null
+  return {
+    tool: call.name,
+    action: call.input.action,
+    code: call.input.code ?? call.input.fundCode ?? call.input.symbol,
+    resultPreview: (call.result ?? '').slice(0, 220),
+  }
 }
 
 function artifactEvidenceFor(ctx: ToolContext, spec: WorkflowSpec, artifactId?: string): {

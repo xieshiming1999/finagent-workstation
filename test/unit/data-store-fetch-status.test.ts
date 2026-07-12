@@ -95,6 +95,24 @@ describe('DataStore fetch_status provenance', () => {
     expect(result).not.toContain('type: "fund_nav"')
   })
 
+  it('supports compact batch fund NAV readback with codes', () => {
+    store.saveFundNav([
+      { code: '000015', date: '2026-07-06', nav: 1.1998, acc_nav: null, daily_return: 0, source: 'eastmoney', fetched_at: '2026-07-08T05:49:15.866Z' },
+      { code: '000051', date: '2026-07-06', nav: 1.8136, acc_nav: null, daily_return: -0.97, source: 'eastmoney', fetched_at: '2026-07-08T02:19:33.494Z' },
+    ])
+
+    const result = queryFundNav(store, {
+      action: 'query_fund_nav',
+      codes: '000015,000051',
+      limit: 5,
+    })
+
+    expect(result).toContain('000015 fund NAV')
+    expect(result).toContain('000051 fund NAV')
+    expect(result).toContain('readback:query_fund_nav')
+    expect(result).not.toBe('code required')
+  })
+
   it('classifies fetch task actionability through provider.fetch_task_queue', () => {
     const taskId = store.createTask('kline_daily', '600519', { start: '2026-01-01' }, 2)
     const actionableId = store.createTask('screen_advanced', null, { symbols: ['600519'] }, 4)

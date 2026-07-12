@@ -1,7 +1,8 @@
 import { describe, expect, it, vi } from 'vitest'
-import { mkdirSync, mkdtempSync, writeFileSync } from 'fs'
+import { mkdirSync, mkdtempSync, readFileSync, writeFileSync } from 'fs'
 import { join } from 'path'
 import { tmpdir } from 'os'
+import vm from 'vm'
 import { TaskRegistry } from '../../src/agent/background-task'
 import { ArtifactRegistry } from '../../src/agent/artifact-registry'
 import { TeamRegistry } from '../../src/agent/team-context'
@@ -34,6 +35,40 @@ function makeCtx(basePath: string): ToolContext {
 }
 
 describe('sync tool contracts', () => {
+  it('report dashboard template renders object-shaped table rows', () => {
+    const template = readFileSync(join(process.cwd(), 'assets', 'dashboards', 'report.html'), 'utf8')
+    const config = {
+      title: '东方财富（300059）股票研究看板',
+      sections: [{
+        title: '核心数据',
+        type: 'table',
+        headers: ['字段', '值'],
+        rows: [
+          { 字段: '行情', 值: '20.92 +12.47%' },
+          { 字段: '来源', 值: 'DataStore query_quote' },
+        ],
+      }],
+    }
+    const html = template.replace(/var CONFIG = \{[\s\S]*?\};/, `var CONFIG = ${JSON.stringify(config)};`)
+    const script = html.match(/<script>([\s\S]*)<\/script>/)?.[1] ?? ''
+    const element = {
+      innerHTML: '<div>Loading report...</div>',
+    }
+    const context = vm.createContext({
+      document: {
+        title: 'Report',
+        getElementById: (id: string) => id === 'content' ? element : null,
+      },
+      console,
+    })
+
+    vm.runInContext(script, context)
+
+    expect(element.innerHTML).toContain('东方财富')
+    expect(element.innerHTML).toContain('20.92 +12.47%')
+    expect(element.innerHTML).not.toContain('Loading report')
+  })
+
   it('UIControl help is available before a renderer handler is registered', async () => {
     const result = JSON.parse(await new UIControlTool().call('ui-help', {
       action: 'help',
