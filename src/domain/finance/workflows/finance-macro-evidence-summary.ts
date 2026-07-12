@@ -229,7 +229,7 @@ function buildMacroEvidenceSection(evidence: MacroEvidence): string[] {
     lines.push(`- ${prefix}：${evidence.newsLines.slice(0, 4).join('；')}。新闻只作为发现和当前事件线索，不能替代官方数据或内容级研究证据。`)
   }
   if (evidence.missingLines.length > 0) {
-    lines.push(`- 不确定性/数据缺口：${evidence.missingLines.slice(0, 4).join('；')}。`)
+    lines.push(`- 不确定性/数据缺口/缺失证据：${evidence.missingLines.slice(0, 4).join('；')}。`)
   }
   if (evidence.reliabilityLines.length > 0) {
     lines.push(`- 可靠性（证据等级/新鲜度/访问/置信度）：${evidence.reliabilityLines.slice(0, 5).join('；')}。`)

@@ -380,7 +380,7 @@ describe('WorkflowVerifierTool', () => {
   it('accepts durable macro evidence records', async () => {
     const ctx = tempToolContext()
     seedSession(ctx, 'SourceReader')
-    seedWorkflowState(ctx, 'macro_attribution')
+    seedWorkflowState(ctx, 'macro_factor_lookup')
     seedMacroEvidence(ctx)
 
     const result = JSON.parse(await new WorkflowVerifierTool().call('verify-macro', {

@@ -152,11 +152,31 @@ signals and should not be converted into StrategySpec conditions unless a later
 strategy contract explicitly supports that factor type.
 
 If the requested output is a reviewable macro report, dashboard, artifact, or
-panel, register the durable output before the final answer:
+panel, first collect or read back at least one governed macro evidence source.
+Then create typed workflow state, register the durable output, and run the
+verifier before the final answer. `evidenceRefs` must be non-empty and should
+name actual evidence/readback keys used in the turn:
+Use `ArtifactRegistry` for this durable report/dashboard record. Do not use
+`UIControl`, `WebView`, or raw `memory/pages/*.html` as a substitute unless the
+user explicitly asks to open or render a visual page.
+
+```text
+FinanceWorkflowState(action: "save", workflowKind: "macro_factor_lookup",
+  assetClass: "mixed", intentMode: "analysis", executionMode: "none",
+  confirmationState: "none",
+  safetyBoundary: "macro evidence is context and invalidation input, not a direct buy/sell rule",
+  evidenceRefs: ["query_macro_factors", "query_macro_attribution", "query_macro_research_evidence"],
+  requiredArtifacts: [{"kindAnyOf":["report","dashboard"],
+    "requiredFields":["topic","sourceDataTime","fetchedAt","missingEvidence","confidenceEffect","affectedAssets"]}],
+  requiredVerifier: {"tool":"WorkflowVerifier","action":"check","workflow":"macro_factor_lookup"})
+```
 
 ```text
 ArtifactRegistry(action: "register", kind: "report", title: "...", source: "macro workflow", metadata: {...}, provenance: {...}, freshness: {...})
 ```
+
+Run `WorkflowVerifier(action:"check", workflow:"macro_factor_lookup")` after
+the report/dashboard artifact is registered, not before.
 
 The artifact metadata/provenance/freshness must include the structured macro
 evidence that affects the conclusion: topic, source time, fetched-at time,
@@ -192,6 +212,11 @@ DataStore(action: "query_fundamental", code: "<stock code>", limit: 10)
 DataStore(action: "query_macro_factors", target: "<asset or theme>", assets: "<asset class>", limit: 10)
 DataStore(action: "query_macro_attribution", target: "<asset or theme>", assets: "<asset class>", limit: 10)
 ```
+
+Do not call `interface_describe` with invented macro ids such as
+`market.macro_factors`. Macro evidence is exposed through the concrete actions
+above plus `macro_research_sources`, `query_macro_research_evidence`, and
+`query_macro_research_content`.
 
 If the user gives a stock name but not a code, resolve the symbol through the
 governed local stock list/search path before the macro answer, then read

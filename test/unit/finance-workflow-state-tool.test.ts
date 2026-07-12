@@ -62,11 +62,36 @@ describe('FinanceWorkflowStateTool', () => {
     })
   })
 
-  it('rejects incomplete state with correction guidance', async () => {
+  it('create defaults safe workflow fields for natural prompts', async () => {
     const tool = new FinanceWorkflowStateTool()
-    await expect(tool.call('tool-2', {
+    const result = JSON.parse(await tool.call('tool-2', {
       action: 'create',
       workflowKind: 'trade_prep',
+    }, tempToolContext()))
+
+    expect(result.workflowState).toMatchObject({
+      workflowKind: 'trade_prep',
+      assetClass: 'unknown',
+      executionMode: 'preview_only',
+      confirmationState: 'none',
+      evidenceRefs: ['workflow_request'],
+      requiredVerifier: {
+        tool: 'WorkflowVerifier',
+        action: 'check',
+        workflow: 'trade_preparation',
+      },
+    })
+    expect(result.workflowState.safetyBoundary).toContain('no order')
+  })
+
+  it('validate rejects incomplete state with correction guidance', async () => {
+    const tool = new FinanceWorkflowStateTool()
+    await expect(tool.call('tool-2b', {
+      action: 'validate',
+      workflowState: {
+        contract: 'finance-workflow-state-v1',
+        workflowKind: 'trade_prep',
+      },
     }, tempToolContext())).rejects.toThrow(/Invalid finance workflow state: .*assetClass must be one of.*FinanceWorkflowState\(action:"help"\)/)
   })
 

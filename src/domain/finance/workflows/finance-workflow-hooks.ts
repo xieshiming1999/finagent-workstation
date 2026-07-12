@@ -569,7 +569,8 @@ export function maybeBuildFinanceBoundedAnswer(messages: Message[]): string | nu
   const lastUserIndex = findLastIndex(messages, (message) => message.role === Role.User)
   if (lastUserIndex < 0) return null
   const prompt = messages[lastUserIndex].content
-  const workflowState = financeWorkflowStateFromUserContent(prompt)
+  const workflowState = latestFinanceWorkflowState(messages, lastUserIndex) ??
+    financeWorkflowStateFromUserContent(prompt)
   if (isWatchlistRsiRankingState(workflowState)) {
     return maybeBuildWatchlistRsiRankingAnswer(messages.slice(lastUserIndex))
   }
@@ -659,6 +660,9 @@ export function buildFinanceRecovery(messages: Message[]): DomainRecovery | null
     }
   }
 
+  const macroStateRecovery = buildMacroWorkflowStateRecovery(messages)
+  if (macroStateRecovery) return macroStateRecovery
+
   const macroArtifactRecovery = buildMacroArtifactFinalizationRecovery(messages)
   if (macroArtifactRecovery) return macroArtifactRecovery
 
@@ -674,6 +678,43 @@ export function buildFinanceRecovery(messages: Message[]): DomainRecovery | null
   }
 
   return null
+}
+
+function buildMacroWorkflowStateRecovery(messages: Message[]): DomainRecovery | null {
+  const lastUserIndex = findLastIndex(messages, (message) => message.role === Role.User)
+  if (lastUserIndex < 0) return null
+  const turnMessages = messages.slice(lastUserIndex)
+  if (latestFinanceWorkflowState(messages, lastUserIndex)) return null
+  if (!hasSuccessfulToolAction(turnMessages, 'Runbook', 'get')) return null
+  if (!hasRunbookWorkflowCall(turnMessages, 'macro_factor_lookup')) return null
+  const evidence = collectMacroEvidence(turnMessages)
+  if (!evidence.hasMacroEvidence) return null
+
+  return {
+    toolCalls: [{
+      id: `auto-macro-workflow-state-${Date.now()}`,
+      name: 'FinanceWorkflowState',
+      input: {
+        action: 'create',
+        workflowKind: 'macro_factor_lookup',
+        assetClass: 'mixed',
+        intentMode: 'review',
+        executionMode: 'none',
+        confirmationState: 'none',
+        safetyBoundary: 'macro evidence is context and invalidation input, not a direct buy/sell rule',
+        evidenceRefs: macroEvidenceRefs(evidence),
+      },
+    }],
+    answerAfterTools: maybeBuildFinanceBoundedAnswer,
+  }
+}
+
+function hasRunbookWorkflowCall(messages: Message[], workflow: string): boolean {
+  return collectExecutedToolCalls(messages).some((call) =>
+    call.name === 'Runbook' &&
+    call.input.action === 'get' &&
+    String(call.input.workflow ?? '') === workflow
+  )
 }
 
 function buildRequiredVerifierRecovery(messages: Message[]): DomainRecovery | null {
@@ -918,6 +959,20 @@ function latestSuccessfulToolActionPayload(
     }
   }
   return null
+}
+
+function macroEvidenceRefs(evidence: ReturnType<typeof collectMacroEvidence>): string[] {
+  const refs = [
+    ...evidence.factorLines,
+    ...evidence.evidenceLines,
+    ...evidence.sourceLines,
+    ...evidence.contentLines,
+    ...evidence.reliabilityLines,
+  ]
+    .map((line) => line.trim())
+    .filter(Boolean)
+    .slice(0, 8)
+  return refs.length > 0 ? refs : ['macro_evidence_readback']
 }
 
 function firstOrDefault(values: string[], fallback: string): string {

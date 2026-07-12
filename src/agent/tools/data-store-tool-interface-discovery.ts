@@ -74,6 +74,8 @@ export function interfaceDescribe(
   const row = findInterfaceRow(healthView, interfaceId);
   const definition = getDataApiInterface(interfaceId);
   if (!definition) {
+    const macroDiagnostic = macroPseudoInterfaceDescribe(interfaceId);
+    if (macroDiagnostic) return JSON.stringify(macroDiagnostic, null, 2);
     const customStrategy = customStrategyInterfaceDescribe(interfaceId);
     if (customStrategy) return JSON.stringify(customStrategy, null, 2);
     toolError(`Unknown interfaceId: ${interfaceId}`);
@@ -106,6 +108,34 @@ export function interfaceDescribe(
     null,
     2,
   );
+}
+
+function macroPseudoInterfaceDescribe(interfaceId: string): Record<string, unknown> | null {
+  if (interfaceId !== "market.macro_factors" && interfaceId !== "macro.factors") return null;
+  return {
+    action: "interface_describe",
+    interfaceId,
+    status: "diagnostic_alias",
+    supported: false,
+    description:
+      "Macro evidence is not exposed through this Data API interface id. Use the governed macro actions instead.",
+    recommendedActions: [
+      "query_macro_factors",
+      "query_macro_attribution",
+      "macro_research_sources",
+      "query_macro_research_evidence",
+      "query_macro_research_content",
+    ],
+    nextAction:
+      "Call DataStore(action:\"query_macro_factors\", target:<structured target>) and DataStore(action:\"query_macro_attribution\", target:<structured target>) for first-pass macro evidence.",
+    provenance: localProvenance(
+      interfaceId,
+      "local.data.interface_describe",
+      "macro_pseudo_interface_guidance",
+      "finance_macro_evidence_actions",
+      "interface_describe",
+    ),
+  };
 }
 
 function customStrategyInterfaceDescribe(interfaceId: string): Record<string, unknown> | null {

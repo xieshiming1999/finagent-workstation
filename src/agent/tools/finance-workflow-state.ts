@@ -23,6 +23,7 @@ const WORKFLOW_KINDS: FinanceWorkflowKind[] = [
   'trade_review',
   'watchlist_handoff',
   'monitor_review',
+  'macro_factor_lookup',
   'evidence_review',
   'unknown',
 ]
@@ -64,6 +65,15 @@ export class FinanceWorkflowStateTool implements Tool {
       source: { type: 'string' },
       hasUnsupportedExecutableParts: { type: 'boolean' },
       blockedTools: { type: 'array', items: { type: 'string' } },
+      requiredArtifacts: {
+        type: 'array',
+        items: { type: 'object' },
+        description: 'Structured output artifact requirements, for example kindAnyOf/report/dashboard and fields that must be included.',
+      },
+      requiredVerifier: {
+        type: 'object',
+        description: 'Structured verifier requirement, for example {"tool":"WorkflowVerifier","action":"check","workflow":"macro_factor_lookup"}.',
+      },
       workflowState: { type: 'object', description: 'Existing finance-workflow-state-v1 object for validation' },
     },
   }
@@ -78,8 +88,8 @@ export class FinanceWorkflowStateTool implements Tool {
       throw new Error(`Invalid FinanceWorkflowState action "${action}". Use action="help" for supported actions.`)
     }
     const state = input.workflowState && typeof input.workflowState === 'object'
-      ? normalizeState(input.workflowState)
-      : normalizeState(input)
+      ? normalizeState(input.workflowState, action)
+      : normalizeState(input, action)
     const errors = validateState(state)
     if (errors.length > 0) {
       throw new Error(`Invalid finance workflow state: ${errors.join('; ')}. Use FinanceWorkflowState(action:"help") for allowed enum values.`)
@@ -111,30 +121,120 @@ function help(): Record<string, unknown> {
     },
     requiredForCreate: ['workflowKind', 'assetClass', 'intentMode', 'executionMode', 'confirmationState', 'safetyBoundary', 'evidenceRefs'],
     guidance: 'The agent must choose these typed fields explicitly. Save active workflow state when later turns, recovery, verification, or UI evidence need it. Do not infer workflow behavior by matching user prompt text in runtime code.',
+    templates: {
+      macroReportArtifact: {
+        action: 'save',
+        workflowKind: 'macro_factor_lookup',
+        assetClass: 'mixed',
+        intentMode: 'analysis',
+        executionMode: 'none',
+        confirmationState: 'none',
+        safetyBoundary: 'macro evidence is context and invalidation input, not a direct buy/sell rule',
+        evidenceRefs: ['query_macro_factors', 'query_macro_attribution', 'query_macro_research_evidence'],
+        requiredArtifacts: [
+          {
+            kindAnyOf: ['report', 'dashboard'],
+            requiredFields: ['topic', 'sourceDataTime', 'fetchedAt', 'missingEvidence', 'confidenceEffect', 'affectedAssets'],
+          },
+        ],
+        requiredVerifier: { tool: 'WorkflowVerifier', action: 'check', workflow: 'macro_factor_lookup' },
+      },
+      readOnlyTradePreparation: {
+        action: 'save',
+        workflowKind: 'trade_preparation',
+        assetClass: 'stock',
+        intentMode: 'size',
+        executionMode: 'preview_only',
+        confirmationState: 'none',
+        safetyBoundary: 'read-only sizing; no order, transfer, or portfolio mutation without explicit later confirmation',
+        evidenceRefs: ['xueqiu_balance_or_portfolio_state', 'quote', 'risk_sizing', 'trade_boundary'],
+        requiredVerifier: { tool: 'WorkflowVerifier', action: 'check', workflow: 'trade_preparation' },
+      },
+    },
   }
 }
 
-function normalizeState(value: unknown): Partial<FinanceWorkflowState> {
+function normalizeState(value: unknown, action = 'validate'): Partial<FinanceWorkflowState> {
   if (!value || typeof value !== 'object' || Array.isArray(value)) return {}
   const input = value as Record<string, unknown>
+  const workflowKind = inferWorkflowKind(input)
+  const creating = action === 'create'
+  const saving = action === 'save'
+  const requiredArtifacts = objectList(input.requiredArtifacts) ??
+    (creating ? defaultRequiredArtifacts(workflowKind) : undefined)
+  const requiredVerifier = objectValue(input.requiredVerifier) ??
+    (creating ? defaultRequiredVerifier(workflowKind) : undefined)
   return {
     contract: 'finance-workflow-state-v1',
-    workflowKind: normalizeEnum(input.workflowKind) as FinanceWorkflowKind,
-    assetClass: normalizeEnum(input.assetClass) as FinanceAssetClass,
-    intentMode: normalizeEnum(input.intentMode) as FinanceIntentMode,
-    executionMode: normalizeEnum(input.executionMode) as FinanceExecutionMode,
-    safetyBoundary: String(input.safetyBoundary ?? '').trim(),
-    evidenceRefs: stringList(input.evidenceRefs),
-    confirmationState: normalizeEnum(input.confirmationState) as FinanceConfirmationState,
+    workflowKind,
+    assetClass: normalizeEnum(input.assetClass || (creating ? 'unknown' : '')) as FinanceAssetClass,
+    intentMode: normalizeEnum(input.intentMode || ((creating || saving) ? defaultIntentMode(workflowKind, input) : '')) as FinanceIntentMode,
+    executionMode: normalizeEnum(input.executionMode || (creating ? defaultExecutionMode(workflowKind) : '')) as FinanceExecutionMode,
+    safetyBoundary: String(input.safetyBoundary ?? (creating ? defaultSafetyBoundary(workflowKind) : '')).trim(),
+    evidenceRefs: normalizedEvidenceRefs(input, creating || saving),
+    confirmationState: normalizeEnum(input.confirmationState || (creating ? 'none' : '')) as FinanceConfirmationState,
     subject: optionalString(input.subject),
     subjects: stringList(input.subjects),
     source: optionalString(input.source) ?? 'agent-structured-intent',
     updatedAt: optionalString(input.updatedAt),
     hasUnsupportedExecutableParts: input.hasUnsupportedExecutableParts === true,
     blockedTools: stringList(input.blockedTools),
-    requiredArtifacts: objectList(input.requiredArtifacts),
-    requiredVerifier: objectValue(input.requiredVerifier),
+    requiredArtifacts,
+    requiredVerifier,
   }
+}
+
+function normalizedEvidenceRefs(input: Record<string, unknown>, creating: boolean): string[] {
+  const explicit = stringList(input.evidenceRefs)
+  if (explicit.length > 0) return explicit
+  if (!creating) return []
+  const required = stringList(input.requiredEvidence)
+  if (required.length > 0) return required
+  const confirmationState = normalizeEnum(input.confirmationState)
+  if (confirmationState && confirmationState !== 'none') return [`approval_state:${confirmationState}`]
+  return ['workflow_request']
+}
+
+function defaultIntentMode(kind: FinanceWorkflowKind, input: Record<string, unknown>): FinanceIntentMode | '' {
+  const confirmationState = normalizeEnum(input.confirmationState)
+  if ((kind === 'trade_prep' || kind === 'trade_preparation') && confirmationState === 'denied') return 'size'
+  if (kind === 'macro_factor_lookup') return 'review'
+  return 'unknown'
+}
+
+function defaultExecutionMode(kind: FinanceWorkflowKind): FinanceExecutionMode {
+  if (kind === 'watchlist_handoff') return 'watchlist'
+  if (kind === 'strategy_design' || kind === 'strategy_review' || kind === 'strategy_rerun') return 'preview_only'
+  if (kind === 'trade_prep' || kind === 'trade_preparation') return 'preview_only'
+  return 'none'
+}
+
+function defaultSafetyBoundary(kind: FinanceWorkflowKind): string {
+  if (kind === 'macro_factor_lookup') return 'macro evidence is context and invalidation input, not a direct buy/sell rule'
+  if (kind === 'trade_prep' || kind === 'trade_preparation') return 'read-only sizing; no order or transfer without explicit later confirmation'
+  if (kind === 'watchlist_handoff') return 'observation-state mutation only; no order or broker side effect'
+  if (kind === 'strategy_design' || kind === 'strategy_review' || kind === 'strategy_rerun') return 'strategy evidence only until validated and explicitly confirmed'
+  return 'analysis only; no external side effect'
+}
+
+function defaultRequiredArtifacts(kind: FinanceWorkflowKind): Array<Record<string, unknown>> | undefined {
+  if (kind !== 'macro_factor_lookup') return undefined
+  return [
+    {
+      kindAnyOf: ['report', 'dashboard'],
+      requiredFields: ['topic', 'sourceDataTime', 'fetchedAt', 'missingEvidence', 'confidenceEffect', 'affectedAssets'],
+    },
+  ]
+}
+
+function defaultRequiredVerifier(kind: FinanceWorkflowKind): Record<string, unknown> | undefined {
+  if (kind === 'macro_factor_lookup') {
+    return { tool: 'WorkflowVerifier', action: 'check', workflow: 'macro_factor_lookup' }
+  }
+  if (kind === 'trade_preparation' || kind === 'trade_prep') {
+    return { tool: 'WorkflowVerifier', action: 'check', workflow: 'trade_preparation' }
+  }
+  return undefined
 }
 
 function validateState(state: Partial<FinanceWorkflowState>): string[] {
@@ -150,8 +250,23 @@ function validateState(state: Partial<FinanceWorkflowState>): string[] {
   return errors
 }
 
+function inferWorkflowKind(input: Record<string, unknown>): FinanceWorkflowKind {
+  const explicit = normalizeEnum(input.workflowKind)
+  if (WORKFLOW_KINDS.includes(explicit as FinanceWorkflowKind)) return explicit as FinanceWorkflowKind
+  const requiredVerifier = objectValue(input.requiredVerifier)
+  const verifierWorkflow = normalizeEnum(requiredVerifier?.workflow)
+  if (verifierWorkflow === 'trade_preparation') return 'trade_preparation'
+  if (verifierWorkflow === 'macro_factor_lookup') return 'macro_factor_lookup'
+  if (WORKFLOW_KINDS.includes(verifierWorkflow as FinanceWorkflowKind)) return verifierWorkflow as FinanceWorkflowKind
+  return explicit as FinanceWorkflowKind
+}
+
 function normalizeEnum(value: unknown): string {
-  return String(value ?? '').trim().replace(/[A-Z]/g, (letter) => `_${letter.toLowerCase()}`).replace(/^_/, '')
+  return String(value ?? '')
+    .trim()
+    .replace(/[\s-]+/g, '_')
+    .replace(/[A-Z]/g, (letter) => `_${letter.toLowerCase()}`)
+    .replace(/^_/, '')
 }
 
 function optionalString(value: unknown): string | undefined {

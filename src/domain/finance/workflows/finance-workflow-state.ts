@@ -13,6 +13,7 @@ export type FinanceWorkflowKind =
   | 'trade_review'
   | 'watchlist_handoff'
   | 'monitor_review'
+  | 'macro_factor_lookup'
   | 'evidence_review'
   | 'unknown'
 

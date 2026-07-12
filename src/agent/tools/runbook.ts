@@ -142,11 +142,22 @@ const RUNBOOKS: Record<string, Runbook> = {
     workflow: 'trade_preparation',
     purpose: 'Prepare a simulated trade with sizing, risk, stop, evidence, and explicit user approval.',
     requiredEvidence: ['analysis', 'risk_sizing', 'cash_or_portfolio_state', 'approval_state', 'trade_boundary'],
-    allowedTools: ['Portfolio', 'XueqiuTrade', 'AskUserQuestion', 'WorkflowEvidence', 'CapabilityStatus'],
+    allowedTools: ['Runbook', 'FinanceWorkflowState', 'Portfolio', 'XueqiuTrade', 'AskUserQuestion', 'WorkflowEvidence', 'WorkflowVerifier', 'CapabilityStatus'],
     artifactTypes: ['trade_preparation', 'data_evidence'],
     approvalBoundary: 'Must stop for explicit user approval before any simulated order side effect.',
+    outputRequirements: [
+      'Collect account/portfolio, quote, sizing, and trade-boundary evidence before saving FinanceWorkflowState.',
+      'When saving FinanceWorkflowState, evidenceRefs must be non-empty and should include cash_or_portfolio_state, quote, risk_sizing, and trade_boundary when available.',
+      'Final answers must explicitly state that no order, transfer, or portfolio mutation was executed unless a later confirmed write actually succeeded.',
+    ],
     failureHandling: ['If approval is missing, stop and ask.', 'If account/portfolio state is unavailable, do not place an order.'],
-    verifier: 'WorkflowVerifier(action:"check", workflow:"trade_preparation") when available; otherwise CapabilityStatus(action:"evaluate").',
+    firstPassPlan: [
+      'Read portfolio/account state and current quote through governed tools.',
+      'Compute read-only sizing and risk boundary.',
+      'Save FinanceWorkflowState with non-empty evidenceRefs from the collected evidence.',
+      'Run WorkflowVerifier(action:"check", workflow:"trade_preparation") before final trade-preparation claims when available.',
+    ],
+    verifier: 'After portfolio/quote/sizing evidence is collected and state is saved with non-empty evidenceRefs, run WorkflowVerifier(action:"check", workflow:"trade_preparation") when available; otherwise CapabilityStatus(action:"evaluate").',
   },
   trade_review: {
     workflow: 'trade_review',
@@ -176,6 +187,7 @@ const RUNBOOKS: Record<string, Runbook> = {
     ],
     allowedTools: [
       'Runbook',
+      'FinanceWorkflowState',
       'ProviderRouter',
       'SourceReader',
       'ArtifactRegistry',
@@ -188,6 +200,7 @@ const RUNBOOKS: Record<string, Runbook> = {
       'For an ordinary chat answer, disclose macro source, source time, fetched-at, freshness/missing-evidence state, affected assets, confidence effect, and no-direct-trade boundary in text.',
       'When the user asks for a reviewable report, dashboard, artifact, or panel output, create or register a durable report/dashboard artifact through ArtifactRegistry before finalizing.',
       'The report/dashboard artifact must carry structured macro evidence fields in metadata/provenance/freshness: topic, sourceDataTime or sourceTime, fetchedAt, freshnessStatus, affectedAssets, missingEvidence, confidenceEffect, and failureClass when present.',
+      'Save FinanceWorkflowState only after at least one governed macro evidence/readback key is known in evidenceRefs; then register the artifact; then run WorkflowVerifier as the post-artifact check.',
     ],
     approvalBoundary: 'Macro evidence is context, hypothesis, and invalidation input. It is not a direct buy/sell rule.',
     failureHandling: [
@@ -197,11 +210,12 @@ const RUNBOOKS: Record<string, Runbook> = {
     ],
     firstPassPlan: [
       'Start with governed local readback: query_macro_factors and query_macro_attribution for the structured target.',
+      'Do not call interface_describe with invented ids such as market.macro_factors; macro evidence is exposed through query_macro_factors, query_macro_attribution, macro_research_sources, and query_macro_research_evidence actions.',
       'Use macro_research_sources to choose a source only when the user asks to refresh, validate, or inspect source availability.',
       'Use SourceReader or macro_research_extract only after a source is selected and the task needs actual source content.',
     ],
     escalationBoundary: 'Missing local macro evidence should be reported as missing evidence; it is not a reason to crawl multiple providers in a first-pass answer.',
-    verifier: 'WorkflowVerifier(action:"check", workflow:"macro_factor_lookup") before using macro evidence in final analysis.',
+    verifier: 'After saving state with non-empty evidenceRefs and registering the report/dashboard artifact, run WorkflowVerifier(action:"check", workflow:"macro_factor_lookup") before final claims.',
   },
 }
 

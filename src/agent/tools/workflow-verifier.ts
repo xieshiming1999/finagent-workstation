@@ -949,7 +949,7 @@ function workflowKindForVerifierWorkflow(workflow: string): string {
     case 'trade_prep':
       return 'trade_prep'
     case 'macro_factor_lookup':
-      return 'macro_attribution'
+      return 'macro_factor_lookup'
     default:
       return 'unknown'
   }

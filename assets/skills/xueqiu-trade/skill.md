@@ -13,6 +13,16 @@ Configure these first:
 
 ## Discovery First
 
+For any sizing, preview, buy/sell, or guarded trade-preparation workflow, first
+inspect the trade-preparation runbook. Then discover account/portfolio and
+quote/sizing evidence before saving typed state. `FinanceWorkflowState`
+requires non-empty `evidenceRefs`; do not call it with an empty or omitted
+evidence list.
+
+```text
+Runbook(action: "get", workflow: "trade_preparation")
+```
+
 Always start from:
 
 ```text
@@ -20,6 +30,17 @@ XueqiuTrade(action: "portfolios")
 ```
 
 That returns the current `name -> gid` mapping. Use the returned `name` or `gid` in later calls.
+After portfolio/account state, quote, and sizing evidence are available, save
+typed state:
+
+```text
+FinanceWorkflowState(action: "save", workflowKind: "trade_preparation",
+  assetClass: "stock", intentMode: "size", executionMode: "preview_only",
+  confirmationState: "none",
+  safetyBoundary: "read-only sizing; no order or transfer without explicit later confirmation",
+  evidenceRefs: ["xueqiu_balance_or_portfolio_state", "quote", "risk_sizing", "trade_boundary"],
+  requiredVerifier: {"tool":"WorkflowVerifier","action":"check","workflow":"trade_preparation"})
+```
 
 ## Read Portfolio State
 
@@ -39,6 +60,16 @@ XueqiuTrade(action: "history", portfolio: "finasimu")
 Before any buy/sell after a confirmation-style workflow, use the read-only
 preview action to validate the portfolio, symbol, quote route, current account
 state, and estimated trade value. This action must not be treated as execution.
+
+If the preview answer must explain strategy evidence, signal status, or price
+assumptions, gather the evidence before `preview_order` in the same turn:
+
+- use `DataStore(action:"query_quote", code:"<code>")` or another governed
+  quote action for source-explicit price evidence;
+- use `MarketData(action:"custom_strategy_read", strategyId:"<id>")`, or a
+  same-turn `custom_strategy_*` result, for saved strategy evidence;
+- if that evidence is unavailable, keep the preview summary honest: report the
+  missing evidence and treat `preview_order` only as order-field validation.
 
 ```text
 XueqiuTrade(action: "preview_order", portfolio: "finasimu",
@@ -61,6 +92,11 @@ instead of only writing a free-text question. A guarded execution workflow
 should leave a structured confirmation checkpoint in the chat UI. Ask for the
 minimum missing fields: execution mode, portfolio, order size, price assumption,
 and whether to proceed or stop.
+
+If your draft answer contains a section like "需要你确认", stop before finalizing
+that answer and call `AskUserQuestion` with two clear choices: proceed with the
+simulated order, or stop and keep observing. Plain text confirmation questions
+are not sufficient for Xueqiu MONI write-like workflows.
 
 If the user asks only for sizing or says not to trade directly, do not call
 `buy`, `sell`, `transfer_in`, or `transfer_out`. The final answer must say the
