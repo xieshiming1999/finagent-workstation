@@ -1,4 +1,4 @@
-import { existsSync, readFileSync } from 'fs'
+import { existsSync, readdirSync, readFileSync, statSync } from 'fs'
 import { homedir } from 'os'
 import { join } from 'path'
 import type { DataStore } from '../agent/data/store/data-store'
@@ -36,6 +36,7 @@ const FACTOR_SCHEMA = 'market_moving_factor_v1'
 export async function refreshMacroFactorRadar(
   ds: DataStore,
   config: AppConfig,
+  basePath?: string,
 ): Promise<MacroFactorRadarResult> {
   const generatedAt = new Date().toISOString()
   const rows: FactorRow[] = [...seedFactorRows(generatedAt)]
@@ -66,6 +67,10 @@ export async function refreshMacroFactorRadar(
   const newsRows = extractNewsCachedFactors(ds, generatedAt)
   rows.push(...newsRows.rows)
   sources.push(newsRows.source)
+
+  const macroEvidenceRows = extractSourceReaderMacroEvidence(basePath, generatedAt)
+  rows.push(...macroEvidenceRows.rows)
+  sources.push(macroEvidenceRows.source)
 
   ds.saveMarketMovingFactors(rows)
   return {
@@ -240,13 +245,17 @@ function extractNewsCachedFactors(ds: DataStore, fetchedAt: string): { rows: Fac
   }
 }
 
-export function readMacroFactorRadar(ds: DataStore): MacroFactorRadarResult {
+export function readMacroFactorRadar(ds: DataStore, basePath?: string): MacroFactorRadarResult {
   const generatedAt = new Date().toISOString()
+  const macroEvidenceRows = extractSourceReaderMacroEvidence(basePath, generatedAt)
+  if (macroEvidenceRows.rows.length > 0) {
+    ds.saveMarketMovingFactors(macroEvidenceRows.rows)
+  }
   const existing = ds.queryMarketMovingFactors({ limit: 80 })
   if (existing.length > 0) {
     return {
       rows: existing,
-      sources: sourceRegistrySnapshot(),
+      sources: [...sourceRegistrySnapshot(), macroEvidenceRows.source],
       numericSeriesCatalog: numericSeriesCatalogSnapshot(),
       generatedAt,
     }
@@ -255,9 +264,124 @@ export function readMacroFactorRadar(ds: DataStore): MacroFactorRadarResult {
   ds.saveMarketMovingFactors(seeds)
   return {
     rows: ds.queryMarketMovingFactors({ limit: 80 }),
-    sources: sourceRegistrySnapshot(),
+    sources: [...sourceRegistrySnapshot(), macroEvidenceRows.source],
     numericSeriesCatalog: numericSeriesCatalogSnapshot(),
     generatedAt,
+  }
+}
+
+function extractSourceReaderMacroEvidence(
+  basePath: string | undefined,
+  fetchedAt: string,
+): { rows: FactorRow[]; source: MacroFactorSourceStatus } {
+  const dir = basePath ? join(basePath, 'memory', 'macro_evidence') : ''
+  if (!dir || !existsSync(dir)) {
+    return {
+      rows: [],
+      source: {
+        id: 'source_reader.macro_evidence',
+        name: 'SourceReader macro evidence artifacts',
+        state: 'fallback-only',
+        detail: 'No memory/macro_evidence directory is currently available.',
+      },
+    }
+  }
+  const files = readdirSync(dir)
+    .filter((name) => name.endsWith('.json'))
+    .map((name) => join(dir, name))
+    .sort((a, b) => statSync(b).mtimeMs - statSync(a).mtimeMs)
+    .slice(0, 20)
+  const rows: FactorRow[] = []
+  for (const file of files) {
+    try {
+      const record = JSON.parse(readFileSync(file, 'utf8')) as Record<string, unknown>
+      const row = sourceReaderMacroRecordToFactorRow(record, file, fetchedAt)
+      if (row) rows.push(row)
+    } catch {
+      // Skip unreadable evidence artifacts; malformed records are not reusable.
+    }
+  }
+  return {
+    rows,
+    source: {
+      id: 'source_reader.macro_evidence',
+      name: 'SourceReader macro evidence artifacts',
+      state: rows.length > 0 ? 'ok' : 'fallback-only',
+      detail: rows.length > 0
+        ? `${rows.length} durable macro evidence artifact(s) promoted into the macro research surface.`
+        : 'No readable macro-evidence-record-v1 artifacts are currently available.',
+    },
+  }
+}
+
+function sourceReaderMacroRecordToFactorRow(
+  record: Record<string, unknown>,
+  filePath: string,
+  fetchedAt: string,
+): FactorRow | null {
+  if (record.contract !== 'macro-evidence-record-v1') return null
+  const numeric = isRecord(record.numericSeries) ? record.numericSeries : {}
+  const sourceName = stringValue(record.source) || stringValue(record.provider) || 'SourceReader'
+  const sourceDate = stringValue(record.sourceDate) || stringValue(numeric.sourceDataTime)
+  const fetched = stringValue(record.fetchedAt) || stringValue(numeric.fetchedAt) || fetchedAt
+  const title = stringValue(record.title) || `${sourceName} macro evidence`
+  const affectedAssets = stringList(record.affectedAssets)
+  const keyClaims = stringList(record.keyClaims)
+  const missingEvidence = stringList(record.missingEvidence)
+  const sourceUrl = stringValue(record.url) || null
+  return {
+    factor_id: `source_reader:${stableId(String(record.id ?? title))}`,
+    family: stringValue(record.evidenceClass) || 'macro_evidence',
+    title,
+    summary: keyClaims.join(' ') || 'Durable SourceReader macro evidence artifact.',
+    source_name: sourceName,
+    source_url: sourceUrl,
+    source_type: stringValue(record.evidenceClass) || 'source_reader_macro_evidence',
+    evidence_tier: stringValue(record.evidenceClass) || 'governed_macro_evidence',
+    source_published_at: sourceDate || null,
+    fetched_at: fetched,
+    event_at: sourceDate || null,
+    affected_assets: affectedAssets,
+    affected_regions: stringList(record.region),
+    affected_sectors: [],
+    transmission_channels: stringList(record.assetClass),
+    expected_direction: 'mixed',
+    severity: 'medium',
+    confidence: confidenceFromRecord(record),
+    access_status: sourceUrl ? 'public-or-recorded' : 'artifact-readback',
+    freshness_status: stringValue(record.freshness) || 'unknown',
+    confidence_effect: stringValue(record.confidenceEffect) || 'requires evidence review',
+    missing_evidence: missingEvidence.join('; '),
+    next_evidence_action: missingEvidence.length > 0 ? 'refresh or attach higher-tier evidence' : 'use artifact/readback',
+    asset_impact: affectedAssets.length > 0 ? 'linked' : 'needs-linking',
+    status: 'active',
+    limitations: [
+      ...missingEvidence,
+      'Macro evidence is context, hypothesis, and invalidation input, not a direct buy/sell rule.',
+    ],
+    linked_macro_evidence_ids: [String(record.id ?? '')].filter(Boolean),
+    evidence_items: [{
+      label: keyClaims[0] ?? title,
+      source_url: sourceUrl,
+      retrieved_at: fetched,
+    }],
+    macro_values: {
+      evidenceTier: stringValue(record.evidenceClass) || 'governed_macro_evidence',
+      evidenceClass: record.evidenceClass ?? null,
+      confidenceEffect: record.confidenceEffect ?? null,
+      sourceRecordPath: record.sourceRecordPath ?? null,
+      artifactPath: filePath,
+      missingEvidence,
+      limitations: [
+        ...missingEvidence,
+        'Macro evidence is context, hypothesis, and invalidation input, not a direct buy/sell rule.',
+      ],
+      linkedMacroEvidenceIds: [String(record.id ?? '')].filter(Boolean),
+      assetImpact: affectedAssets.length > 0 ? 'linked' : 'needs-linking',
+      numericSeries: numeric,
+    },
+    retrieval_test: retrieval('source_reader', 'source_reader.macro_evidence.readback', 'ok', null),
+    raw_json: record,
   }
 }
 
@@ -872,6 +996,28 @@ function readBeaKeyFile(): string | null {
   if (!existsSync(file)) return null
   const value = readFileSync(file, 'utf8').trim()
   return value.length > 0 ? value : null
+}
+
+function stringValue(value: unknown): string {
+  return String(value ?? '').trim()
+}
+
+function stringList(value: unknown): string[] {
+  if (Array.isArray(value)) return value.map(stringValue).filter(Boolean)
+  const text = stringValue(value)
+  return text ? text.split(/[;,，、]/).map((item) => item.trim()).filter(Boolean) : []
+}
+
+function isRecord(value: unknown): value is Record<string, unknown> {
+  return Boolean(value) && typeof value === 'object' && !Array.isArray(value)
+}
+
+function confidenceFromRecord(record: Record<string, unknown>): string {
+  const freshness = stringValue(record.freshness).toLowerCase()
+  const evidenceClass = stringValue(record.evidenceClass).toLowerCase()
+  if (evidenceClass.includes('official') && !freshness.includes('stale')) return 'high'
+  if (freshness.includes('stale') || freshness.includes('missing')) return 'low'
+  return 'medium'
 }
 
 function stableId(value: string): string {

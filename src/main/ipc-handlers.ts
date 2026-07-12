@@ -401,13 +401,13 @@ export function wireIPC(ctx: IPCContext): void {
   ipcMain.handle('data:macro-factors', () => {
     const ds = ctx.getDataStore()
     if (!ds || !ds.isReady) return { rows: [], sources: [], generatedAt: new Date().toISOString(), error: 'DataStore not yet initialized, please wait' }
-    return readMacroFactorRadar(ds)
+    return readMacroFactorRadar(ds, ctx.getBasePath())
   })
 
   ipcMain.handle('data:macro-factor-refresh', async () => {
     const ds = ctx.getDataStore()
     if (!ds || !ds.isReady) return { rows: [], sources: [], generatedAt: new Date().toISOString(), error: 'DataStore not yet initialized, please wait' }
-    return refreshMacroFactorRadar(ds, loadConfig(ctx.globalConfigPath()))
+    return refreshMacroFactorRadar(ds, loadConfig(ctx.globalConfigPath()), ctx.getBasePath())
   })
 
   ipcMain.handle('data:run-probes', async (_, mode: RuntimeProbeMode = 'all', probeIds: string[] = []) => {

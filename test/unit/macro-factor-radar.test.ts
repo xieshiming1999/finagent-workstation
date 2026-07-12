@@ -1,5 +1,5 @@
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
-import { cpSync, mkdtempSync, rmSync } from 'fs'
+import { cpSync, mkdirSync, mkdtempSync, rmSync, writeFileSync } from 'fs'
 import { join } from 'path'
 import { tmpdir } from 'os'
 import { DataStore } from '../../src/agent/data/store/data-store'
@@ -67,6 +67,66 @@ describe('macro factor radar persistence', () => {
       interface_id: 'macro.factor_radar',
       candidate_schema: 'market_moving_factor_v1',
       status: 'fallback-only',
+    })
+  })
+
+  it('promotes SourceReader macro evidence artifacts into macro research rows', () => {
+    const evidenceDir = join(basePath, 'memory', 'macro_evidence')
+    mkdirSync(evidenceDir, { recursive: true })
+    writeFileSync(join(evidenceDir, 'macro_eia.json'), JSON.stringify({
+      contract: 'macro-evidence-record-v1',
+      id: 'macro:eia-oil',
+      source: 'EIA',
+      provider: 'eia',
+      title: 'EIA official series WCESTUS1',
+      sourceDate: '2026-07-03',
+      topic: 'oil inventory pressure',
+      region: 'US/global',
+      assetClass: 'commodity/equity/fund',
+      keyClaims: ['US commercial crude oil inventories WCESTUS1 = 420000 MBBL as of 2026-07-03.'],
+      affectedAssets: ['oil', 'energy equities', 'A-shares'],
+      confidenceEffect: 'Adds official inventory context.',
+      freshness: 'ok',
+      evidenceClass: 'official-numeric-series',
+      numericSeries: {
+        seriesId: 'WCESTUS1',
+        metricName: 'US commercial crude oil inventories',
+        value: 420000,
+        unit: 'MBBL',
+        sourceDataTime: '2026-07-03',
+        fetchedAt: '2026-07-12T02:00:00Z',
+        provider: 'eia',
+        status: 'ok',
+      },
+      fetchedAt: '2026-07-12T02:00:00Z',
+      tradeBoundary: 'Macro numeric evidence is context, hypothesis, and invalidation input. It is not a direct buy/sell rule.',
+      missingEvidence: ['No second official source attached.'],
+    }, null, 2))
+
+    const result = readMacroFactorRadar(store, basePath)
+    const row = result.rows.find((item) => item.factor_id === 'source_reader:macro-eia-oil')
+    expect(row).toMatchObject({
+      family: 'official-numeric-series',
+      title: 'EIA official series WCESTUS1',
+      source_name: 'EIA',
+      source_type: 'official-numeric-series',
+      evidence_tier: 'official-numeric-series',
+      source_published_at: '2026-07-03',
+      fetched_at: '2026-07-12T02:00:00Z',
+      status: 'active',
+      asset_impact: 'linked',
+    })
+    expect(row?.affected_assets).toEqual(['oil', 'energy equities', 'A-shares'])
+    expect(row?.linked_macro_evidence_ids).toEqual(['macro:eia-oil'])
+    expect(row?.macro_values).toMatchObject({
+      artifactPath: join(evidenceDir, 'macro_eia.json'),
+      numericSeries: {
+        seriesId: 'WCESTUS1',
+        value: 420000,
+      },
+    })
+    expect(result.sources.find((source) => source.id === 'source_reader.macro_evidence')).toMatchObject({
+      state: 'ok',
     })
   })
 

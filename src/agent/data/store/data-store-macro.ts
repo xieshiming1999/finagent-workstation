@@ -234,6 +234,9 @@ function nextEvidenceAction(row: Row): string {
 }
 
 function assetImpact(row: Row): string {
+  const macroValues = asRecord(row.macro_values)
+  const explicit = clean(macroValues.assetImpact ?? macroValues.asset_impact)
+  if (explicit) return explicit
   const direction = clean(row.expected_direction)?.toLowerCase() ?? ''
   if (/(positive|tailwind|利好|上行)/.test(direction)) return 'positive tailwind'
   if (/(negative|headwind|利空|下行)/.test(direction)) return 'negative headwind'
