@@ -16,6 +16,16 @@ describe('ProviderRouterTool', () => {
 
     expect(result.contract).toBe('provider-router-route-v1')
     expect(result.order).toEqual(['eastmoneyDirect'])
+    expect(result.providerModules).toEqual(expect.arrayContaining([
+      expect.objectContaining({
+        provider: 'eastmoneyDirect',
+        descriptorStatus: 'registered',
+        descriptor: expect.objectContaining({
+          category: 'public-direct-http',
+        }),
+      }),
+    ]))
+    expect(result.descriptorSource.registeredProviders).toContain('macro-official')
     expect(result.skipped).toEqual(expect.arrayContaining([
       expect.objectContaining({ provider: 'tdx', reason: 'temporarily_blocked' }),
     ]))

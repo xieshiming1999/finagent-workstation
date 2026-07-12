@@ -9,6 +9,7 @@ import {
 import dataApiInterfaces from '../data/data-api-interfaces.json'
 import { globalApiStats, type ApiCallRecord } from '../data/resilience'
 import type { Tool, ToolContext } from '../tool'
+import { providerModuleDescriptors, providerModuleDescriptorVersion } from './provider-module-descriptors'
 
 export type ProviderHealthProvider = () => Array<Record<string, unknown>>
 
@@ -142,6 +143,15 @@ function route(
     runtime: 'finagent-workstation',
     task,
     order,
+    providerModules: base.map((provider) => {
+      const descriptor = descriptorForProvider(provider)
+      return {
+        provider,
+        routeEffect: order.includes(provider) ? 'selected' : 'skipped',
+        ...(descriptor ? { descriptor } : {}),
+        descriptorStatus: descriptor ? 'registered' : 'missing',
+      }
+    }),
     preferredProviders: preferred,
     skipped,
     serialProviders: order.filter(requiresSerialCalls),
@@ -152,10 +162,23 @@ function route(
       reason,
     })),
     providerHealthSource: providerHealthSource(input, healthRows),
+    descriptorSource: {
+      version: providerModuleDescriptorVersion,
+      registeredProviders: providerModuleDescriptors.map((descriptor) => descriptor.provider),
+    },
     nextAction: order.length === 0
       ? 'No provider is currently allowed. Use cache/readback, configure credentials, or clear temporary provider blocks before retrying.'
       : 'Use providers in returned order; do not override order from prompt knowledge.',
   }
+}
+
+function descriptorForProvider(provider: FinanceProvider) {
+  const candidates = provider === 'eastmoneyDirect'
+    ? ['eastmoney', 'eastmoneyDirect']
+    : provider === 'yfinance'
+      ? ['yahoo', 'yfinance']
+      : [provider]
+  return providerModuleDescriptors.find((descriptor) => candidates.includes(descriptor.provider)) ?? null
 }
 
 function combinedHealthRows(
