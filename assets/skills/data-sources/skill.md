@@ -39,6 +39,14 @@ Treat `interfaces -> interface_describe -> interface_availability -> query/fetch
 as the normal progressive-disclosure path. Use `data_health` when you need the
 broader backlog, credential state, failure queues, or dataset/provider health
 view.
+Use `ProviderRouter(action:"route", task:"quote|kline|fundamental|macro|fund")`
+when choosing or explaining providers. The route result is not just a fallback
+order: it includes provider descriptors, descriptor health, task-scoped
+`interfaceRows`, provider-scoped interface rows, canonical schemas/tables,
+normalizers, readback actions, probes, and skip/gate reasons. Cite those fields
+when explaining why a provider was selected, skipped, credential-gated,
+runtime-unavailable, output-only, disabled, or not-supported. Do not infer
+provider order from this skill or from prompt knowledge.
 Use `finance_doctor` when the workflow may be blocked by local runtime,
 session/history, DataStore, provider-route, Data Feed, sidecar, or service
 readiness. It is a local diagnostic/readiness report under `data.health`, not a
@@ -108,6 +116,12 @@ they prepare local canonical rows, then prove reuse through table/readback
 coverage. Fund Pulse manual refresh currently covers fund list, ETF quotes,
 fund performance, and stale ordinary fund NAV seeds; ordinary NAV and money-fund
 yield are separate interfaces and should not be mixed.
+
+Data Manager / Data Health also exposes the provider capability matrix. Use it
+as a user-facing explanation of provider support, gated rows, output-only rows,
+unstable rows, disabled/not-supported rows, live probe counts, and route-rule
+next actions. It is explanatory UI over code-owned contracts; it does not
+authorize bypassing `ProviderRouter` or direct provider calls.
 
 The News panel reads `news.finance_feed` through a governed route. Its rows
 should retain route provenance: interface id, provider, capability id, cache
