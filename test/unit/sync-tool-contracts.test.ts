@@ -110,6 +110,9 @@ describe('sync tool contracts', () => {
     expect(events[0]).toMatchObject({ type: 'dashboard-open', title: 'Page', path: htmlPath })
     expect(result.observed).toBe(true)
     expect(result.panel.type).toBe('dashboard')
+    expect(result.artifact.kind).toBe('dashboard')
+    expect(result.artifact.path).toBe('page.html')
+    expect(result.artifact.provenance.source).toBe('UIControl:openPage')
   })
 
   it('UIControl openPage resolves memory-relative page paths from the runtime root', async () => {
@@ -129,6 +132,12 @@ describe('sync tool contracts', () => {
 
     expect(events[0]).toMatchObject({ type: 'dashboard-open', title: 'Market', path: htmlPath })
     expect(result.path).toBe(htmlPath)
+    expect(result.artifact.kind).toBe('dashboard')
+    expect(result.artifact.path).toBe('memory/pages/market.html')
+    expect(new ArtifactRegistry(basePath).list('dashboard')[0]).toMatchObject({
+      path: 'memory/pages/market.html',
+      source: 'UIControl:openPage',
+    })
     expect(result.observed).toBe(true)
   })
 

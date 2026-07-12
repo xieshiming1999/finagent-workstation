@@ -1,5 +1,6 @@
 import { existsSync, readFileSync } from 'fs'
-import { isAbsolute, resolve } from 'path'
+import { isAbsolute, relative, resolve } from 'path'
+import { ArtifactRegistry } from '../artifact-registry'
 import type { Tool, ToolContext } from '../tool'
 import { toolError } from '../tool'
 
@@ -177,12 +178,14 @@ export class UIControlTool implements Tool {
         const observed = await this.waitForPanel((p) =>
           p.type === 'dashboard' && (p.id === `dash-${id}` || normalizeUrl(p.url) === normalizeUrl(fullPath))
         )
+        const artifact = registerOpenedPageArtifact(ctx, fullPath, displayTitle, action, id)
         return JSON.stringify({
           ok: true,
           action: 'openPage',
           path: fullPath,
           title: displayTitle,
           id,
+          artifact,
           observed: Boolean(observed),
           panel: observed,
           note: observed
@@ -202,12 +205,14 @@ export class UIControlTool implements Tool {
         const observed = await this.waitForPanel((p) =>
           p.type === 'dashboard' && (p.id === `dash-${id}` || normalizeUrl(p.url) === normalizeUrl(fullPath))
         )
+        const artifact = registerOpenedPageArtifact(ctx, fullPath, displayTitle, action, id)
         return JSON.stringify({
           ok: true,
           action: 'addPage',
           path: fullPath,
           title: displayTitle,
           id,
+          artifact,
           observed: Boolean(observed),
           panel: observed,
         })
@@ -338,6 +343,46 @@ function hashString(value: string): number {
 
 function normalizeUrl(url: string): string {
   return url.split('?')[0].replace(/^file:\/\//, '').replace(/\/+$/, '')
+}
+
+function registerOpenedPageArtifact(
+  ctx: ToolContext,
+  fullPath: string,
+  title: string,
+  action: string,
+  dashboardId: string,
+): Record<string, unknown> {
+  const path = artifactPathFor(ctx, fullPath)
+  const record = new ArtifactRegistry(ctx.basePath).register({
+    kind: 'dashboard',
+    path,
+    title,
+    source: `UIControl:${action}`,
+    id: `dashboard:${path}`,
+    verificationStatus: 'unverified',
+    freshness: {
+      fetchedAt: new Date().toISOString(),
+      status: 'unknown',
+    },
+    provenance: {
+      source: `UIControl:${action}`,
+      dashboardId,
+      rendererPath: fullPath,
+    },
+    metadata: {
+      dashboardId,
+      uiAction: action,
+      rendererPath: fullPath,
+    },
+  })
+  return record
+}
+
+function artifactPathFor(ctx: ToolContext, fullPath: string): string {
+  const rel = relative(ctx.basePath, fullPath)
+  return rel && !rel.startsWith('..') && !isAbsolute(rel)
+    ? rel.replace(/\\/g, '/')
+    : fullPath
 }
 
 function uiControlHelp(): string {
