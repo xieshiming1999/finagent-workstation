@@ -117,6 +117,15 @@ export class WorkflowVerifierTool implements Tool {
         items: { type: 'object' },
         description: 'Optional provider-health rows from ProviderRouter/API health/probes. Blocking statuses fail this verifier check.',
       },
+      strategyId: {
+        type: 'string',
+        description: 'Optional saved StrategySpec id expected in strategy_rerun evidence.',
+      },
+      targetSymbols: {
+        type: 'array',
+        items: { type: 'string' },
+        description: 'Optional target symbols expected in custom_strategy_run evidence.',
+      },
       limit: { type: 'integer', minimum: 1, maximum: 100 },
     },
   }
@@ -146,6 +155,8 @@ export class WorkflowVerifierTool implements Tool {
       workflowStateId: optionalString(input.workflowStateId),
       requireWorkflowState: input.requireWorkflowState === true,
       providerHealth: input.providerHealth,
+      strategyId: optionalString(input.strategyId),
+      targetSymbols: stringList(input.targetSymbols),
       limit: clampLimit(input.limit),
     }))
   }
@@ -180,10 +191,12 @@ function checkWorkflow(
     workflow: string
     spec: WorkflowSpec
     artifactId?: string
-    workflowStateId?: string
-    requireWorkflowState: boolean
-    providerHealth: unknown
-    limit: number
+      workflowStateId?: string
+      requireWorkflowState: boolean
+      providerHealth: unknown
+      strategyId?: string
+      targetSymbols: string[]
+      limit: number
   },
 ): Record<string, unknown> {
   const session = readSession(ctx, input.limit)
@@ -195,9 +208,13 @@ function checkWorkflow(
     required: input.requireWorkflowState || !!input.workflowStateId,
   })
   const providerHealthEvidence = providerHealthEvidenceFor(input.providerHealth)
-  const workflowSpecificEvidence = workflowSpecificEvidenceFor(input.workflow, session)
+  const workflowSpecificEvidence = workflowSpecificEvidenceFor(input.workflow, session, {
+    strategyId: input.strategyId,
+    targetSymbols: input.targetSymbols,
+  })
   const toolNames = new Set(session.toolNames)
   const usedRequiredTool = input.spec.requiredAnyTools.some((name) => toolNames.has(name))
+  const unrecoveredErrors = unrecoveredToolErrors(session)
   const checks = [
     check('tool_calls_present', session.toolCallCount > 0, 'At least one tool call is visible.', 'No tool call is visible for this workflow.'),
     check(
@@ -206,7 +223,14 @@ function checkWorkflow(
       'A required tool family was used.',
       `No required tool family was used. Expected one of: ${input.spec.requiredAnyTools.join(', ')}.`,
     ),
-    check('no_tool_errors', session.toolErrorCount === 0, 'No tool errors are visible.', `${session.toolErrorCount} tool error(s) are visible.`),
+    check(
+      'no_tool_errors',
+      unrecoveredErrors.length === 0,
+      session.toolErrorCount === 0
+        ? 'No tool errors are visible.'
+        : `${session.toolErrorCount - unrecoveredErrors.length} recovered tool error(s); no unrecovered tool errors remain.`,
+      `${unrecoveredErrors.length} unrecovered tool error(s) are visible: ${unrecoveredErrors.join('; ')}`,
+    ),
     check('no_pending_interactions', pending.length === 0, 'No pending AskUserQuestion or approval is visible.', `${pending.length} pending interaction(s) must be resolved before finalizing.`),
     check('artifact_evidence', artifactEvidence.passed, artifactEvidence.reason, artifactEvidence.reason),
     check(
@@ -260,7 +284,7 @@ function readSession(ctx: ToolContext, limit: number): SessionEvidence {
   const calls: ToolCallEvidence[] = []
   let toolCallCount = 0
   let toolErrorCount = 0
-  for (const line of readFileSync(file, 'utf8').split('\n').slice(0, limit)) {
+  for (const line of readFileSync(file, 'utf8').split('\n').slice(-limit)) {
     const text = line.trim()
     if (!text) continue
     try {
@@ -305,11 +329,15 @@ function readSession(ctx: ToolContext, limit: number): SessionEvidence {
   return { toolCallCount, toolErrorCount, toolNames: [...toolNames], calls }
 }
 
-function workflowSpecificEvidenceFor(workflow: string, session: SessionEvidence): {
+function workflowSpecificEvidenceFor(workflow: string, session: SessionEvidence, expected: {
+  strategyId?: string
+  targetSymbols: string[]
+}): {
   checks: ReturnType<typeof check>[]
   observed: Record<string, unknown>
 } {
   if (workflow === 'fund_selection') return fundSelectionEvidenceFor(session)
+  if (workflow === 'strategy_rerun') return strategyRerunEvidenceFor(session, expected)
   return { checks: [], observed: {} }
 }
 
@@ -385,6 +413,105 @@ function summarizeCall(call: ToolCallEvidence | undefined): Record<string, unkno
     code: call.input.code ?? call.input.fundCode ?? call.input.symbol,
     resultPreview: (call.result ?? '').slice(0, 220),
   }
+}
+
+function strategyRerunEvidenceFor(session: SessionEvidence, expected: {
+  strategyId?: string
+  targetSymbols: string[]
+}): {
+  checks: ReturnType<typeof check>[]
+  observed: Record<string, unknown>
+} {
+  const rerunCalls = successfulActions(session, 'custom_strategy_run')
+  const successfulRuns = rerunCalls
+    .map((call) => ({ call, payload: parseStrategyRunPayload(call) }))
+    .filter((item) => item.payload?.action === 'custom_strategy_run')
+  const strategyMatched = !expected.strategyId || successfulRuns.some((item) => {
+    const inputId = String(item.call.input.strategyId ?? item.call.input.strategy_id ?? '')
+    const outputId = String(item.payload?.strategyId ?? item.payload?.strategy_id ?? '')
+    return inputId === expected.strategyId || outputId === expected.strategyId
+  })
+  const missingTargets = expected.targetSymbols.filter((symbol) => !successfulRuns.some((item) => {
+    const observed = observedSymbolsForStrategyRun(item.call, item.payload)
+    return observed.has(normalizeSymbol(symbol))
+  }))
+  return {
+    checks: [
+      check(
+        'strategy_rerun_call',
+        successfulRuns.length > 0,
+        'A successful custom_strategy_run result is visible.',
+        'Strategy rerun needs MarketData(action:"custom_strategy_run") evidence before finalizing.',
+      ),
+      check(
+        'strategy_rerun_strategy_identity',
+        strategyMatched,
+        expected.strategyId
+          ? `custom_strategy_run evidence matches strategyId ${expected.strategyId}.`
+          : 'No specific strategyId was required for this check.',
+        `custom_strategy_run evidence does not match required strategyId ${expected.strategyId}.`,
+      ),
+      check(
+        'strategy_rerun_target_symbols',
+        missingTargets.length === 0,
+        expected.targetSymbols.length > 0
+          ? `custom_strategy_run evidence covers target symbol(s): ${expected.targetSymbols.join(', ')}.`
+          : 'No specific target symbol was required for this check.',
+        `custom_strategy_run evidence is missing target symbol(s): ${missingTargets.join(', ')}.`,
+      ),
+    ],
+    observed: {
+      expectedStrategyId: expected.strategyId ?? null,
+      expectedTargetSymbols: expected.targetSymbols,
+      runs: successfulRuns.map((item) => ({
+        input: item.call.input,
+        strategyId: item.payload?.strategyId ?? item.payload?.strategy_id ?? null,
+        action: item.payload?.action ?? null,
+        code: item.payload?.code ?? item.payload?.symbol ?? null,
+        dataCoverage: objectValue(item.payload?.dataCoverage) ?? null,
+      })),
+    },
+  }
+}
+
+function successfulActions(session: SessionEvidence, action: string): ToolCallEvidence[] {
+  return session.calls.filter((call) => {
+    if (call.isError) return false
+    if (String(call.input.action ?? '') !== action) return false
+    const result = call.result ?? ''
+    return !result.startsWith('Skipped:')
+  })
+}
+
+function parseJsonObject(value: string | undefined): Record<string, unknown> | undefined {
+  if (!value) return undefined
+  try {
+    const decoded = JSON.parse(value)
+    return objectValue(decoded)
+  } catch {
+    return undefined
+  }
+}
+
+function observedSymbolsForStrategyRun(call: ToolCallEvidence, payload: Record<string, unknown> | undefined): Set<string> {
+  const symbols = new Set<string>()
+  for (const value of [
+    call.input.code,
+    call.input.symbol,
+    payload?.code,
+    payload?.symbol,
+    objectValue(payload?.dataCoverage)?.symbol,
+  ]) {
+    const normalized = normalizeSymbol(value)
+    if (normalized) symbols.add(normalized)
+  }
+  for (const value of [call.input.codes, call.input.symbols]) {
+    for (const item of stringList(value)) {
+      const normalized = normalizeSymbol(item)
+      if (normalized) symbols.add(normalized)
+    }
+  }
+  return symbols
 }
 
 function artifactEvidenceFor(ctx: ToolContext, spec: WorkflowSpec, artifactId?: string): {
@@ -619,6 +746,22 @@ function workflowKindForVerifierWorkflow(workflow: string): string {
   }
 }
 
+function unrecoveredToolErrors(session: SessionEvidence): string[] {
+  const failures: string[] = []
+  for (let index = 0; index < session.calls.length; index++) {
+    const call = session.calls[index]
+    if (!call.isError) continue
+    const action = String(call.input.action ?? '')
+    const recovered = session.calls.slice(index + 1).some((later) =>
+      !later.isError &&
+      later.name === call.name &&
+      String(later.input.action ?? '') === action
+    )
+    if (!recovered) failures.push(action ? `${call.name}.${action}` : call.name)
+  }
+  return failures
+}
+
 function check(id: string, passed: boolean, passedMessage: string, failedMessage: string): {
   id: string
   passed: boolean
@@ -636,8 +779,38 @@ function optionalString(value: unknown): string | undefined {
   return text || undefined
 }
 
+function parseStrategyRunPayload(call: ToolCallEvidence): Record<string, unknown> {
+  const parsed = parseJsonObject(call.result)
+  if (parsed?.action === 'custom_strategy_run') return parsed
+  const result = call.result ?? ''
+  return {
+    action: 'custom_strategy_run',
+    strategyId: call.input.strategyId ?? result.match(/"strategyId"\s*:\s*"([^"]+)"/)?.[1],
+    strategy_id: call.input.strategy_id,
+    code: call.input.code ?? call.input.symbol ?? firstInputSymbol(call.input) ??
+      result.match(/"code"\s*:\s*"([^"]+)"/)?.[1] ??
+      result.match(/"symbol"\s*:\s*"([^"]+)"/)?.[1],
+  }
+}
+
+function firstInputSymbol(input: Record<string, unknown>): string | undefined {
+  const symbols = input.symbols
+  return Array.isArray(symbols) && symbols.length > 0
+    ? String(symbols[0])
+    : undefined
+}
+
 function objectValue(value: unknown): Record<string, unknown> | undefined {
   return value && typeof value === 'object' && !Array.isArray(value)
     ? value as Record<string, unknown>
     : undefined
+}
+
+function stringList(value: unknown): string[] {
+  if (!Array.isArray(value)) return []
+  return value.map((item) => String(item).trim()).filter(Boolean)
+}
+
+function normalizeSymbol(value: unknown): string {
+  return String(value ?? '').trim().toUpperCase()
 }

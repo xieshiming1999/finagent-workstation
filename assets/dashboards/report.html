@@ -161,7 +161,9 @@ function renderCandidateTable(candidates) {
   html += '</tr></thead><tbody>';
   rows.forEach(function(row) {
     html += '<tr>';
-    row.forEach(function(cell) { html += '<td>' + escapeHtml(cell).replace(/&lt;br&gt;/g, '<br>') + '</td>'; });
+    normalizeTableCells(row, ['候选', '理由', '来源/时间', '观察条件', '风险'], []).forEach(function(cell) {
+      html += '<td>' + escapeHtml(cell).replace(/&lt;br&gt;/g, '<br>') + '</td>';
+    });
     html += '</tr>';
   });
   html += '</tbody></table>';

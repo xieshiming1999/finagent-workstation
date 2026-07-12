@@ -125,7 +125,19 @@ describe('WorkflowVerifierTool', () => {
 
   it('accepts strategy rerun with strategy tool evidence and matching state', async () => {
     const ctx = tempToolContext()
-    seedSession(ctx, 'MarketData')
+    seedSessionCalls(ctx, [
+      {
+        id: 'tool-1',
+        name: 'MarketData',
+        input: { action: 'custom_strategy_run', strategyId: 'custom_moutai_ema_trend_v1_v1', symbols: ['300059'] },
+        result: JSON.stringify({
+          action: 'custom_strategy_run',
+          strategyId: 'custom_moutai_ema_trend_v1_v1',
+          code: '300059',
+          dataCoverage: { symbol: '300059', sufficient: true },
+        }),
+      },
+    ])
     seedWorkflowState(ctx, 'strategy_rerun')
     new ArtifactRegistry(ctx.basePath).register({
       kind: 'backtest',
@@ -139,10 +151,49 @@ describe('WorkflowVerifierTool', () => {
       action: 'check',
       workflow: 'strategy_rerun',
       requireWorkflowState: true,
+      strategyId: 'custom_moutai_ema_trend_v1_v1',
+      targetSymbols: ['300059'],
     }, ctx))
 
     expect(result.passed).toBe(true)
     expect(result.missing).toEqual([])
+  })
+
+  it('rejects strategy rerun when custom_strategy_run did not cover the selected target', async () => {
+    const ctx = tempToolContext()
+    seedSessionCalls(ctx, [
+      {
+        id: 'tool-1',
+        name: 'MarketData',
+        input: { action: 'custom_strategy_run', strategyId: 'custom_moutai_ema_trend_v1_v1', symbols: ['600519'] },
+        result: JSON.stringify({
+          action: 'custom_strategy_run',
+          strategyId: 'custom_moutai_ema_trend_v1_v1',
+          code: '600519',
+          dataCoverage: { symbol: '600519', sufficient: true },
+        }),
+      },
+    ])
+    seedWorkflowState(ctx, 'strategy_rerun')
+    new ArtifactRegistry(ctx.basePath).register({
+      kind: 'backtest',
+      path: 'memory/reports/backtest.md',
+      title: 'Backtest',
+      source: 'agent-workflow',
+      verificationStatus: 'verified',
+    })
+
+    const result = JSON.parse(await new WorkflowVerifierTool().call('verify-rerun-target', {
+      action: 'check',
+      workflow: 'strategy_rerun',
+      requireWorkflowState: true,
+      strategyId: 'custom_moutai_ema_trend_v1_v1',
+      targetSymbols: ['300059'],
+    }, ctx))
+
+    expect(result.passed).toBe(false)
+    expect(result.missing).toContain('strategy_rerun_target_symbols')
+    expect(result.nextAction).toContain('Do not finalize yet')
   })
 
   it('accepts trade review with simulated trading evidence and matching state', async () => {

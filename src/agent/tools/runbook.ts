@@ -122,15 +122,21 @@ const RUNBOOKS: Record<string, Runbook> = {
     workflow: 'strategy_rerun',
     purpose: 'Reuse a saved StrategySpec identity on another symbol, validate compatibility, rerun backtest, and compare evidence.',
     requiredEvidence: ['saved_strategy_identity', 'StrategySpec', 'validation_report', 'backtest_data_coverage', 'comparison_report'],
-    allowedTools: ['Runbook', 'MarketData', 'DataProcess', 'ArtifactRegistry', 'WorkflowEvidence', 'CapabilityStatus'],
+    allowedTools: ['Runbook', 'MarketData', 'DataProcess', 'ArtifactRegistry', 'WorkflowEvidence', 'WorkflowVerifier', 'CapabilityStatus'],
     artifactTypes: ['strategy', 'backtest', 'report'],
     approvalBoundary: 'Read-only strategy reuse/backtest. No watchlist mutation or simulated trade unless the user explicitly asks for a later workflow.',
     failureHandling: [
       'Do not recreate a strategy from prose when a saved id/spec is required.',
+      'If saved strategy id or target symbol is ambiguous, call AskUserQuestion; do not end the turn with a prose-only question.',
       'If no saved strategy exists, create a clearly labelled candidate StrategySpec and stop before pretending it was saved.',
       'Report unsupported indicators, data coverage gaps, fees/slippage assumptions, and benchmark limits.',
     ],
-    verifier: 'WorkflowVerifier(action:"check", workflow:"strategy_rerun") before final strategy-rerun claims.',
+    firstPassPlan: [
+      'Use custom_strategy_list or custom_strategy_read to retrieve the saved strategy identity/spec.',
+      'If the target strategy or target symbol is ambiguous, call AskUserQuestion once and then call MarketData(action:"custom_strategy_run", strategyId:<selected>, symbols:[<target>]).',
+      'Run WorkflowVerifier(action:"check", workflow:"strategy_rerun", strategyId:<selected>, targetSymbols:[<target>]) before final strategy-rerun claims.',
+    ],
+    verifier: 'WorkflowVerifier(action:"check", workflow:"strategy_rerun", strategyId:<selected>, targetSymbols:[<target>]) before final strategy-rerun claims.',
   },
   trade_preparation: {
     workflow: 'trade_preparation',

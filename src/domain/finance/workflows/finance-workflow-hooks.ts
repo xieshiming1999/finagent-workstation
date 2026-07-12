@@ -601,6 +601,7 @@ export function maybeBuildFinanceBoundedAnswer(messages: Message[]): string | nu
   ) {
     return macroEvidenceAnswer
   }
+  if (hasRequiredVerifierPendingBeforeAnswer(messages, workflowState, lastUserIndex)) return null
   const customStrategyRunComparisonAnswer = maybeBuildCustomStrategyRunComparisonAnswer(messages.slice(lastUserIndex))
   if (customStrategyRunComparisonAnswer) return customStrategyRunComparisonAnswer
   const customStrategySaveRunBoundaryAnswer = maybeBuildCustomStrategySaveRunBoundaryAnswer(messages.slice(lastUserIndex))
@@ -661,6 +662,9 @@ export function buildFinanceRecovery(messages: Message[]): DomainRecovery | null
   const macroArtifactRecovery = buildMacroArtifactFinalizationRecovery(messages)
   if (macroArtifactRecovery) return macroArtifactRecovery
 
+  const requiredVerifierRecovery = buildRequiredVerifierRecovery(messages)
+  if (requiredVerifierRecovery) return requiredVerifierRecovery
+
   const macroStockRecovery = buildMacroStockQuoteRecovery(messages)
   if (macroStockRecovery) {
     return {
@@ -670,6 +674,61 @@ export function buildFinanceRecovery(messages: Message[]): DomainRecovery | null
   }
 
   return null
+}
+
+function buildRequiredVerifierRecovery(messages: Message[]): DomainRecovery | null {
+  const lastUserIndex = findLastIndex(messages, (message) => message.role === Role.User)
+  if (lastUserIndex < 0) return null
+  const workflowState = latestFinanceWorkflowState(messages, lastUserIndex)
+  const requiredVerifier = workflowState?.requiredVerifier
+  if (!requiredVerifier || requiredVerifier.tool !== 'WorkflowVerifier') return null
+  const workflow = stringValue(requiredVerifier.workflow) ?? stringValue(workflowState?.workflowKind)
+  if (!workflow) return null
+  const turnMessages = messages.slice(lastUserIndex)
+  if (hasPassingWorkflowVerifierCheck(turnMessages, workflow)) return null
+  const input: Record<string, unknown> = {
+    action: 'check',
+    workflow,
+    requireWorkflowState: false,
+  }
+
+  if (workflow === 'strategy_rerun') {
+    const payload = latestSuccessfulToolActionPayload(turnMessages, 'MarketData', 'custom_strategy_run')
+    if (!payload) return null
+    const strategyId = stringValue(payload.strategyId)
+    const target = stringValue(payload.code) ??
+      stringValue(payload.symbol) ??
+      firstString(payload.symbols) ??
+      firstString(payload.targetSymbols)
+    if (strategyId) input.strategyId = strategyId
+    if (target) input.targetSymbols = [target]
+  }
+
+  return {
+    toolCalls: [{
+      id: `required-workflow-verifier-${Date.now()}`,
+      name: 'WorkflowVerifier',
+      input,
+    }],
+    answerAfterTools: maybeBuildFinanceBoundedAnswer,
+  }
+}
+
+function hasRequiredVerifierPendingBeforeAnswer(
+  messages: Message[],
+  workflowState: FinanceWorkflowState | null,
+  lastUserIndex: number,
+): boolean {
+  const requiredVerifier = workflowState?.requiredVerifier
+  if (!requiredVerifier || requiredVerifier.tool !== 'WorkflowVerifier') return false
+  const workflow = stringValue(requiredVerifier.workflow) ?? stringValue(workflowState?.workflowKind)
+  if (!workflow) return false
+  const turnMessages = messages.slice(lastUserIndex)
+  if (hasPassingWorkflowVerifierCheck(turnMessages, workflow)) return false
+  if (workflow === 'strategy_rerun') {
+    return !!latestSuccessfulToolActionPayload(turnMessages, 'MarketData', 'custom_strategy_run')
+  }
+  return false
 }
 
 function buildMacroArtifactFinalizationRecovery(messages: Message[]): DomainRecovery | null {
@@ -787,6 +846,33 @@ function macroArtifactFinalizationGate(
   }
 }
 
+function hasPassingWorkflowVerifierCheck(messages: Message[], workflow: string): boolean {
+  const callById = new Set<string>()
+  for (const message of messages) {
+    if (message.role !== Role.Assistant) continue
+    for (const call of message.toolUses ?? []) {
+      if (call.name !== 'WorkflowVerifier') continue
+      if (String(call.input.action ?? '') !== 'check') continue
+      if (String(call.input.workflow ?? '') !== workflow) continue
+      callById.add(call.id)
+    }
+  }
+  for (const message of messages) {
+    const result = message.toolResult
+    if (message.role !== Role.Tool || !result || result.isError || !callById.has(result.toolUseId)) continue
+    try {
+      const decoded = JSON.parse(result.content)
+      if (decoded && typeof decoded === 'object' && !Array.isArray(decoded) &&
+        (decoded as Record<string, unknown>).passed === true) {
+        return true
+      }
+    } catch {
+      continue
+    }
+  }
+  return false
+}
+
 function hasSuccessfulToolAction(messages: Message[], toolName: string, action: string): boolean {
   const callById = new Map<string, ToolUse>()
   for (const message of messages) {
@@ -803,6 +889,35 @@ function hasSuccessfulToolAction(messages: Message[], toolName: string, action: 
     if (callById.has(result.toolUseId)) return true
   }
   return false
+}
+
+function latestSuccessfulToolActionPayload(
+  messages: Message[],
+  toolName: string,
+  action: string,
+): Record<string, unknown> | null {
+  const callById = new Set<string>()
+  for (const message of messages) {
+    if (message.role !== Role.Assistant) continue
+    for (const call of message.toolUses ?? []) {
+      if (call.name === toolName && String(call.input.action ?? '') === action) {
+        callById.add(call.id)
+      }
+    }
+  }
+  for (const message of [...messages].reverse()) {
+    const result = message.toolResult
+    if (message.role !== Role.Tool || !result || result.isError || !callById.has(result.toolUseId)) continue
+    try {
+      const decoded = JSON.parse(result.content)
+      return decoded && typeof decoded === 'object' && !Array.isArray(decoded)
+        ? decoded as Record<string, unknown>
+        : null
+    } catch {
+      return null
+    }
+  }
+  return null
 }
 
 function firstOrDefault(values: string[], fallback: string): string {
