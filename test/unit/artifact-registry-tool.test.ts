@@ -1,4 +1,4 @@
-import { mkdirSync, mkdtempSync } from 'node:fs'
+import { existsSync, mkdirSync, mkdtempSync } from 'node:fs'
 import { tmpdir } from 'node:os'
 import { join } from 'node:path'
 import { describe, expect, it } from 'vitest'
@@ -62,8 +62,24 @@ describe('ArtifactRegistryTool', () => {
     await expect(new ArtifactRegistryTool().call('artifact-4', {
       action: 'register',
       kind: 'analysis',
-      path: 'memory/reports/stock-analysis.md',
-    }, ctx)).rejects.toThrow('requires non-empty path, title, and source')
+      title: 'Stock analysis',
+    }, ctx)).rejects.toThrow('requires non-empty title and source')
+  })
+
+  it('creates a managed artifact file when register omits path', async () => {
+    const ctx = tempToolContext()
+    const created = JSON.parse(await new ArtifactRegistryTool().call('artifact-managed', {
+      action: 'register',
+      kind: 'macro_evidence',
+      title: 'Energy macro evidence',
+      source: 'EIA',
+      metadata: { topic: 'energy', affectedAssets: ['energy equities'] },
+    }, ctx))
+
+    expect(created.contract).toBe('artifact-registry-record-v1')
+    expect(created.managedArtifact).toBe(true)
+    expect(created.artifact.path).toMatch(/^memory\/artifacts\/macro_evidence\/.+\.json$/)
+    expect(existsSync(join(ctx.basePath, created.artifact.path))).toBe(true)
   })
 })
 

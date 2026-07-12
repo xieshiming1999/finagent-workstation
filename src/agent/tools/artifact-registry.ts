@@ -1,3 +1,6 @@
+import { mkdirSync, writeFileSync } from 'node:fs'
+import { createHash } from 'node:crypto'
+import { dirname, join } from 'node:path'
 import { ArtifactRegistry, type ArtifactKind, type ArtifactVerificationStatus } from '../artifact-registry'
 import type { Tool, ToolContext } from '../tool'
 
@@ -73,7 +76,7 @@ export class ArtifactRegistryTool implements Tool {
     if (action === 'help') return JSON.stringify(help())
     if (action === 'list') return JSON.stringify(listArtifacts(registry, input))
     if (action === 'get') return JSON.stringify(getArtifact(registry, input))
-    if (action === 'register') return JSON.stringify(registerArtifact(registry, input))
+    if (action === 'register') return JSON.stringify(registerArtifact(registry, input, ctx))
     if (action === 'graph') return JSON.stringify(graphArtifacts(registry, input))
     throw new Error(`Invalid ArtifactRegistry action "${action}". Use action="help" for supported actions.`)
   }
@@ -119,13 +122,18 @@ function getArtifact(registry: ArtifactRegistry, input: Record<string, unknown>)
   }
 }
 
-function registerArtifact(registry: ArtifactRegistry, input: Record<string, unknown>): Record<string, unknown> {
+function registerArtifact(registry: ArtifactRegistry, input: Record<string, unknown>, ctx: ToolContext): Record<string, unknown> {
   const kind = parseKind(input.kind, true)
-  const path = String(input.path ?? '').trim()
+  let path = String(input.path ?? '').trim()
   const title = String(input.title ?? '').trim()
   const source = String(input.source ?? '').trim()
-  if (!path || !title || !source) {
-    throw new Error('ArtifactRegistry(action:"register") requires non-empty path, title, and source.')
+  if (!title || !source) {
+    throw new Error('ArtifactRegistry(action:"register") requires non-empty title and source. Provide path for an existing artifact, or omit path to let ArtifactRegistry create a managed artifact file.')
+  }
+  let managedArtifact = false
+  if (!path) {
+    path = writeManagedArtifact(ctx, kind, input, title, source)
+    managedArtifact = true
   }
   const record = registry.register({
     kind,
@@ -142,8 +150,41 @@ function registerArtifact(registry: ArtifactRegistry, input: Record<string, unkn
   })
   return {
     contract: 'artifact-registry-record-v1',
+    managedArtifact,
     artifact: record,
   }
+}
+
+function writeManagedArtifact(
+  ctx: ToolContext,
+  kind: ArtifactKind,
+  input: Record<string, unknown>,
+  title: string,
+  source: string,
+): string {
+  const createdAt = new Date().toISOString()
+  const metadata = objectValue(input.metadata) ?? {}
+  const provenance = objectValue(input.provenance) ?? {}
+  const freshness = objectValue(input.freshness) ?? {}
+  const digest = createHash('sha256')
+    .update(JSON.stringify({ kind, title, source, metadata, provenance, freshness }))
+    .digest('hex')
+    .slice(0, 16)
+  const relativePath = `memory/artifacts/${kind}/${digest}.json`
+  const absolutePath = join(ctx.basePath, relativePath)
+  mkdirSync(dirname(absolutePath), { recursive: true })
+  writeFileSync(absolutePath, `${JSON.stringify({
+    contract: 'managed-artifact-v1',
+    kind,
+    title,
+    source,
+    createdAt,
+    freshness,
+    provenance: Object.keys(provenance).length ? provenance : { source },
+    links: stringList(input.links),
+    metadata,
+  }, null, 2)}\n`, 'utf-8')
+  return relativePath
 }
 
 function graphArtifacts(registry: ArtifactRegistry, input: Record<string, unknown>): Record<string, unknown> {
