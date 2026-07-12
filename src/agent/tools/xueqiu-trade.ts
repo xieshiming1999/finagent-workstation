@@ -107,11 +107,12 @@ export class XueqiuTradeTool implements Tool {
       '- preview_order: validate and estimate an order without writing to Xueqiu',
       '- buy / sell: place simulated stock trades; require symbol, shares, price',
       '- transfer_in / transfer_out: add or remove cash; require amount',
+      '- if a MONI write is rejected, stop the write workflow, read back position/history if needed, and report the provider rejection; do not retry the same write or use Portfolio fallback',
       '',
       'Sizing contract:',
       '- MONI uses explicit shares in this tested contract; do not impose the local Portfolio 100-share lot rule on XueqiuTrade sizing.',
       '- For sizing-only requests or prompts that say not to trade, read portfolios/balance/position/quote and answer with calculation only; do not ask execution confirmation, preview, buy, sell, or transfer.',
-      '- If the user later explicitly authorizes execution, use preview_order first and let its provider result decide whether a share count is accepted.',
+      '- If the user later explicitly authorizes execution, use preview_order first; preview is read-only evidence and cannot guarantee that transaction/add.json will accept the final write.',
       '',
       'Examples:',
       'XueqiuTrade(action: "portfolios")',
@@ -282,7 +283,17 @@ export class XueqiuTradeTool implements Tool {
       tax_rate: String(Number(input.tax_rate ?? 1)),
       commission_rate: String(Number(input.commission_rate ?? 1)),
     })
-    const response = await this.postJson('https://tc.xueqiu.com/tc/snowx/MONI/transaction/add.json', payload)
+    const response = await this.postJson('https://tc.xueqiu.com/tc/snowx/MONI/transaction/add.json', payload, {
+      action: type === 1 ? 'buy' : 'sell',
+      endpoint: 'MONI/transaction/add.json',
+      portfolio: group.name,
+      gid: group.gid,
+      symbol,
+      shares,
+      price,
+      date: payload.get('date') ?? '',
+      type,
+    })
     const readback = await this.postWriteReadback(group, {
       kind: 'trade',
       symbol,
@@ -314,7 +325,16 @@ export class XueqiuTradeTool implements Tool {
       market: typeof input.market === 'string' && input.market.trim() ? input.market.trim() : 'CHA',
       amount: this.formatNumber(amount),
     })
-    const response = await this.postJson('https://tc.xueqiu.com/tc/snowx/MONI/bank_transfer/add.json', payload)
+    const response = await this.postJson('https://tc.xueqiu.com/tc/snowx/MONI/bank_transfer/add.json', payload, {
+      action: type === 1 ? 'transfer_in' : 'transfer_out',
+      endpoint: 'MONI/bank_transfer/add.json',
+      portfolio: group.name,
+      gid: group.gid,
+      amount,
+      date: payload.get('date') ?? '',
+      market: payload.get('market') ?? '',
+      type,
+    })
     const readback = await this.postWriteReadback(group, {
       kind: 'transfer',
       row: 100,
@@ -501,11 +521,11 @@ export class XueqiuTradeTool implements Tool {
     const res = await this.fetchImpl(url, { headers: this.headers() })
     if (!res.ok) return toolError(`HTTP ${res.status} calling ${url}`)
     const json = await res.json() as any
-    this.ensureSuccess(json)
+    this.ensureSuccess(json, { method: 'GET', endpoint: this.safeEndpoint(url) })
     return json
   }
 
-  private async postJson(url: string, body: URLSearchParams): Promise<any> {
+  private async postJson(url: string, body: URLSearchParams, request?: Record<string, unknown>): Promise<any> {
     await this.throttle()
     const res = await this.fetchImpl(url, {
       method: 'POST',
@@ -514,16 +534,63 @@ export class XueqiuTradeTool implements Tool {
     })
     if (!res.ok) return toolError(`HTTP ${res.status} calling ${url}`)
     const json = await res.json() as any
-    this.ensureSuccess(json)
+    this.ensureSuccess(json, {
+      method: 'POST',
+      endpoint: this.safeEndpoint(url),
+      request,
+    })
     return json
   }
 
-  private ensureSuccess(payload: any): void {
+  private ensureSuccess(payload: any, context: { method: string; endpoint: string; request?: Record<string, unknown> }): void {
     const code = String(payload?.result_code ?? payload?.error_code ?? payload?.code ?? '')
     const msg = String(payload?.msg ?? payload?.error_description ?? '').trim()
     if (code === '400016' || code === 'LOGIN_REQUIRED') toolError('Xueqiu cookie expired. Update XQ_COOKIE in Settings > Finance.')
     if (payload?.success === false || (code && code !== '60000')) {
-      toolError(`Xueqiu API error ${code}${msg ? `: ${msg}` : ''}`)
+      toolError(JSON.stringify({
+        error: 'xueqiu_provider_rejected_request',
+        provider: 'xueqiu',
+        surface: 'xueqiu_moni',
+        method: context.method,
+        endpoint: context.endpoint,
+        resultCode: code || null,
+        message: msg || null,
+        success: payload?.success ?? null,
+        request: context.request ?? null,
+        responseShape: this.safePayloadSummary(payload),
+        sideEffectStatus: context.method === 'POST'
+          ? 'write_not_confirmed; read position/history before claiming any side effect'
+          : 'read_rejected',
+        nextAction: context.method === 'POST'
+          ? 'Stop this write workflow, do not retry the same write, do not use Portfolio fallback, read back Xueqiu position/history if needed, and ask the user to verify XQ_COOKIE/session/portfolio/write permission.'
+          : 'Use cache/readback if available or ask the user to verify Xueqiu session and provider availability.',
+      }, null, 2))
     }
+  }
+
+  private safeEndpoint(url: string): string {
+    try {
+      const parsed = new URL(url)
+      return `${parsed.host}${parsed.pathname}`
+    } catch {
+      return url.split('?')[0]
+    }
+  }
+
+  private safePayloadSummary(payload: any): Record<string, unknown> {
+    const resultData = payload?.result_data
+    const summary: Record<string, unknown> = {
+      keys: payload && typeof payload === 'object' ? Object.keys(payload).slice(0, 20) : [],
+    }
+    if (resultData == null) {
+      summary.resultData = null
+    } else if (Array.isArray(resultData)) {
+      summary.resultData = { type: 'array', length: resultData.length }
+    } else if (typeof resultData === 'object') {
+      summary.resultData = { type: 'object', keys: Object.keys(resultData).slice(0, 20) }
+    } else {
+      summary.resultData = resultData
+    }
+    return summary
   }
 }

@@ -289,6 +289,90 @@ describe('XueqiuTradeTool', () => {
     expect(parsed.postTradeReadback.position.holdstock[0].symbol).toBe('SH600519')
   })
 
+  it('returns self-contained provider rejection details for MONI write failures', async () => {
+    const calls: Array<{ url: string; init?: RequestInit }> = []
+    const fetchMock: typeof fetch = (async (input: RequestInfo | URL, init?: RequestInit) => {
+      const url = String(input)
+      calls.push({ url, init })
+      if (url.includes('/MONI/trans_group/list.json')) {
+        return jsonResponse({
+          result_data: { trans_groups: [{ name: 'finasimu', gid: 6705388713207579, open_status: 0, order_id: 1 }] },
+          msg: null,
+          result_code: '60000',
+          success: true,
+        })
+      }
+      if (url.includes('/query/v1/search/stock.json')) return jsonResponse({ stocks: [{ code: 'SZ300059' }] })
+      if (url.includes('/v5/stock/batch/quote.json')) return jsonResponse({ data: { items: [{ symbol: 'SZ300059' }] } })
+      if (url.includes('/MONI/transaction/add.json')) {
+        return jsonResponse({
+          result_data: null,
+          msg: null,
+          result_code: '0',
+          success: false,
+        })
+      }
+      throw new Error(`unexpected url ${url}`)
+    }) as typeof fetch
+
+    const tool = new XueqiuTradeTool(fetchMock)
+    await expect(tool.call('xq-buy-rejected', {
+      action: 'buy',
+      portfolio: 'finasimu',
+      symbol: '300059',
+      shares: 1,
+      price: 20.19,
+    }, {
+      basePath: '/tmp',
+      workDir: '/tmp',
+      memoryDir: '/tmp/memory',
+      bundleDir: '/tmp/bundle',
+      projectLocalDir: '/tmp/.finagent-workstation',
+      pluginSkillPaths: [],
+      skipPermissions: true,
+      approvedTools: new Set<string>(),
+      planMode: false,
+      readFileTimestamps: new Map(),
+      taskRegistry: {} as any,
+      teamRegistry: {} as any,
+      getConfigValue: (key: string) => key === 'XQ_COOKIE' ? 'secret-cookie' : key === 'XQ_PORTFOLIO' ? 'finasimu' : '',
+    })).rejects.toThrow(/xueqiu_provider_rejected_request/)
+
+    try {
+      await tool.call('xq-buy-rejected-repeat', {
+        action: 'buy',
+        portfolio: 'finasimu',
+        symbol: '300059',
+        shares: 1,
+        price: 20.19,
+      }, {
+        basePath: '/tmp',
+        workDir: '/tmp',
+        memoryDir: '/tmp/memory',
+        bundleDir: '/tmp/bundle',
+        projectLocalDir: '/tmp/.finagent-workstation',
+        pluginSkillPaths: [],
+        skipPermissions: true,
+        approvedTools: new Set<string>(),
+        planMode: false,
+        readFileTimestamps: new Map(),
+        taskRegistry: {} as any,
+        teamRegistry: {} as any,
+        getConfigValue: (key: string) => key === 'XQ_COOKIE' ? 'secret-cookie' : key === 'XQ_PORTFOLIO' ? 'finasimu' : '',
+      })
+    } catch (error) {
+      const message = error instanceof Error ? error.message : String(error)
+      expect(message).toContain('MONI/transaction/add.json')
+      expect(message).toContain('"resultCode": "0"')
+      expect(message).toContain('"symbol": "SZ300059"')
+      expect(message).toContain('"portfolio": "finasimu"')
+      expect(message).toContain('do not retry the same write')
+      expect(message).not.toContain('secret-cookie')
+    }
+
+    expect(calls.filter((call) => call.url.includes('/MONI/transaction/add.json')).length).toBe(2)
+  })
+
   it('builds transfer-out requests through bank_transfer/add.json', async () => {
     const calls: Array<{ url: string; init?: RequestInit }> = []
     const fetchMock: typeof fetch = (async (input: RequestInfo | URL, init?: RequestInit) => {
