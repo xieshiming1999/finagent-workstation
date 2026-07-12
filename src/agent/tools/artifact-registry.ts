@@ -135,6 +135,7 @@ function registerArtifact(registry: ArtifactRegistry, input: Record<string, unkn
     path = writeManagedArtifact(ctx, kind, input, title, source)
     managedArtifact = true
   }
+  const normalized = normalizeArtifactEvidence(kind, input)
   const record = registry.register({
     kind,
     path,
@@ -143,10 +144,10 @@ function registerArtifact(registry: ArtifactRegistry, input: Record<string, unkn
     id: optionalString(input.id),
     ownerTask: optionalString(input.ownerTask),
     verificationStatus: parseVerificationStatus(input.verificationStatus),
-    freshness: objectValue(input.freshness),
-    provenance: objectValue(input.provenance),
+    freshness: normalized.freshness,
+    provenance: normalized.provenance,
     links: stringList(input.links),
-    metadata: objectValue(input.metadata),
+    metadata: normalized.metadata,
   })
   return {
     contract: 'artifact-registry-record-v1',
@@ -166,6 +167,7 @@ function writeManagedArtifact(
   const metadata = objectValue(input.metadata) ?? {}
   const provenance = objectValue(input.provenance) ?? {}
   const freshness = objectValue(input.freshness) ?? {}
+  const normalized = normalizeArtifactEvidence(kind, input)
   const digest = createHash('sha256')
     .update(JSON.stringify({ kind, title, source, metadata, provenance, freshness }))
     .digest('hex')
@@ -180,11 +182,79 @@ function writeManagedArtifact(
     source,
     createdAt,
     freshness,
-    provenance: Object.keys(provenance).length ? provenance : { source },
+    macroEvidenceSummary: normalized.macroEvidenceSummary,
+    provenance: Object.keys(normalized.provenance ?? {}).length ? normalized.provenance : { source },
     links: stringList(input.links),
-    metadata,
+    metadata: normalized.metadata ?? metadata,
   }, null, 2)}\n`, 'utf-8')
   return relativePath
+}
+
+function normalizeArtifactEvidence(kind: ArtifactKind, input: Record<string, unknown>): {
+  freshness?: Record<string, unknown>
+  provenance?: Record<string, unknown>
+  metadata?: Record<string, unknown>
+  macroEvidenceSummary?: Record<string, unknown>
+} {
+  const metadata = objectValue(input.metadata) ?? {}
+  const provenance = objectValue(input.provenance) ?? {}
+  const freshness = objectValue(input.freshness) ?? {}
+  const summary = macroEvidenceSummary(kind, { ...input, ...metadata, ...provenance, ...freshness })
+  if (!summary) return { freshness, provenance, metadata }
+  const sourceTime = optionalString(summary.sourceTime)
+  const fetchedAt = optionalString(summary.fetchedAt)
+  const freshnessStatus = optionalString(summary.freshnessStatus)
+  return {
+    freshness: {
+      ...freshness,
+      ...(sourceTime ? { sourceTime } : {}),
+      ...(fetchedAt ? { fetchedAt } : {}),
+      ...(freshnessStatus ? { status: freshnessStatus } : {}),
+    },
+    provenance: {
+      ...provenance,
+      macroEvidenceSummary: summary,
+      ...(summary.failureClass ? { failureClass: summary.failureClass } : {}),
+      ...(summary.sourceTime ? { sourceDataTime: summary.sourceTime } : {}),
+      ...(summary.fetchedAt ? { fetchedAt: summary.fetchedAt } : {}),
+    },
+    metadata: {
+      ...metadata,
+      macroEvidenceSummary: summary,
+    },
+    macroEvidenceSummary: summary,
+  }
+}
+
+function macroEvidenceSummary(kind: ArtifactKind, row: Record<string, unknown>): Record<string, unknown> | null {
+  const direct = objectValue(row.macroEvidenceSummary)
+  if (direct) return direct
+  const macroEvidence = objectValue(row.macroEvidence) ?? objectValue(row.macro)
+  const source = macroEvidence ?? row
+  const affectedAssets = stringList(source.affectedAssets ?? source.affected_assets) ?? []
+  const missingEvidence = stringList(source.missingEvidence ?? source.missing_evidence) ?? []
+  const confidenceEffect = optionalString(source.confidenceEffect ?? source.confidence_effect)
+  const sourceTime = optionalString(source.sourceDataTime ?? source.source_time ?? source.sourceTime)
+  const fetchedAt = optionalString(source.fetchedAt ?? source.fetched_at)
+  const failureClass = optionalString(source.failureClass ?? source.failure_class)
+  const freshnessStatus = optionalString(source.freshnessStatus ?? source.status)
+  const topic = optionalString(source.topic ?? source.family ?? source.target)
+  const hasMacroFields = affectedAssets.length > 0
+    || missingEvidence.length > 0
+    || Boolean(confidenceEffect || sourceTime || fetchedAt || failureClass || topic)
+  const macroKind = kind === 'macro_evidence' || kind === 'report' || kind === 'dashboard' || kind === 'analysis'
+  if (!macroKind || !hasMacroFields) return null
+  return {
+    contract: 'macro-artifact-evidence-summary-v1',
+    topic: topic ?? null,
+    sourceTime: sourceTime ?? null,
+    fetchedAt: fetchedAt ?? null,
+    freshnessStatus: freshnessStatus ?? 'unknown',
+    confidenceEffect: confidenceEffect ?? null,
+    affectedAssets,
+    missingEvidence,
+    failureClass: failureClass ?? null,
+  }
 }
 
 function graphArtifacts(registry: ArtifactRegistry, input: Record<string, unknown>): Record<string, unknown> {
