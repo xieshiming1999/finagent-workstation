@@ -1,4 +1,5 @@
 import { existsSync, mkdirSync, mkdtempSync, writeFileSync } from 'fs'
+import { createServer } from 'http'
 import { tmpdir } from 'os'
 import { join } from 'path'
 import { describe, expect, it } from 'vitest'
@@ -30,7 +31,36 @@ describe('SourceReaderTool', () => {
       'source-2',
       { action: 'read' },
       tempToolContext(),
-    )).rejects.toThrow('requires exactly one of url or path')
+    )).rejects.toThrow('failureClass=invalid-input')
+  })
+
+  it('classifies missing source files', async () => {
+    await expect(new SourceReaderTool().call(
+      'source-missing-file',
+      { action: 'read', path: '/tmp/source-reader-missing-file.html' },
+      tempToolContext(),
+    )).rejects.toThrow('failureClass=source-file-missing')
+  })
+
+  it('classifies blocked HTTP source access', async () => {
+    const server = createServer((_req, res) => {
+      res.writeHead(403, { 'content-type': 'text/html' })
+      res.end('<html><title>blocked</title></html>')
+    })
+    await new Promise<void>((resolve) => server.listen(0, '127.0.0.1', resolve))
+    const address = server.address()
+    if (!address || typeof address === 'string') throw new Error('test server did not bind')
+    try {
+      await expect(new SourceReaderTool().call(
+        'source-http-403',
+        { action: 'read', url: `http://127.0.0.1:${address.port}/blocked` },
+        tempToolContext(),
+      )).rejects.toThrow('failureClass=anti-bot-or-access-blocked')
+    } finally {
+      await new Promise<void>((resolve, reject) => {
+        server.close((error) => error ? reject(error) : resolve())
+      })
+    }
   })
 
   it('creates structured macro evidence from a source record', async () => {

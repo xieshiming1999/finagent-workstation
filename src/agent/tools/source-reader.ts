@@ -52,9 +52,19 @@ export class SourceReaderTool implements Tool {
     const url = optionalString(input.url)
     const path = optionalString(input.path)
     if ((!url && !path) || (url && path)) {
-      throw new Error('SourceReader(action:"read") requires exactly one of url or path.')
+      throw new Error(sourceReaderFailureMessage(
+        new Error('SourceReader(action:"read") requires exactly one of url or path.'),
+      ))
     }
-    const content = path ? readPath(path) : await readUrl(url!)
+    let content: { body: string, contentType: string }
+    try {
+      content = path ? readPath(path) : await readUrl(url!)
+    } catch (error) {
+      throw new Error(sourceReaderFailureMessage(error))
+    }
+    if (plainText(content.body).length === 0) {
+      throw new Error(sourceReaderFailureMessage(new Error('empty extracted source content')))
+    }
     const hash = createHash('sha256').update(content.body).digest('hex')
     const record = {
       contract: 'source-evidence-record-v1',
@@ -310,6 +320,53 @@ async function readUrl(url: string): Promise<{ body: string, contentType: string
   return {
     body: await response.text(),
     contentType: response.headers.get('content-type') ?? 'text/plain',
+  }
+}
+
+function sourceReaderFailureMessage(error: unknown): string {
+  const message = error instanceof Error ? error.message : String(error)
+  const status = /HTTP\s+(\d{3})/i.exec(message)?.[1]
+  const failureClass = sourceReaderFailureClass(message, status)
+  return [
+    `SourceReader failureClass=${failureClass}`,
+    status ? `status=${status}` : null,
+    `nextAction=${sourceReaderNextAction(failureClass)}`,
+    `detail=${message}`,
+  ].filter(Boolean).join('; ')
+}
+
+function sourceReaderFailureClass(message: string, status?: string): string {
+  if (status === '401') return 'credential-or-access-blocked'
+  if (status === '403') return 'anti-bot-or-access-blocked'
+  if (status === '404') return 'source-not-found'
+  if (status === '429') return 'rate-limited'
+  if (/file not found/i.test(message)) return 'source-file-missing'
+  if (/requires exactly one|invalid/i.test(message)) return 'invalid-input'
+  if (/empty extracted source content|empty source/i.test(message)) return 'extraction-empty'
+  if (/timeout|fetch failed|network|ECONN|ENOTFOUND|EAI_AGAIN|socket/i.test(message)) return 'transport'
+  return 'source-read-failed'
+}
+
+function sourceReaderNextAction(failureClass: string): string {
+  switch (failureClass) {
+    case 'credential-or-access-blocked':
+      return 'Check source credential/session access, then retry with an authorized source or attach a manually captured source file.'
+    case 'anti-bot-or-access-blocked':
+      return 'Use browser/WebView/manual source handoff, official PDF, or an allowed alternate source before retrying; do not loop automated fetches.'
+    case 'source-not-found':
+      return 'Verify the URL or provider directory and search for the current report permalink.'
+    case 'rate-limited':
+      return 'Stop immediate retries, wait for the provider limit window, or reuse cached evidence.'
+    case 'source-file-missing':
+      return 'Create or attach the source file before calling SourceReader again.'
+    case 'invalid-input':
+      return 'Call SourceReader(action:"help") and pass exactly one valid url or path.'
+    case 'extraction-empty':
+      return 'Use PDF rendering, browser capture, or manual source text extraction before creating macro evidence.'
+    case 'transport':
+      return 'Check network/proxy/provider health and retry once with bounded scope.'
+    default:
+      return 'Inspect source health and use an alternate evidence path before relying on this source.'
   }
 }
 
