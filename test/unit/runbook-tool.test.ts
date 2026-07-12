@@ -22,6 +22,14 @@ describe('RunbookTool', () => {
     expect(detail.workflow).toBe('strategy_backtest')
     expect(detail.requiredEvidence).toContain('StrategySpec')
     expect(detail.approvalBoundary).toContain('Backtest and monitor only')
+
+    const macro = JSON.parse(await tool.call('runbook-macro', {
+      action: 'get',
+      workflow: 'macro_factor_lookup',
+    }, ctx))
+    expect(macro.requiredEvidence).toContain('macro-evidence-record-v1')
+    expect(macro.allowedTools).toContain('SourceReader')
+    expect(macro.approvalBoundary).toContain('not a direct buy/sell rule')
   })
 
   it('rejects unknown workflows through the tool error channel', async () => {

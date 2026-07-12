@@ -62,6 +62,36 @@ const RUNBOOKS: Record<string, Runbook> = {
     failureHandling: ['If approval is missing, stop and ask.', 'If account/portfolio state is unavailable, do not place an order.'],
     verifier: 'WorkflowVerifier(action:"check", workflow:"trade_preparation") when available; otherwise CapabilityStatus(action:"evaluate").',
   },
+  macro_factor_lookup: {
+    workflow: 'macro_factor_lookup',
+    purpose: 'Ingest and use macro, policy, research, or official series evidence as analysis context for stock, fund, market, and strategy workflows.',
+    requiredEvidence: [
+      'source-evidence-record-v1',
+      'macro-evidence-record-v1',
+      'title/date/hash/source provenance',
+      'keyClaims',
+      'affectedAssets',
+      'confidenceEffect',
+      'missingEvidence_or_none',
+    ],
+    allowedTools: [
+      'Runbook',
+      'ProviderRouter',
+      'SourceReader',
+      'ArtifactRegistry',
+      'WorkflowVerifier',
+      'DataStore',
+      'Research',
+    ],
+    artifactTypes: ['macro_evidence', 'research', 'data_evidence'],
+    approvalBoundary: 'Macro evidence is context, hypothesis, and invalidation input. It is not a direct buy/sell rule.',
+    failureHandling: [
+      'Use SourceReader(action:"read") or a governed macro/data readback before citing a source.',
+      'Use SourceReader(action:"macroEvidence") with explicit structured fields; do not infer them from prompt text in app code.',
+      'If source access, freshness, or affected-asset mapping is missing, record missingEvidence and lower confidence.',
+    ],
+    verifier: 'WorkflowVerifier(action:"check", workflow:"macro_factor_lookup") before using macro evidence in final analysis.',
+  },
 }
 
 export class RunbookTool implements Tool {

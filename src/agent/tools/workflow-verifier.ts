@@ -1,4 +1,4 @@
-import { existsSync, readFileSync } from 'node:fs'
+import { existsSync, readdirSync, readFileSync, statSync } from 'node:fs'
 import { join } from 'node:path'
 import { ArtifactRegistry, type ArtifactKind } from '../artifact-registry'
 import { readPendingInteractionState } from '../interaction-evidence'
@@ -8,6 +8,7 @@ type WorkflowSpec = {
   requiredAnyTools: string[]
   artifactKinds: ArtifactKind[]
   approvalBoundary: 'no_trade' | 'explicit_approval_required'
+  macroEvidenceRecord?: boolean
 }
 
 const WORKFLOWS: Record<string, WorkflowSpec> = {
@@ -35,6 +36,12 @@ const WORKFLOWS: Record<string, WorkflowSpec> = {
     requiredAnyTools: ['Portfolio', 'XueqiuTrade', 'AskUserQuestion'],
     artifactKinds: ['trade_preparation', 'analysis'],
     approvalBoundary: 'explicit_approval_required',
+  },
+  macro_factor_lookup: {
+    requiredAnyTools: ['SourceReader', 'DataStore', 'Research'],
+    artifactKinds: ['macro_evidence', 'research', 'data_snapshot'],
+    approvalBoundary: 'no_trade',
+    macroEvidenceRecord: true,
   },
 }
 
@@ -248,9 +255,71 @@ function artifactEvidenceFor(ctx: ToolContext, spec: WorkflowSpec, artifactId?: 
       : { passed: false, reason: `Required artifact "${artifactId}" is not registered.` }
   }
   const artifact = artifacts.find((item) => spec.artifactKinds.includes(item.kind))
+  if (!artifact && spec.macroEvidenceRecord) {
+    const evidence = macroEvidenceRecordEvidence(ctx)
+    if (evidence.passed) return evidence
+  }
   return artifact
     ? { passed: true, reason: 'Required artifact kind is registered.', artifact }
     : { passed: false, reason: `No registered artifact of required kind: ${spec.artifactKinds.join(', ')}.` }
+}
+
+function macroEvidenceRecordEvidence(ctx: ToolContext): {
+  passed: boolean
+  reason: string
+  artifact?: Record<string, unknown>
+} {
+  const dir = join(ctx.memoryDir, 'macro_evidence')
+  if (!existsSync(dir)) {
+    return {
+      passed: false,
+      reason: 'No macro evidence record directory exists. Use SourceReader(action:"macroEvidence") before finalizing.',
+    }
+  }
+  const files = readdirSync(dir)
+    .filter((name) => name.endsWith('.json'))
+    .map((name) => join(dir, name))
+    .sort((a, b) => statSync(b).mtimeMs - statSync(a).mtimeMs)
+  for (const file of files) {
+    try {
+      const record = JSON.parse(readFileSync(file, 'utf8')) as Record<string, unknown>
+      const missing = missingMacroEvidenceFields(record)
+      if (missing.length > 0) {
+        return {
+          passed: false,
+          reason: `Latest macro evidence record is missing structured fields: ${missing.join(', ')}.`,
+          artifact: record,
+        }
+      }
+      return {
+        passed: true,
+        reason: 'Durable macro-evidence-record-v1 is available.',
+        artifact: {
+          kind: 'macro_evidence',
+          path: file,
+          record,
+        },
+      }
+    } catch {
+      // Keep scanning older records.
+    }
+  }
+  return {
+    passed: false,
+    reason: 'No readable macro-evidence-record-v1 JSON file exists. Use SourceReader(action:"macroEvidence").',
+  }
+}
+
+function missingMacroEvidenceFields(record: Record<string, unknown>): string[] {
+  const missing: string[] = []
+  for (const field of ['contract', 'source', 'title', 'topic', 'region', 'assetClass', 'confidenceEffect', 'tradeBoundary']) {
+    const value = record[field]
+    if (typeof value !== 'string' || !value.trim()) missing.push(field)
+  }
+  if (record.contract !== 'macro-evidence-record-v1') missing.push('contract:macro-evidence-record-v1')
+  if (!Array.isArray(record.keyClaims) || record.keyClaims.length === 0) missing.push('keyClaims')
+  if (!Array.isArray(record.affectedAssets) || record.affectedAssets.length === 0) missing.push('affectedAssets')
+  return missing
 }
 
 function workflowStateEvidenceFor(ctx: ToolContext, input: {
@@ -381,6 +450,8 @@ function workflowKindForVerifierWorkflow(workflow: string): string {
       return 'strategy_review'
     case 'trade_preparation':
       return 'trade_prep'
+    case 'macro_factor_lookup':
+      return 'macro_attribution'
     default:
       return 'unknown'
   }

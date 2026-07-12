@@ -93,6 +93,24 @@ describe('WorkflowVerifierTool', () => {
     expect(result.checks.find((item: { id: string }) => item.id === 'provider_health').message).toContain('eastmoney:transport_unstable')
   })
 
+  it('accepts durable macro evidence records', async () => {
+    const ctx = tempToolContext()
+    seedSession(ctx, 'SourceReader')
+    seedWorkflowState(ctx, 'macro_attribution')
+    seedMacroEvidence(ctx)
+
+    const result = JSON.parse(await new WorkflowVerifierTool().call('verify-macro', {
+      action: 'check',
+      workflow: 'macro_factor_lookup',
+      requireWorkflowState: true,
+    }, ctx))
+
+    expect(result.passed).toBe(true)
+    expect(result.missing).toEqual([])
+    expect(result.observed.artifact.kind).toBe('macro_evidence')
+    expect(result.observed.artifact.record.contract).toBe('macro-evidence-record-v1')
+  })
+
   it('rejects unknown workflow through the tool error channel', async () => {
     const ctx = tempToolContext()
     await expect(new WorkflowVerifierTool().call('verify-3', {
@@ -149,6 +167,25 @@ function seedWorkflowState(ctx: ToolContext, workflowKind: string): void {
         updatedAt: '2026-07-11T00:00:00.000Z',
       },
     ],
+  }), 'utf-8')
+}
+
+function seedMacroEvidence(ctx: ToolContext): void {
+  const dir = join(ctx.memoryDir, 'macro_evidence')
+  mkdirSync(dir, { recursive: true })
+  writeFileSync(join(dir, 'macro_test.json'), JSON.stringify({
+    contract: 'macro-evidence-record-v1',
+    id: 'macro:test',
+    source: 'bea',
+    title: 'Official macro evidence',
+    topic: 'rates and demand',
+    region: 'US',
+    assetClass: 'equity',
+    keyClaims: ['Demand conditions affect cyclical earnings.'],
+    affectedAssets: ['A-shares', 'cyclical stocks'],
+    confidenceEffect: 'raises confidence in macro attribution, not a trade signal',
+    freshness: 'fresh',
+    tradeBoundary: 'Macro evidence is context, hypothesis, and invalidation input. It is not a direct buy/sell rule.',
   }), 'utf-8')
 }
 
