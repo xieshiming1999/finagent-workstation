@@ -128,7 +128,13 @@ Research(action: "fetch", params: {url: "https://api.fiscaldata.treasury.gov/ser
 ### A0. Governed factor readback
 
 Before broad market, stock, fund, or strategy-preparation analysis where macro
-forces may matter, read the governed factor layer first:
+forces may matter, inspect the workflow contract first:
+
+```text
+Runbook(action: "get", workflow: "macro_factor_lookup")
+```
+
+Then read the governed factor layer:
 
 ```text
 DataStore(action: "query_macro_factors", target: "Copper", limit: 10)
