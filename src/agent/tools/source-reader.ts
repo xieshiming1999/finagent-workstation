@@ -11,7 +11,7 @@ export class SourceReaderTool implements Tool {
   inputSchema = {
     type: 'object',
     properties: {
-      action: { type: 'string', enum: ['help', 'read', 'macroEvidence'] },
+      action: { type: 'string', enum: ['help', 'read', 'macroEvidence', 'macroNumericEvidence'] },
       url: { type: 'string' },
       path: { type: 'string' },
       source: { type: 'string' },
@@ -28,6 +28,16 @@ export class SourceReaderTool implements Tool {
       freshness: { type: 'string' },
       evidenceClass: { type: 'string' },
       missingEvidence: { type: 'array', items: { type: 'string' } },
+      numericSeriesRow: { type: 'object' },
+      seriesId: { type: 'string' },
+      metricName: { type: 'string' },
+      value: {},
+      unit: { type: 'string' },
+      frequency: { type: 'string' },
+      sourceDataTime: { type: 'string' },
+      fetchedAt: { type: 'string' },
+      provider: { type: 'string' },
+      status: { type: 'string' },
     },
   }
 
@@ -35,6 +45,7 @@ export class SourceReaderTool implements Tool {
     const action = String(input.action ?? 'help').trim()
     if (action === 'help') return JSON.stringify(help())
     if (action === 'macroEvidence') return JSON.stringify(macroEvidence(input, ctx))
+    if (action === 'macroNumericEvidence') return JSON.stringify(macroNumericEvidence(input, ctx))
     if (action !== 'read') {
       throw new Error(`Invalid SourceReader action "${action}". Use action="help" for supported actions.`)
     }
@@ -85,11 +96,118 @@ export class SourceReaderTool implements Tool {
 function help(): Record<string, unknown> {
   return {
     contract: 'source-reader-help-v1',
-    actions: ['read', 'macroEvidence'],
+    actions: ['read', 'macroEvidence', 'macroNumericEvidence'],
     required: 'Exactly one of url or path.',
     stores: 'memory/source_evidence/<sha256>.json',
     macroEvidenceStores: 'memory/macro_evidence/<id>.json',
-    guidance: 'SourceReader records title/date/hash/excerpt as evidence. Use macroEvidence with explicit keyClaims, topic, region, assetClass, affectedAssets, freshness, and confidenceEffect before using macro sources in analysis. Use ArtifactRegistry to register reusable source evidence before citing it in analysis.',
+    guidance: 'SourceReader records title/date/hash/excerpt as evidence. Use macroEvidence with explicit keyClaims, topic, region, assetClass, affectedAssets, freshness, and confidenceEffect before using macro sources in analysis. Use macroNumericEvidence to turn official query_macro_numeric_series rows into durable macro evidence records. Use ArtifactRegistry to register reusable source evidence before citing it in analysis.',
+  }
+}
+
+function macroNumericEvidence(input: Record<string, unknown>, ctx: ToolContext): Record<string, unknown> {
+  const row = isRecord(input.numericSeriesRow) ? input.numericSeriesRow : input
+  const source =
+    optionalString(input.source) ??
+    optionalString(row.sourceName) ??
+    optionalString(row.source_name) ??
+    optionalString(row.provider) ??
+    optionalString(input.provider) ??
+    'official macro series'
+  const provider = optionalString(input.provider) ?? optionalString(row.provider) ?? source
+  const seriesId = optionalString(input.seriesId) ?? optionalString(row.seriesId)
+  const metricName = optionalString(input.metricName) ?? optionalString(row.metricName) ?? seriesId
+  const value = Object.prototype.hasOwnProperty.call(input, 'value') ? input.value : row.value
+  const valueText = optionalString(value)
+  const unit = optionalString(input.unit) ?? optionalString(row.unit)
+  const sourceDataTime = optionalString(input.sourceDataTime) ?? optionalString(row.sourceDataTime)
+  const fetchedAt = optionalString(input.fetchedAt) ?? optionalString(row.fetchedAt)
+  const topic = optionalString(input.topic)
+  const region = optionalString(input.region)
+  const assetClass = optionalString(input.assetClass)
+  const affectedAssets = stringList(input.affectedAssets)
+  const confidenceEffect = optionalString(input.confidenceEffect)
+  const freshness = optionalString(input.freshness) ?? optionalString(row.status) ?? 'unknown'
+  const keyClaims = stringList(input.keyClaims)
+  const missing = [
+    ...(!seriesId ? ['seriesId'] : []),
+    ...(!metricName ? ['metricName'] : []),
+    ...(!valueText ? ['value'] : []),
+    ...(!sourceDataTime ? ['sourceDataTime'] : []),
+    ...(!topic ? ['topic'] : []),
+    ...(!region ? ['region'] : []),
+    ...(!assetClass ? ['assetClass'] : []),
+    ...(affectedAssets.length === 0 ? ['affectedAssets'] : []),
+    ...(!confidenceEffect ? ['confidenceEffect'] : []),
+  ]
+  if (missing.length > 0) {
+    throw new Error(`SourceReader(action:"macroNumericEvidence") missing required structured fields: ${missing.join(', ')}. Pass a query_macro_numeric_series row plus explicit topic/region/assetClass/affectedAssets/confidenceEffect.`)
+  }
+  const claim = `${metricName} ${seriesId} = ${valueText}${unit ? ` ${unit}` : ''} as of ${sourceDataTime}.`
+  const idInput = JSON.stringify({
+    source,
+    provider,
+    seriesId,
+    sourceDataTime,
+    value: valueText,
+    topic,
+    affectedAssets,
+  })
+  const id = `macro:${createHash('sha256').update(idInput).digest('hex')}`
+  const record = {
+    contract: 'macro-evidence-record-v1',
+    id,
+    source,
+    provider,
+    sourceHash: null,
+    url: optionalString(input.url) ?? optionalString(row.sourceUrl),
+    path: null,
+    title: optionalString(input.title) ?? `${source} official series ${seriesId}`,
+    sourceDate: sourceDataTime,
+    topic,
+    region,
+    assetClass,
+    keyClaims: keyClaims.length > 0 ? keyClaims : [claim],
+    affectedAssets,
+    confidenceEffect,
+    freshness,
+    evidenceClass: 'official-numeric-series',
+    numericSeries: {
+      seriesId,
+      metricName,
+      value,
+      unit,
+      frequency: optionalString(input.frequency) ?? optionalString(row.frequency),
+      sourceDataTime,
+      fetchedAt,
+      provider,
+      status: optionalString(input.status) ?? optionalString(row.status),
+    },
+    fetchedAt,
+    storedAt: new Date().toISOString(),
+    tradeBoundary: 'Macro numeric evidence is context, hypothesis, and invalidation input. It is not a direct buy/sell rule.',
+    missingEvidence: stringList(input.missingEvidence),
+  }
+  const file = join(ctx.memoryDir || join(ctx.basePath, 'memory'), 'macro_evidence', `${id.replace(':', '_')}.json`)
+  mkdirSync(dirname(file), { recursive: true })
+  writeFileSync(file, `${JSON.stringify(record, null, 2)}\n`)
+  return {
+    contract: 'source-reader-macro-numeric-evidence-result-v1',
+    record,
+    artifactHint: {
+      kind: 'macroEvidence',
+      path: file,
+      title: record.title,
+      source,
+      provenance: {
+        provider,
+        seriesId,
+        sourceDataTime,
+        fetchedAt,
+        topic,
+        region,
+        assetClass,
+      },
+    },
   }
 }
 
@@ -233,4 +351,8 @@ function optionalString(value: unknown): string | undefined {
 function stringList(value: unknown): string[] {
   if (!Array.isArray(value)) return []
   return value.map((item) => String(item).trim()).filter(Boolean)
+}
+
+function isRecord(value: unknown): value is Record<string, unknown> {
+  return Boolean(value) && typeof value === 'object' && !Array.isArray(value)
 }

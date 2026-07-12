@@ -80,6 +80,54 @@ describe('SourceReaderTool', () => {
       tempToolContext(),
     )).rejects.toThrow('missing required structured fields')
   })
+
+  it('creates macro evidence from official numeric series row', async () => {
+    const ctx = tempToolContext()
+    const result = JSON.parse(await new SourceReaderTool().call('macro-numeric', {
+      action: 'macroNumericEvidence',
+      numericSeriesRow: {
+        sourceName: 'EIA',
+        provider: 'eia',
+        seriesId: 'WCESTUS1',
+        metricName: 'US commercial crude oil inventories',
+        value: 415200,
+        unit: 'thousand barrels',
+        frequency: 'weekly',
+        sourceDataTime: '2026-07-03',
+        fetchedAt: '2026-07-12T02:00:00Z',
+        status: 'ok',
+      },
+      topic: 'oil inventory pressure',
+      region: 'US/global',
+      assetClass: 'commodity/equity/fund',
+      affectedAssets: ['oil', 'energy equities', 'inflation-sensitive funds'],
+      confidenceEffect: 'Raises confidence that energy-sensitive analysis should include inventory risk as an invalidation factor.',
+    }, ctx))
+
+    expect(result.contract).toBe('source-reader-macro-numeric-evidence-result-v1')
+    expect(result.record).toMatchObject({
+      contract: 'macro-evidence-record-v1',
+      evidenceClass: 'official-numeric-series',
+      sourceDate: '2026-07-03',
+      numericSeries: {
+        seriesId: 'WCESTUS1',
+        provider: 'eia',
+      },
+    })
+    expect(result.record.tradeBoundary).toContain('not a direct buy/sell rule')
+    expect(existsSync(result.artifactHint.path)).toBe(true)
+  })
+
+  it('rejects macro numeric evidence without required structured fields', async () => {
+    await expect(new SourceReaderTool().call(
+      'macro-numeric-error',
+      {
+        action: 'macroNumericEvidence',
+        seriesId: 'WCESTUS1',
+      },
+      tempToolContext(),
+    )).rejects.toThrow('sourceDataTime')
+  })
 })
 
 function tempToolContext(): ToolContext {
