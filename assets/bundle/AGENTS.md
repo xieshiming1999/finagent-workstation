@@ -91,8 +91,9 @@ ambiguity.
 
 - When a finance answer depends on macro regime, policy, rates, liquidity,
   commodity pressure, index-provider events, passive-flow effects, or
-  cross-asset stress, read the governed factor layer before making macro
-  claims:
+  cross-asset stress, inspect the workflow contract first:
+  `Runbook(action:"get", workflow:"macro_factor_lookup")`.
+  Then read the governed factor layer before making macro claims:
   `DataStore(action:"query_macro_factors", target:"<structured target>", family:"<optional family>", limit:10)`.
 - Use returned `market_moving_factor_v1` rows as context with source time,
   fetched time, status, affected assets/regions/sectors, and transmission

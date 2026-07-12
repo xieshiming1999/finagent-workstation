@@ -76,6 +76,18 @@ validation workflow before spending extraction/browser calls.
 
 ## Workflow
 
+Before broad market-overview, sector/theme, money-flow, unusual-activity, or
+macro/root-cause analysis, inspect the workflow contract:
+
+```text
+Runbook(action: "get", workflow: "market_overview")
+```
+
+Use the returned first-pass and escalation-boundary fields to keep the answer
+bounded. If the question is specifically about macro attribution or source
+evidence, also inspect `Runbook(action: "get", workflow:
+"macro_factor_lookup")` before source extraction.
+
 For every market overview answer that cites market, sector, flow, macro, or
 news evidence, include a compact source coverage block. For each cited evidence
 family, state provider/source, source data time (`sourceDataTime`, `timestamp`,
