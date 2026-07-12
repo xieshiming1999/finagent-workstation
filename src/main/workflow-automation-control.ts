@@ -237,6 +237,7 @@ export class WorkflowAutomationControl {
       maxDataToolCalls?: number;
       maxToolActionCounts?: Record<string, number>;
       expectTools?: string[];
+      expectToolActions?: string[];
       disallowTools?: string[];
       allowPendingUserQuestion?: boolean;
       autoAnswerUserQuestions?: string[];
@@ -427,6 +428,7 @@ export class WorkflowAutomationControl {
       maxDataToolCalls: scenario.maxDataToolCalls,
       maxToolActionCounts: scenario.maxToolActionCounts,
       expectTools: scenario.expectTools,
+      expectToolActions: scenario.expectToolActions,
       disallowTools: scenario.disallowTools,
       allowPendingUserQuestion: scenario.allowPendingUserQuestion,
       autoAnswerUserQuestions: scenario.autoAnswerUserQuestions,
@@ -463,6 +465,7 @@ export class WorkflowAutomationControl {
         maxDataToolCalls: turn.maxDataToolCalls,
         maxToolActionCounts: turn.maxToolActionCounts,
         expectTools: turn.expectTools,
+        expectToolActions: turn.expectToolActions,
         disallowTools: turn.disallowTools,
         allowPendingUserQuestion: turn.allowPendingUserQuestion,
         autoAnswerUserQuestions: turn.autoAnswerUserQuestions,
@@ -1923,6 +1926,7 @@ function buildWorkflowPrompt(
     maxDataToolCalls?: number;
     maxToolActionCounts?: Record<string, number>;
     expectTools?: string[];
+    expectToolActions?: string[];
     disallowTools?: string[];
     allowPendingUserQuestion?: boolean;
   },
@@ -1930,12 +1934,16 @@ function buildWorkflowPrompt(
   const expected = (options.expectTools ?? [])
     .map((tool) => String(tool).trim())
     .filter(Boolean);
+  const expectedActions = (options.expectToolActions ?? [])
+    .map((action) => String(action).trim())
+    .filter(Boolean);
   const disallowed = (options.disallowTools ?? [])
     .map((tool) => String(tool).trim())
     .filter(Boolean);
   const lines: string[] = [];
   const hasControls =
     expected.length > 0 ||
+    expectedActions.length > 0 ||
     disallowed.length > 0 ||
     options.maxToolCalls != null ||
     options.minToolCalls != null ||
@@ -1947,6 +1955,9 @@ function buildWorkflowPrompt(
   }
   if (expected.length > 0) {
     lines.push(`This workflow requires these observable tools before the final answer: ${expected.join(", ")}.`);
+  }
+  if (expectedActions.length > 0) {
+    lines.push(`This workflow requires these observable tool actions before the final answer: ${expectedActions.join(", ")}.`);
   }
   if (disallowed.length > 0) {
     lines.push(`Do not call these tools in this workflow test: ${disallowed.join(", ")}.`);
