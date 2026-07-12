@@ -72,12 +72,26 @@ describe('agent harness reachability', () => {
     const providerModules = JSON.parse(await catalog!.call('catalog-provider-modules', {
       action: 'providerModules',
     }, tempContext()))
-    expect(providerModules.contract).toBe('provider-module-matrix-v1')
+    expect(providerModules.contract).toBe('provider-module-matrix-v2')
     expect(providerModules.runtime).toBe('finagent-workstation')
     expect(providerModules.providers).toEqual(expect.arrayContaining([
       expect.objectContaining({
         provider: 'eastmoney',
         statusCounts: expect.objectContaining({ supported: expect.any(Number) }),
+        descriptorStatus: 'registered',
+      }),
+      expect.objectContaining({
+        provider: 'macro-official',
+        descriptor: expect.objectContaining({
+          category: 'macro-official-api-provider',
+          agentPaths: ['chat', 'event'],
+        }),
+      }),
+      expect.objectContaining({
+        provider: 'ui-artifact',
+        descriptor: expect.objectContaining({
+          category: 'ui-artifact-provider',
+        }),
       }),
     ]))
   })

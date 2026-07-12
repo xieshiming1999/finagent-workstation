@@ -1,5 +1,6 @@
 import dataApiInterfaces from '../data/data-api-interfaces.json'
 import type { Tool, ToolCapabilitySummary, ToolContext } from '../tool'
+import { providerModuleDescriptors, providerModuleDescriptorVersion } from './provider-module-descriptors'
 
 export class ToolCatalogTool implements Tool {
   name = 'ToolCatalog'
@@ -106,16 +107,45 @@ function providerModules(): Record<string, unknown> {
       byProvider.set(provider, current)
     }
   }
+  const descriptorByProvider = new Map(providerModuleDescriptors.map((descriptor) => [descriptor.provider, descriptor]))
+  for (const descriptor of providerModuleDescriptors) {
+    if (!byProvider.has(descriptor.provider)) byProvider.set(descriptor.provider, new ProviderModuleAccumulator(descriptor.provider))
+  }
   const providers = [...byProvider.values()].map((item) => item.toJson()).sort((a, b) =>
     String(a.provider).localeCompare(String(b.provider)))
   return {
-    contract: 'provider-module-matrix-v1',
+    contract: 'provider-module-matrix-v2',
     runtime: 'finagent-workstation',
-    source: 'data-api-interfaces.json',
+    sources: ['data-api-interfaces.json', providerModuleDescriptorVersion],
     version: contract.version,
     providerCount: providers.length,
+    descriptorCount: providerModuleDescriptors.length,
     interfaceCount: contract.interfaces?.length ?? 0,
-    providers,
+    providers: providers.map((provider) => {
+      const descriptor = descriptorByProvider.get(String(provider.provider))
+      return {
+        ...provider,
+        ...(descriptor ? { descriptor } : {}),
+        descriptorStatus: descriptor ? 'registered' : 'missing',
+      }
+    }),
+    descriptorCoverage: {
+      requiredFamilies: [
+        'EastMoney',
+        'TDX/gotdx',
+        'Yahoo/yfinance',
+        'Wind',
+        'Tushare',
+        'Sina',
+        'Tencent',
+        'AkShare',
+        'official macro APIs',
+        'search/research',
+        'Xueqiu',
+        'UI artifacts',
+      ],
+      coveredProviders: providerModuleDescriptors.map((descriptor) => descriptor.provider),
+    },
     guidance: 'Use this matrix before broad provider calls. Supported/global-only capabilities are reusable only when normalizer, canonical table, readback, and runtime evidence are present. Gated/unstable/disabled/not-supported providers must not be retried as normal workflow.',
   }
 }
