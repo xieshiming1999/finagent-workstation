@@ -8,6 +8,8 @@ type Runbook = {
   artifactTypes: string[]
   approvalBoundary: string
   failureHandling: string[]
+  firstPassPlan?: string[]
+  escalationBoundary?: string
   verifier: string
 }
 
@@ -20,6 +22,12 @@ const RUNBOOKS: Record<string, Runbook> = {
     artifactTypes: ['analysis', 'dashboard', 'data_evidence'],
     approvalBoundary: 'No trade or simulated trade action.',
     failureHandling: ['Use cache when provider is unhealthy.', 'Disclose stale or missing evidence.'],
+    firstPassPlan: [
+      'Use a bounded market evidence set: coverage, index quote, sector ranking, flow rank or northbound flow, and news or macro evidence.',
+      'For macro context, use one query_macro_factors readback and one query_macro_attribution readback with a structured target such as A-shares.',
+      'Do not add source extraction, provider-page browsing, numeric catalog sweeps, or watchlist expansion to the first answer unless the user explicitly asks for those workflows.',
+    ],
+    escalationBoundary: 'Use macro_research_sources/macro_research_extract only for explicit source refresh, source validation, or report extraction tasks.',
     verifier: 'WorkflowVerifier(action:"check", workflow:"market_overview") when available; otherwise CapabilityStatus(action:"evaluate").',
   },
   stock_research: {
@@ -90,6 +98,12 @@ const RUNBOOKS: Record<string, Runbook> = {
       'Use SourceReader(action:"macroEvidence") with explicit structured fields; do not infer them from prompt text in app code.',
       'If source access, freshness, or affected-asset mapping is missing, record missingEvidence and lower confidence.',
     ],
+    firstPassPlan: [
+      'Start with governed local readback: query_macro_factors and query_macro_attribution for the structured target.',
+      'Use macro_research_sources to choose a source only when the user asks to refresh, validate, or inspect source availability.',
+      'Use SourceReader or macro_research_extract only after a source is selected and the task needs actual source content.',
+    ],
+    escalationBoundary: 'Missing local macro evidence should be reported as missing evidence; it is not a reason to crawl multiple providers in a first-pass answer.',
     verifier: 'WorkflowVerifier(action:"check", workflow:"macro_factor_lookup") before using macro evidence in final analysis.',
   },
 }
