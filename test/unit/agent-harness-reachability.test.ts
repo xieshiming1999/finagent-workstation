@@ -74,6 +74,21 @@ describe('agent harness reachability', () => {
     }, tempContext()))
     expect(providerModules.contract).toBe('provider-module-matrix-v2')
     expect(providerModules.runtime).toBe('finagent-workstation')
+    expect(providerModules.interfaceRowCount).toBeGreaterThan(100)
+    expect(providerModules.interfaceRows).toEqual(expect.arrayContaining([
+      expect.objectContaining({
+        interfaceId: 'stock.quote',
+        provider: 'eastmoney',
+        status: 'supported',
+        canonicalSchema: expect.any(String),
+      }),
+      expect.objectContaining({
+        interfaceId: 'stock.daily_kline',
+        provider: 'tdx',
+        status: 'supported',
+        canonicalSchema: 'kline_daily',
+      }),
+    ]))
     expect(providerModules.providers).toEqual(expect.arrayContaining([
       expect.objectContaining({
         provider: 'eastmoney',

@@ -113,6 +113,7 @@ function providerModules(): Record<string, unknown> {
   }
   const providers = [...byProvider.values()].map((item) => item.toJson()).sort((a, b) =>
     String(a.provider).localeCompare(String(b.provider)))
+  const interfaceRows = providerInterfaceRows(contract)
   return {
     contract: 'provider-module-matrix-v2',
     runtime: 'finagent-workstation',
@@ -121,6 +122,7 @@ function providerModules(): Record<string, unknown> {
     providerCount: providers.length,
     descriptorCount: providerModuleDescriptors.length,
     interfaceCount: contract.interfaces?.length ?? 0,
+    interfaceRowCount: interfaceRows.length,
     providers: providers.map((provider) => {
       const descriptor = descriptorByProvider.get(String(provider.provider))
       return {
@@ -129,6 +131,7 @@ function providerModules(): Record<string, unknown> {
         descriptorStatus: descriptor ? 'registered' : 'missing',
       }
     }),
+    interfaceRows,
     descriptorCoverage: {
       requiredFamilies: [
         'EastMoney',
@@ -150,6 +153,37 @@ function providerModules(): Record<string, unknown> {
   }
 }
 
+function providerInterfaceRows(contract: DataApiInterfaceContract): Array<Record<string, unknown>> {
+  const rows: Array<Record<string, unknown>> = []
+  for (const definition of contract.interfaces ?? []) {
+    for (const capability of definition.capabilities ?? []) {
+      rows.push({
+        interfaceId: definition.id,
+        label: definition.label,
+        provider: capability.provider,
+        capabilityId: capability.id,
+        status: capability.status ?? 'unknown',
+        canonicalSchema: definition.canonicalSchema,
+        canonicalTable: capability.canonicalTable ?? null,
+        queryActions: definition.queryActions ?? [],
+        dataStoreTables: definition.dataStoreTables ?? [],
+        normalizer: capability.normalizer ?? null,
+        adapter: capability.adapter ?? null,
+        upstreamOrigin: capability.upstreamOrigin ?? null,
+        probeId: capability.probeId ?? null,
+        priority: capability.priority ?? null,
+        reason: capability.reason ?? null,
+        marketScope: capability.marketScope ?? [],
+      })
+    }
+  }
+  return rows.sort((a, b) => {
+    const left = `${a.interfaceId}:${a.provider}:${a.capabilityId}`
+    const right = `${b.interfaceId}:${b.provider}:${b.capabilityId}`
+    return left.localeCompare(right)
+  })
+}
+
 interface DataApiInterfaceContract {
   version?: string
   interfaces?: DataApiInterfaceDefinition[]
@@ -157,15 +191,25 @@ interface DataApiInterfaceContract {
 
 interface DataApiInterfaceDefinition {
   id: string
+  label?: string
   canonicalSchema?: string
+  dataStoreTables?: string[]
   queryActions?: string[]
   capabilities?: DataApiCapability[]
 }
 
 interface DataApiCapability {
+  id?: string
   provider?: string
   status?: string
+  upstreamOrigin?: string
+  adapter?: string
+  normalizer?: string
+  canonicalTable?: string
   probeId?: string
+  priority?: number
+  reason?: string
+  marketScope?: string[]
 }
 
 class ProviderModuleAccumulator {
