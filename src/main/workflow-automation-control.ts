@@ -319,7 +319,10 @@ export class WorkflowAutomationControl {
       buildUiEvidence(result.panelState),
       this.runtimeUiEvidence(),
     );
-    result.uiArtifacts = await this.safeUiArtifacts(runId, result.panelState);
+    result.uiArtifacts = mergeUiArtifacts(
+      await this.safeUiArtifacts(runId, result.panelState),
+      toolEvidenceArtifacts(result.messages),
+    );
     result.reportPath = this.writeReport(result);
     return result;
   }
@@ -1261,6 +1264,84 @@ function panelStateArtifacts(panelState: unknown): Array<Record<string, unknown>
         active: panel.isActive === true,
       };
     });
+}
+
+function toolEvidenceArtifacts(messages: WorkflowAutomationMessage[]): Array<Record<string, unknown>> {
+  const artifacts: Array<Record<string, unknown>> = [];
+  const toolById = new Map<string, { name: string; input: Record<string, unknown> }>();
+  for (const message of messages) {
+    for (const tool of message.toolUses ?? []) toolById.set(tool.id, tool);
+    const result = message.toolResult;
+    if (!result || result.isError) continue;
+    const tool = toolById.get(result.toolUseId);
+    if (!tool) continue;
+    if (tool.name === "Dashboard") {
+      artifacts.push({
+        kind: "dashboard",
+        sourceKind: "dashboard-tool",
+        panelId: typeof tool.input.id === "string" ? `dash-${tool.input.id}` : undefined,
+        title: typeof tool.input.title === "string" ? tool.input.title : undefined,
+        verified: false,
+      });
+      continue;
+    }
+    if (tool.name === "ArtifactRegistry" && String(tool.input.kind ?? "") === "dashboard") {
+      artifacts.push({
+        kind: "dashboard",
+        sourceKind: "artifact-registry",
+        artifactId: typeof tool.input.id === "string" ? tool.input.id : undefined,
+        title: typeof tool.input.title === "string" ? tool.input.title : undefined,
+        verified: false,
+      });
+      continue;
+    }
+    if (tool.name === "WebView" && String(tool.input.action ?? "") === "verify_report") {
+      const verification = parseJsonObject(result.content);
+      if (verification && verification.rendered === true && verification.error == null) {
+        artifacts.push({
+          kind: "dashboard",
+          sourceKind: "webview-verify-report",
+          panelId: typeof verification.resolvedId === "string" ? verification.resolvedId : tool.input.id,
+          title: typeof verification.title === "string" ? verification.title : undefined,
+          sectionCount: verification.sectionCount,
+          verified: true,
+        });
+      }
+    }
+  }
+  return artifacts;
+}
+
+function mergeUiArtifacts(
+  base: Array<Record<string, unknown>>,
+  extras: Array<Record<string, unknown>>,
+): Array<Record<string, unknown>> {
+  const merged: Array<Record<string, unknown>> = [];
+  const seen = new Set<string>();
+  for (const artifact of [...base, ...extras]) {
+    const key = [
+      artifact.kind,
+      artifact.sourceKind,
+      artifact.panelId,
+      artifact.artifactId,
+      artifact.path,
+    ].map((value) => String(value ?? "")).join("|");
+    if (seen.has(key)) continue;
+    seen.add(key);
+    merged.push(artifact);
+  }
+  return merged;
+}
+
+function parseJsonObject(content: string): Record<string, unknown> | null {
+  try {
+    const parsed = JSON.parse(content);
+    return parsed && typeof parsed === "object" && !Array.isArray(parsed)
+      ? parsed as Record<string, unknown>
+      : null;
+  } catch {
+    return null;
+  }
 }
 
 function evaluateScenario(

@@ -625,7 +625,8 @@ export function maybeBuildFinanceBoundedAnswer(messages: Message[]): string | nu
   if (fundStrategyWatchAnswer) return fundStrategyWatchAnswer
   const stockStrategyWatchAnswer = maybeBuildStockStrategyWatchAnswer(messages.slice(lastUserIndex))
   if (stockStrategyWatchAnswer) return stockStrategyWatchAnswer
-  if (isFundCandidateWorkflow(workflowState)) {
+  if (isFundCandidateWorkflow(workflowState) ||
+    hasSuccessfulRunbookWorkflow(messages.slice(lastUserIndex + 1), 'fund_selection')) {
     return maybeBuildFundCandidateDiscoveryAnswer(messages.slice(lastUserIndex + 1))
   }
   if (isStockCandidateWorkflow(workflowState)) {
@@ -1616,6 +1617,19 @@ function isFundCandidateWorkflow(state: FinanceWorkflowState | null): boolean {
     (state.intentMode === 'analysis' ||
       state.intentMode === 'observe' ||
       state.intentMode === 'review')
+}
+
+function hasSuccessfulRunbookWorkflow(messages: Message[], workflow: string): boolean {
+  const successfulToolIds = successfulToolResultIds(messages)
+  return messages.some((message) =>
+    message.role === Role.Assistant &&
+    (message.toolUses ?? []).some((call) =>
+      call.name === 'Runbook' &&
+      String(call.input.action ?? '') === 'get' &&
+      String(call.input.workflow ?? '') === workflow &&
+      successfulToolIds.has(call.id)
+    )
+  )
 }
 
 function maybeBuildDeduplicatedFinanceToolCalls(

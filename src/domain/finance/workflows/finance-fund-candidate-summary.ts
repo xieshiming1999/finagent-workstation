@@ -17,7 +17,7 @@ export function maybeBuildFundCandidateDiscoveryAnswer(
   if (!screenCall) return null
   const screen = parseFundScreenerEvidence(resultByToolUseId.get(screenCall.id) ?? '')
   if (!screen) return null
-  if (screen.funds.length < 3) return null
+  if (screen.funds.length < 1) return null
   const candidates = screen.funds.slice(0, 3)
 
   const navByCode = new Map<string, string>()
@@ -52,6 +52,12 @@ export function maybeBuildFundCandidateDiscoveryAnswer(
     '',
     '本次只给出基金观察候选，没有加入观察池、没有触发交易，也没有把股票技术信号套用到基金上。',
     '',
+    ...(candidates.length < 3
+      ? [
+          `本轮结构化筛选只返回 ${candidates.length} 个可用候选，因此覆盖度偏低；以下结果只能作为有限样本观察，不应视为完整基金池筛选。`,
+          '',
+        ]
+      : []),
     ...candidates.flatMap((fund, index) => {
       const navStatus = navByCode.get(fund.code)
       const fundType = fund.type ?? 'fund_list 未提供结构化类型字段'

@@ -1394,7 +1394,7 @@ describe("WorkflowAutomationControl", () => {
       "This workflow-test-control block applies only to the current user request and supersedes earlier workflow-test-control blocks.",
     );
     expect(userMessage?.content).toContain(
-      "These tools are allowed and expected when needed for this current request: Watchlist, MonitorCreate.",
+      "This workflow requires these observable tools before the final answer: Watchlist, MonitorCreate.",
     );
     expect(userMessage?.content).toContain(
       "Do not call these tools in this workflow test: Bash, Portfolio.",
