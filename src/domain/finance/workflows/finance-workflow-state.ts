@@ -7,14 +7,18 @@ export type FinanceWorkflowKind =
   | 'fund_research'
   | 'strategy_design'
   | 'strategy_review'
+  | 'strategy_rerun'
   | 'trade_prep'
+  | 'trade_preparation'
+  | 'trade_review'
+  | 'watchlist_handoff'
   | 'monitor_review'
   | 'evidence_review'
   | 'unknown'
 
 export type FinanceAssetClass = 'stock' | 'fund' | 'portfolio' | 'mixed' | 'unknown'
-export type FinanceIntentMode = 'analysis' | 'validate' | 'backtest' | 'save' | 'rerun' | 'observe' | 'size' | 'confirm' | 'review' | 'unknown'
-export type FinanceExecutionMode = 'none' | 'preview_only' | 'requires_confirmation' | 'paper_allowed_after_confirmation' | 'blocked' | 'unknown'
+export type FinanceIntentMode = 'analysis' | 'validate' | 'backtest' | 'save' | 'rerun' | 'observe' | 'watchlist_add' | 'size' | 'confirm' | 'review' | 'unknown'
+export type FinanceExecutionMode = 'none' | 'preview_only' | 'watchlist' | 'backtest' | 'requires_confirmation' | 'paper_allowed_after_confirmation' | 'blocked' | 'unknown'
 export type FinanceConfirmationState = 'none' | 'pending' | 'answered' | 'denied' | 'accepted' | 'unknown'
 
 export interface FinanceWorkflowState {

@@ -61,6 +61,25 @@ const RUNBOOKS: Record<string, Runbook> = {
     ],
     verifier: 'WorkflowVerifier(action:"check", workflow:"stock_selection") when available; otherwise CapabilityStatus(action:"evaluate").',
   },
+  watchlist_handoff: {
+    workflow: 'watchlist_handoff',
+    purpose: 'Persist selected stock/fund observation candidates into watchlist state with structured conditions and readback evidence.',
+    requiredEvidence: ['candidate_evidence', 'watchlist_add_result', 'watchlist_readback', 'no_trade_boundary'],
+    allowedTools: ['Runbook', 'DataStore', 'DataProcess', 'Watchlist', 'WorkflowEvidence', 'CapabilityStatus'],
+    artifactTypes: ['data_evidence'],
+    approvalBoundary: 'Observation-state mutation only. No order, simulated trade, cash transfer, or broker side effect.',
+    failureHandling: [
+      'Add only candidates with enough evidence to justify observation.',
+      'Use Watchlist(action:"list") after mutation to verify persisted symbol/name/status/conditions.',
+      'If conditions cannot be represented structurally, keep unsupported parts visible in the final answer.',
+    ],
+    firstPassPlan: [
+      'Start from existing candidate evidence or a bounded stock_selection pass.',
+      'Use Watchlist(action:"add") for observation rows only.',
+      'Read back the created items before finalizing.',
+    ],
+    verifier: 'WorkflowVerifier(action:"check", workflow:"watchlist_handoff") before claiming watchlist persistence.',
+  },
   fund_selection: {
     workflow: 'fund_selection',
     purpose: 'Select or compare funds using fund class, NAV/yield, holdings, performance, risk, and suitability evidence.',
@@ -81,6 +100,20 @@ const RUNBOOKS: Record<string, Runbook> = {
     failureHandling: ['Reject unsupported indicators/operators with repairPlan.', 'Do not run free-form strategy strings.'],
     verifier: 'WorkflowVerifier(action:"check", workflow:"strategy_backtest") when available; otherwise CapabilityStatus(action:"evaluate").',
   },
+  strategy_rerun: {
+    workflow: 'strategy_rerun',
+    purpose: 'Reuse a saved StrategySpec identity on another symbol, validate compatibility, rerun backtest, and compare evidence.',
+    requiredEvidence: ['saved_strategy_identity', 'StrategySpec', 'validation_report', 'backtest_data_coverage', 'comparison_report'],
+    allowedTools: ['Runbook', 'MarketData', 'DataProcess', 'ArtifactRegistry', 'WorkflowEvidence', 'CapabilityStatus'],
+    artifactTypes: ['strategy', 'backtest', 'report'],
+    approvalBoundary: 'Read-only strategy reuse/backtest. No watchlist mutation or simulated trade unless the user explicitly asks for a later workflow.',
+    failureHandling: [
+      'Do not recreate a strategy from prose when a saved id/spec is required.',
+      'If no saved strategy exists, create a clearly labelled candidate StrategySpec and stop before pretending it was saved.',
+      'Report unsupported indicators, data coverage gaps, fees/slippage assumptions, and benchmark limits.',
+    ],
+    verifier: 'WorkflowVerifier(action:"check", workflow:"strategy_rerun") before final strategy-rerun claims.',
+  },
   trade_preparation: {
     workflow: 'trade_preparation',
     purpose: 'Prepare a simulated trade with sizing, risk, stop, evidence, and explicit user approval.',
@@ -90,6 +123,20 @@ const RUNBOOKS: Record<string, Runbook> = {
     approvalBoundary: 'Must stop for explicit user approval before any simulated order side effect.',
     failureHandling: ['If approval is missing, stop and ask.', 'If account/portfolio state is unavailable, do not place an order.'],
     verifier: 'WorkflowVerifier(action:"check", workflow:"trade_preparation") when available; otherwise CapabilityStatus(action:"evaluate").',
+  },
+  trade_review: {
+    workflow: 'trade_review',
+    purpose: 'Review simulated portfolio holdings and transaction history without adding orders or transfers.',
+    requiredEvidence: ['portfolio_list', 'positions_or_missing_reason', 'transactions_or_missing_reason', 'cash_or_performance', 'no_side_effect_boundary'],
+    allowedTools: ['Runbook', 'Portfolio', 'XueqiuTrade', 'DataStore', 'WorkflowEvidence', 'CapabilityStatus'],
+    artifactTypes: ['analysis', 'data_evidence'],
+    approvalBoundary: 'Read-only simulated-account review. Do not add buy/sell/transfer actions.',
+    failureHandling: [
+      'If cookie, portfolio id, or account state is missing, report the recoverable credential/config gap.',
+      'If transaction or position endpoints are empty, distinguish empty account state from provider failure.',
+      'Do not evaluate trading quality without the holdings/cash/transaction evidence used.',
+    ],
+    verifier: 'WorkflowVerifier(action:"check", workflow:"trade_review") before final simulated-account review claims.',
   },
   macro_factor_lookup: {
     workflow: 'macro_factor_lookup',

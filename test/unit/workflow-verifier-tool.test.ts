@@ -76,6 +76,59 @@ describe('WorkflowVerifierTool', () => {
     expect(result.checks.find((item: { id: string }) => item.id === 'workflow_state').message).toContain('stock_selection')
   })
 
+  it('accepts watchlist handoff with watchlist tool and matching typed state', async () => {
+    const ctx = tempToolContext()
+    seedSession(ctx, 'Watchlist')
+    seedWorkflowState(ctx, 'watchlist_handoff')
+
+    const result = JSON.parse(await new WorkflowVerifierTool().call('verify-watchlist', {
+      action: 'check',
+      workflow: 'watchlist_handoff',
+      requireWorkflowState: true,
+    }, ctx))
+
+    expect(result.passed).toBe(true)
+    expect(result.missing).toEqual([])
+    expect(result.observed.toolNames).toContain('Watchlist')
+  })
+
+  it('accepts strategy rerun with strategy tool evidence and matching state', async () => {
+    const ctx = tempToolContext()
+    seedSession(ctx, 'MarketData')
+    seedWorkflowState(ctx, 'strategy_rerun')
+    new ArtifactRegistry(ctx.basePath).register({
+      kind: 'backtest',
+      path: 'memory/reports/backtest.md',
+      title: 'Backtest',
+      source: 'agent-workflow',
+      verificationStatus: 'verified',
+    })
+
+    const result = JSON.parse(await new WorkflowVerifierTool().call('verify-rerun', {
+      action: 'check',
+      workflow: 'strategy_rerun',
+      requireWorkflowState: true,
+    }, ctx))
+
+    expect(result.passed).toBe(true)
+    expect(result.missing).toEqual([])
+  })
+
+  it('accepts trade review with simulated trading evidence and matching state', async () => {
+    const ctx = tempToolContext()
+    seedSession(ctx, 'XueqiuTrade')
+    seedWorkflowState(ctx, 'trade_review')
+
+    const result = JSON.parse(await new WorkflowVerifierTool().call('verify-trade-review', {
+      action: 'check',
+      workflow: 'trade_review',
+      requireWorkflowState: true,
+    }, ctx))
+
+    expect(result.passed).toBe(true)
+    expect(result.missing).toEqual([])
+  })
+
   it('accepts matching typed workflow state', async () => {
     const ctx = tempToolContext()
     seedSession(ctx, 'MarketData')

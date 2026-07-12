@@ -17,14 +17,18 @@ const WORKFLOW_KINDS: FinanceWorkflowKind[] = [
   'fund_research',
   'strategy_design',
   'strategy_review',
+  'strategy_rerun',
   'trade_prep',
+  'trade_preparation',
+  'trade_review',
+  'watchlist_handoff',
   'monitor_review',
   'evidence_review',
   'unknown',
 ]
 const ASSET_CLASSES: FinanceAssetClass[] = ['stock', 'fund', 'portfolio', 'mixed', 'unknown']
-const INTENT_MODES: FinanceIntentMode[] = ['analysis', 'validate', 'backtest', 'save', 'rerun', 'observe', 'size', 'confirm', 'review', 'unknown']
-const EXECUTION_MODES: FinanceExecutionMode[] = ['none', 'preview_only', 'requires_confirmation', 'paper_allowed_after_confirmation', 'blocked', 'unknown']
+const INTENT_MODES: FinanceIntentMode[] = ['analysis', 'validate', 'backtest', 'save', 'rerun', 'observe', 'watchlist_add', 'size', 'confirm', 'review', 'unknown']
+const EXECUTION_MODES: FinanceExecutionMode[] = ['none', 'preview_only', 'watchlist', 'backtest', 'requires_confirmation', 'paper_allowed_after_confirmation', 'blocked', 'unknown']
 const CONFIRMATION_STATES: FinanceConfirmationState[] = ['none', 'pending', 'answered', 'denied', 'accepted', 'unknown']
 
 export class FinanceWorkflowStateTool implements Tool {

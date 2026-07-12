@@ -70,6 +70,27 @@ describe('FinanceWorkflowStateTool', () => {
     }, tempToolContext())).rejects.toThrow(/Invalid finance workflow state: .*assetClass must be one of.*FinanceWorkflowState\(action:"help"\)/)
   })
 
+  it('accepts P0 workflow maturity scenario workflow kinds', async () => {
+    const tool = new FinanceWorkflowStateTool()
+    for (const workflowKind of ['watchlist_handoff', 'strategy_rerun', 'trade_preparation', 'trade_review']) {
+      const result = JSON.parse(await tool.call(`state-${workflowKind}`, {
+        action: 'validate',
+        workflowState: {
+          contract: 'finance-workflow-state-v1',
+          workflowKind,
+          assetClass: 'stock',
+          intentMode: workflowKind === 'watchlist_handoff' ? 'watchlist_add' : 'analysis',
+          executionMode: workflowKind === 'watchlist_handoff' ? 'watchlist' : workflowKind === 'strategy_rerun' ? 'backtest' : 'none',
+          confirmationState: 'none',
+          safetyBoundary: 'read-only or observation-only workflow',
+          evidenceRefs: ['data_provenance'],
+          source: 'test',
+        },
+      }, tempToolContext()))
+      expect(result.workflowState.workflowKind).toBe(workflowKind)
+    }
+  })
+
   it('saves and resumes durable workflow state', async () => {
     const tool = new FinanceWorkflowStateTool()
     const context = tempToolContext()

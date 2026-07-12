@@ -32,6 +32,27 @@ describe('RunbookTool', () => {
     expect(selection.verifier).toContain('workflow:"stock_selection"')
     expect(selection.approvalBoundary).toContain('No watchlist mutation')
 
+    const watchlist = JSON.parse(await tool.call('runbook-watchlist', {
+      action: 'get',
+      workflow: 'watchlist_handoff',
+    }, ctx))
+    expect(watchlist.requiredEvidence).toContain('watchlist_readback')
+    expect(watchlist.verifier).toContain('workflow:"watchlist_handoff"')
+
+    const rerun = JSON.parse(await tool.call('runbook-rerun', {
+      action: 'get',
+      workflow: 'strategy_rerun',
+    }, ctx))
+    expect(rerun.requiredEvidence).toContain('saved_strategy_identity')
+    expect(rerun.verifier).toContain('workflow:"strategy_rerun"')
+
+    const tradeReview = JSON.parse(await tool.call('runbook-trade-review', {
+      action: 'get',
+      workflow: 'trade_review',
+    }, ctx))
+    expect(tradeReview.requiredEvidence).toContain('transactions_or_missing_reason')
+    expect(tradeReview.approvalBoundary).toContain('Read-only simulated-account review')
+
     const macro = JSON.parse(await tool.call('runbook-macro', {
       action: 'get',
       workflow: 'macro_factor_lookup',
