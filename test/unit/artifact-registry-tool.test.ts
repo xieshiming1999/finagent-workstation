@@ -66,6 +66,17 @@ describe('ArtifactRegistryTool', () => {
     }, ctx)).rejects.toThrow('requires non-empty title and source')
   })
 
+  it('discloses managed register requirements in help and schema', async () => {
+    const ctx = tempToolContext()
+    const tool = new ArtifactRegistryTool()
+    const help = JSON.parse(await tool.call('artifact-help', {
+      action: 'help',
+    }, ctx))
+
+    expect(help.guidance.join('\n')).toContain('kind, title, and source')
+    expect(tool.inputSchema.properties.source.description).toContain('Required for register')
+  })
+
   it('creates a managed artifact file when register omits path', async () => {
     const ctx = tempToolContext()
     const created = JSON.parse(await new ArtifactRegistryTool().call('artifact-managed', {
