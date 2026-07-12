@@ -85,7 +85,7 @@ export class ProviderRouterTool implements Tool {
     },
   }
 
-  async call(_id: string, input: Record<string, unknown>, _ctx: ToolContext): Promise<string> {
+  async call(_id: string, input: Record<string, unknown>, ctx: ToolContext): Promise<string> {
     const action = String(input.action ?? 'tasks').trim()
     if (action === 'help') return JSON.stringify(help())
     if (action === 'tasks') {
@@ -98,7 +98,7 @@ export class ProviderRouterTool implements Tool {
     if (!task) {
       throw new Error('ProviderRouter(action:"route") requires a supported task. Use action="tasks" to inspect tasks.')
     }
-    return JSON.stringify(route(task, input, this.runtimeHealthProvider))
+    return JSON.stringify(route(task, input, this.runtimeHealthProvider, ctx))
   }
 }
 
@@ -118,8 +118,9 @@ function route(
   task: FinanceDataTask,
   input: Record<string, unknown>,
   runtimeHealthProvider: ProviderHealthProvider,
+  ctx: ToolContext,
 ): Record<string, unknown> {
-  const gates = gatesFromInput(input)
+  const gates = gatesFromInput(input, ctx)
   const healthRows = combinedHealthRows(task, input, runtimeHealthProvider)
   const healthBlocks = healthBlocksFromRows(healthRows)
   const effectiveGates = {
@@ -376,19 +377,26 @@ function providerHealthSource(input: Record<string, unknown>, rows: Array<Record
   }
 }
 
-function gatesFromInput(input: Record<string, unknown>): ProviderGates {
+function gatesFromInput(input: Record<string, unknown>, ctx: ToolContext): ProviderGates {
   const source = input.gates && typeof input.gates === 'object' && !Array.isArray(input.gates)
     ? input.gates as Record<string, unknown>
     : {}
+  const hasWindConfig = hasConfigValue(ctx, 'WIND_API_KEY')
+  const hasTushareConfig = hasConfigValue(ctx, 'TUSHARE_TOKEN')
   return {
-    windConfigured: source.windConfigured === true,
+    windConfigured: source.windConfigured === false ? false : source.windConfigured === true || hasWindConfig,
     windQuotaAvailable: source.windQuotaAvailable !== false,
-    tushareConfigured: source.tushareConfigured === true,
+    tushareConfigured: source.tushareConfigured === false ? false : source.tushareConfigured === true || hasTushareConfig,
     tusharePermissionLikely: source.tusharePermissionLikely !== false,
     allowAkshareCompatibility: source.allowAkshareCompatibility === true,
     allowBroadAkshare: source.allowBroadAkshare === true,
     temporarilyBlockedProviders: normalizeFinanceProviders(input.temporarilyBlockedProviders),
   }
+}
+
+function hasConfigValue(ctx: ToolContext, key: string): boolean {
+  const value = ctx.getConfigValue?.(key)
+  return typeof value === 'string' ? value.trim().length > 0 : Boolean(value)
 }
 
 function skipReason(provider: FinanceProvider, gates: ProviderGates, preferred: FinanceProvider[]): string {

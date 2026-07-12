@@ -46,6 +46,25 @@ describe('ProviderRouterTool', () => {
     ]))
   })
 
+  it('derives credential gates from runtime config by default', async () => {
+    const result = JSON.parse(await new ProviderRouterTool(() => []).call('router-config-gates', {
+      action: 'route',
+      task: 'macro',
+    }, tempToolContext({
+      WIND_API_KEY: 'configured-wind',
+      TUSHARE_TOKEN: 'configured-tushare',
+    })))
+
+    expect(result.gates).toMatchObject({
+      windConfigured: true,
+      tushareConfigured: true,
+    })
+    expect(result.order).toEqual(['wind', 'tushare'])
+    expect(result.skipped).toEqual(expect.arrayContaining([
+      expect.objectContaining({ provider: 'akshare', reason: 'akshare_compatibility_disabled' }),
+    ]))
+  })
+
   it('uses provider health to skip unhealthy provider', async () => {
     const result = JSON.parse(await new ProviderRouterTool().call('router-health', {
       action: 'route',
@@ -141,7 +160,7 @@ describe('ProviderRouterTool', () => {
   })
 })
 
-function tempToolContext(): ToolContext {
+function tempToolContext(config: Record<string, string> = {}): ToolContext {
   const basePath = mkdtempSync(join(tmpdir(), 'fin-provider-router-tool-'))
   const memoryDir = join(basePath, 'memory')
   mkdirSync(memoryDir, { recursive: true })
@@ -158,5 +177,6 @@ function tempToolContext(): ToolContext {
     readFileTimestamps: new Map(),
     taskRegistry: {} as ToolContext['taskRegistry'],
     teamRegistry: {} as ToolContext['teamRegistry'],
+    getConfigValue: (key: string) => config[key] ?? null,
   }
 }
