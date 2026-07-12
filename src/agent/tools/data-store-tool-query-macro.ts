@@ -952,6 +952,7 @@ export function queryMacroNumericSeries(
     limit: limitOf(input.limit, 40),
   }).filter((row) => isNumericMacroRow(row));
   const series = rows.map((row) => numericSeriesRow(row));
+  const gap = series.length === 0 ? macroNumericReadbackGap(input) : null;
   return JSON.stringify(
     {
       action: "query_macro_numeric_series",
@@ -959,15 +960,17 @@ export function queryMacroNumericSeries(
       status: series.length === 0 ? "missing" : "ok",
       missingReason:
         series.length === 0
-          ? "No official numeric macro series rows matched the requested filters. Run the macro factor refresh for configured providers or inspect macro_research_sources for credential/access limits."
+          ? gap?.reason ?? "No official numeric macro series rows matched the requested filters. Run the macro factor refresh for configured providers or inspect macro_research_sources for credential/access limits."
           : null,
+      failureClass: gap?.failureClass ?? null,
+      missingEvidence: gap ? [gap] : [],
       provenance: {
         interfaceId: "macro.official_series",
         providerId: "local",
         provider: "local",
         capabilityId: "local.query_macro_numeric_series",
         providerMode: "official-series-readback",
-        cacheStatus: "local-readback",
+        cacheStatus: series.length === 0 ? "local-miss" : "local-readback",
         cacheDecision:
           "read official numeric macro series separately from research narratives and policy/index events",
         canonicalSchema: "market_moving_factor_v1",
@@ -1028,6 +1031,8 @@ function numericSeriesRow(row: Record<string, unknown>): Record<string, unknown>
   const values = row.macro_values as Record<string, unknown> | undefined;
   const retrieval = row.retrieval_test as Record<string, unknown> | undefined;
   const raw = row.raw_json as Record<string, unknown> | undefined;
+  const frequency = String(raw?.Frequency ?? raw?.frequency ?? row.frequency ?? "");
+  const sourceDataTime = values?.period ?? row.source_published_at ?? row.event_at ?? null;
   return {
     seriesId: seriesIdForRow(row, values, raw),
     metricName: row.title ?? raw?.metric_name ?? raw?.LineDescription ?? null,
@@ -1035,12 +1040,13 @@ function numericSeriesRow(row: Record<string, unknown>): Record<string, unknown>
     sourceName: row.source_name ?? null,
     value: values?.actual ?? values?.text ?? null,
     unit: values?.unit ?? raw?.CL_UNIT ?? raw?.unit ?? null,
-    frequency: raw?.Frequency ?? raw?.frequency ?? null,
-    sourceDataTime: values?.period ?? row.source_published_at ?? row.event_at ?? null,
+    frequency: frequency || null,
+    sourceDataTime,
     releaseDate: row.source_published_at ?? row.event_at ?? null,
     fetchedAt: row.fetched_at ?? values?.retrievedAt ?? null,
     status: row.status ?? null,
     failureClass: row.failure_class ?? null,
+    freshnessStatus: macroNumericFreshnessStatus(sourceDataTime, frequency),
     sourceUrl: row.source_url ?? null,
     family: row.family ?? null,
     provenance: {
@@ -1056,6 +1062,72 @@ function numericSeriesRow(row: Record<string, unknown>): Record<string, unknown>
     retrievalStatus: retrieval?.status ?? null,
     },
   };
+}
+
+function macroNumericReadbackGap(input: Record<string, unknown>): Record<string, unknown> {
+  const provider = clean(input.provider ?? input.source);
+  const seriesId = clean(input.seriesId ?? input.target ?? input.metric ?? input.query);
+  const catalogRows = MACRO_NUMERIC_SERIES_CATALOG.filter((row) => {
+    if (provider && !matches(row.provider, provider) && !matches(row.sourceName, provider)) return false;
+    if (seriesId && !matches(row.seriesId, seriesId) && !matches(row.metricName, seriesId)) return false;
+    return true;
+  });
+  const row = catalogRows[0];
+  if (!row) {
+    return {
+      failureClass: "catalog-gap",
+      reason: "No official numeric macro series catalog row matched the requested provider/series filters.",
+      nextAction: "Inspect macro_numeric_series_catalog or add a governed official-series descriptor before relying on this macro number.",
+    };
+  }
+  if (row.status === "security-control") {
+    return {
+      failureClass: "source-access-controlled",
+      provider: row.provider,
+      seriesId: row.seriesId,
+      reason: `${row.sourceName} ${row.seriesId} is known but access-controlled or browser/manual-source only.`,
+      nextAction: row.nextAction,
+      credentialKey: row.credentialKey,
+    };
+  }
+  if (row.credentialRequired) {
+    return {
+      failureClass: "credential-or-quota-required",
+      provider: row.provider,
+      seriesId: row.seriesId,
+      reason: `${row.sourceName} ${row.seriesId} has no local official numeric readback row and requires ${row.credentialKey ?? "provider credential"} for live refresh.`,
+      nextAction: row.nextAction,
+      credentialKey: row.credentialKey,
+    };
+  }
+  return {
+    failureClass: "missing-local-readback",
+    provider: row.provider,
+    seriesId: row.seriesId,
+    reason: `${row.sourceName} ${row.seriesId} is supported, but no governed local numeric row matched the filters.`,
+    nextAction: row.nextAction,
+  };
+}
+
+function macroNumericFreshnessStatus(value: unknown, frequency: string): string {
+  const text = clean(value);
+  if (!text) return "unknown";
+  const date = new Date(text);
+  if (!Number.isFinite(date.getTime())) return "unknown";
+  const ageDays = (Date.now() - date.getTime()) / 86_400_000;
+  const freq = frequency.toLowerCase();
+  const staleAfterDays = freq.includes("daily")
+    ? 7
+    : freq.includes("weekly")
+      ? 21
+      : freq.includes("monthly")
+        ? 70
+        : freq.includes("quarter")
+          ? 150
+          : freq.includes("annual")
+            ? 460
+            : 90;
+  return ageDays > staleAfterDays ? "stale" : "current";
 }
 
 function seriesIdForRow(

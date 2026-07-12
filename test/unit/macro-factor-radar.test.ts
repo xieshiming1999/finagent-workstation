@@ -791,6 +791,30 @@ describe('macro factor radar persistence', () => {
     })
   })
 
+  it('classifies missing official numeric readback by provider status', () => {
+    const eia = JSON.parse(queryMacroNumericSeries(store, { provider: 'eia', seriesId: 'WCESTUS1' }))
+    expect(eia).toMatchObject({
+      action: 'query_macro_numeric_series',
+      status: 'missing',
+      count: 0,
+      failureClass: 'credential-or-quota-required',
+      provenance: {
+        cacheStatus: 'local-miss',
+      },
+    })
+    expect(eia.missingEvidence[0]).toMatchObject({
+      provider: 'eia',
+      seriesId: 'WCESTUS1',
+      credentialKey: 'EIA_API_KEY',
+    })
+
+    const nbs = JSON.parse(queryMacroNumericSeries(store, { provider: 'nbs_china' }))
+    expect(nbs.failureClass).toBe('source-access-controlled')
+
+    const oecd = JSON.parse(queryMacroNumericSeries(store, { provider: 'oecd' }))
+    expect(oecd.failureClass).toBe('missing-local-readback')
+  })
+
   it('normalizes macro research source provenance into reusable readback rows', () => {
     const generated = JSON.parse(macroResearchProvenance(store, { limit: 80 }))
     expect(generated).toMatchObject({
