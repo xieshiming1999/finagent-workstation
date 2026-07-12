@@ -3,6 +3,7 @@ import { Role, type Message, type ToolResult, type ToolUse } from '../../../agen
 export type FinanceWorkflowKind =
   | 'market_analysis'
   | 'stock_research'
+  | 'stock_selection'
   | 'fund_research'
   | 'strategy_design'
   | 'strategy_review'

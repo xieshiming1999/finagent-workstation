@@ -7,6 +7,7 @@ import type { Tool, ToolContext } from '../tool'
 type WorkflowSpec = {
   requiredAnyTools: string[]
   artifactKinds: ArtifactKind[]
+  artifactRequired?: boolean
   approvalBoundary: 'no_trade' | 'explicit_approval_required'
   macroEvidenceRecord?: boolean
 }
@@ -20,6 +21,12 @@ const WORKFLOWS: Record<string, WorkflowSpec> = {
   stock_research: {
     requiredAnyTools: ['MarketData', 'DataStore', 'DataProcess', 'Research'],
     artifactKinds: ['analysis', 'dashboard', 'data_snapshot'],
+    approvalBoundary: 'no_trade',
+  },
+  stock_selection: {
+    requiredAnyTools: ['MarketData', 'DataStore', 'DataProcess', 'Research'],
+    artifactKinds: ['analysis', 'data_snapshot'],
+    artifactRequired: false,
     approvalBoundary: 'no_trade',
   },
   fund_selection: {
@@ -168,7 +175,7 @@ function checkWorkflow(
     ),
     check('no_tool_errors', session.toolErrorCount === 0, 'No tool errors are visible.', `${session.toolErrorCount} tool error(s) are visible.`),
     check('no_pending_interactions', pending.length === 0, 'No pending AskUserQuestion or approval is visible.', `${pending.length} pending interaction(s) must be resolved before finalizing.`),
-    check('artifact_evidence', artifactEvidence.passed, 'Required artifact evidence is registered.', artifactEvidence.reason),
+    check('artifact_evidence', artifactEvidence.passed, artifactEvidence.reason, artifactEvidence.reason),
     check(
       'approval_boundary',
       input.spec.approvalBoundary !== 'explicit_approval_required' || pending.length > 0,
@@ -253,6 +260,12 @@ function artifactEvidenceFor(ctx: ToolContext, spec: WorkflowSpec, artifactId?: 
     return artifact
       ? { passed: true, reason: 'Required artifact id is registered.', artifact }
       : { passed: false, reason: `Required artifact "${artifactId}" is not registered.` }
+  }
+  if (spec.artifactRequired === false) {
+    return {
+      passed: true,
+      reason: 'Artifact evidence is optional for this workflow.',
+    }
   }
   const artifact = artifacts.find((item) => spec.artifactKinds.includes(item.kind))
   if (!artifact && spec.macroEvidenceRecord) {
@@ -444,6 +457,8 @@ function workflowKindForVerifierWorkflow(workflow: string): string {
       return 'market_analysis'
     case 'stock_research':
       return 'stock_research'
+    case 'stock_selection':
+      return 'stock_selection'
     case 'fund_selection':
       return 'fund_research'
     case 'strategy_backtest':

@@ -13,6 +13,7 @@ describe('RunbookTool', () => {
     const list = JSON.parse(await tool.call('runbook-1', { action: 'list' }, ctx))
     expect(list.contract).toBe('runbook-list-v1')
     expect(list.workflows).toContain('stock_research')
+    expect(list.workflows).toContain('stock_selection')
 
     const detail = JSON.parse(await tool.call('runbook-2', {
       action: 'get',
@@ -22,6 +23,14 @@ describe('RunbookTool', () => {
     expect(detail.workflow).toBe('strategy_backtest')
     expect(detail.requiredEvidence).toContain('StrategySpec')
     expect(detail.approvalBoundary).toContain('Backtest and monitor only')
+
+    const selection = JSON.parse(await tool.call('runbook-selection', {
+      action: 'get',
+      workflow: 'stock_selection',
+    }, ctx))
+    expect(selection.requiredEvidence).toContain('screening_or_candidate_source')
+    expect(selection.verifier).toContain('workflow:"stock_selection"')
+    expect(selection.approvalBoundary).toContain('No watchlist mutation')
 
     const macro = JSON.parse(await tool.call('runbook-macro', {
       action: 'get',

@@ -42,6 +42,25 @@ const RUNBOOKS: Record<string, Runbook> = {
     failureHandling: ['Do not invent missing PE/PB/fundamental data.', 'Name provider/cache/source-time gaps.'],
     verifier: 'WorkflowVerifier(action:"check", workflow:"stock_research") when available; otherwise CapabilityStatus(action:"evaluate").',
   },
+  stock_selection: {
+    workflow: 'stock_selection',
+    purpose: 'Create a bounded stock observation shortlist with explicit evidence, missing-evidence disclosure, and no watchlist mutation unless the user asks for it.',
+    requiredEvidence: ['market_context', 'screening_or_candidate_source', 'sector_or_theme', 'quote_or_snapshot', 'risk_or_missing_reason', 'data_provenance'],
+    allowedTools: ['MarketData', 'DataStore', 'DataProcess', 'Research', 'WorkflowEvidence', 'CapabilityStatus'],
+    artifactTypes: ['analysis', 'data_evidence'],
+    approvalBoundary: 'No watchlist mutation, monitor creation, or order placement unless the user explicitly requests that next step.',
+    failureHandling: [
+      'Keep the first candidate set bounded.',
+      'Name stale, missing, or provider-limited evidence instead of broad retry loops.',
+      'If the user later asks to add candidates to a watchlist, switch to a watchlist/monitor workflow and preserve the candidate evidence.',
+    ],
+    firstPassPlan: [
+      'Use a governed market or sector context plus one bounded screening/candidate source.',
+      'For each candidate, cite the specific evidence class used and the evidence class still missing.',
+      'Do not create or update watchlist state in the selection answer unless the user explicitly asked for persistence.',
+    ],
+    verifier: 'WorkflowVerifier(action:"check", workflow:"stock_selection") when available; otherwise CapabilityStatus(action:"evaluate").',
+  },
   fund_selection: {
     workflow: 'fund_selection',
     purpose: 'Select or compare funds using fund class, NAV/yield, holdings, performance, risk, and suitability evidence.',

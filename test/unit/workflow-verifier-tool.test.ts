@@ -43,6 +43,39 @@ describe('WorkflowVerifierTool', () => {
     expect(result.nextAction).toContain('Do not finalize yet')
   })
 
+  it('accepts stock selection evidence without requiring stale artifact reuse', async () => {
+    const ctx = tempToolContext()
+    seedSession(ctx, 'DataProcess')
+    seedWorkflowState(ctx, 'stock_selection')
+
+    const result = JSON.parse(await new WorkflowVerifierTool().call('verify-selection', {
+      action: 'check',
+      workflow: 'stock_selection',
+      requireWorkflowState: true,
+    }, ctx))
+
+    expect(result.passed).toBe(true)
+    expect(result.missing).toEqual([])
+    expect(result.observed.workflowState.workflowState.workflowKind).toBe('stock_selection')
+    expect(result.checks.find((item: { id: string }) => item.id === 'artifact_evidence').message).toContain('Artifact evidence is optional')
+  })
+
+  it('rejects stock selection when saved workflow state belongs to stock research', async () => {
+    const ctx = tempToolContext()
+    seedSession(ctx, 'DataProcess')
+    seedWorkflowState(ctx, 'stock_research')
+
+    const result = JSON.parse(await new WorkflowVerifierTool().call('verify-selection-state', {
+      action: 'check',
+      workflow: 'stock_selection',
+      requireWorkflowState: true,
+    }, ctx))
+
+    expect(result.passed).toBe(false)
+    expect(result.missing).toContain('workflow_state')
+    expect(result.checks.find((item: { id: string }) => item.id === 'workflow_state').message).toContain('stock_selection')
+  })
+
   it('accepts matching typed workflow state', async () => {
     const ctx = tempToolContext()
     seedSession(ctx, 'MarketData')

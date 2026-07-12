@@ -13,6 +13,7 @@ import type {
 const WORKFLOW_KINDS: FinanceWorkflowKind[] = [
   'market_analysis',
   'stock_research',
+  'stock_selection',
   'fund_research',
   'strategy_design',
   'strategy_review',

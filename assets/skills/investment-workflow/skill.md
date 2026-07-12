@@ -46,9 +46,9 @@ DataStore(action: "stats")
 
 | User intent class | What to do |
 |---|---|
-| broad stock-candidate discovery | `screen_stock` with reasonable default gates such as ROE > 10, PE between 5 and 50, excluding ST names |
-| valuation-and-quality shortlist | `screen_stock` with filters such as `pe_max`/`roe_min` or equivalent gates, then `query_stock_daily_valuation` readback to verify local coverage |
-| sector-specific candidate comparison | `screen_stock` with the requested industry universe plus valuation comparison |
+| broad stock-candidate discovery | Start from `query_market_screening`, `query_sector_ranking`, `query_hot_rank`, `query_flow_rank`, and bounded selected-code validation. Use live `screen_stock` only as an explicit refresh/follow-up path. |
+| valuation-and-quality shortlist | Start from `query_stock_daily_valuation` readback with filters such as `pe_max`/`roe_min`; use live `screen_stock` only if the user explicitly asks to refresh screening coverage. |
+| sector-specific candidate comparison | Start from sector/board readback plus selected-code valuation/technical comparison; use live `screen_stock` only when the provider path is healthy and the user asked for refreshed screening. |
 | single-stock analysis | financial metrics plus technical indicators plus `query_kline` trend review |
 | buy-readiness question | combine valuation, technical view, and same-sector comparison |
 | strategy viability question | run a `backtest` |
@@ -83,10 +83,12 @@ Step 4: show the results and suggest the next step
 
 If gates rely on fundamentals such as ROE or gross margin, warn the user that screening will be slower and may require local financial coverage. Pure market-factor screening should be much faster.
 
-Do not check `interface_availability` for `stock.screen`; the current supported
-entry point is the `DataStore(action: "screen_stock")` action plus
-`query_stock_daily_valuation` readback. If all returned rows lack PE/ROE, treat
-that as a coverage/normalization gap, not a successful full-market factor screen.
+Do not check `interface_availability` for `stock.screen`; it is not a governed
+interface id. The normal first-answer path is local readback
+(`query_market_screening`, `query_stock_daily_valuation`, sector/hot/flow
+queries) plus bounded selected-code validation. `DataStore(action:
+"screen_stock")` is a live refresh path; if it fails, keep the failure visible
+and answer from available governed evidence rather than retrying broad calls.
 
 ## Backtest flow
 

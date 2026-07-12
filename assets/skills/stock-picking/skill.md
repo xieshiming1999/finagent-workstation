@@ -82,13 +82,18 @@ answer. Do not reuse option, IPO, bond, or single-stock rows as sector
 rotation evidence.
 
 ### Broad market coarse screen
+Use governed local screening snapshots first:
+
 ```text
-DataStore(
-  action: "screen_stock",
-  universe: {"exclude_st": true},
-  limit: 20
-)
+DataStore(action: "query_market_screening", sourceAction: "screen_stock", limit: 20)
 ```
+
+If no reusable `market_screening_snapshot` rows exist, do not treat a live
+screener call as mandatory for the first answer. Use valuation readback,
+sector/hot/flow rows, and bounded candidate validation, then disclose that
+market-screening evidence is missing. Use `DataStore(action:"screen_stock")`
+only when the user explicitly asks to refresh screening data or when the
+workflow has enough time/budget to tolerate a live provider failure.
 
 For valuation/fundamental screens, do not probe `interface_availability` with
 `stock.screen`; that is not a governed interface id. Use
