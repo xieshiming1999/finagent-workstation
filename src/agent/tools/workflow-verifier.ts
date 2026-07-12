@@ -39,7 +39,7 @@ const WORKFLOWS: Record<string, WorkflowSpec> = {
   },
   macro_factor_lookup: {
     requiredAnyTools: ['SourceReader', 'DataStore', 'Research'],
-    artifactKinds: ['macro_evidence', 'research', 'data_snapshot'],
+    artifactKinds: ['macro_evidence', 'research', 'data_snapshot', 'report', 'dashboard'],
     approvalBoundary: 'no_trade',
     macroEvidenceRecord: true,
   },

@@ -30,6 +30,38 @@ describe('FinanceWorkflowStateTool', () => {
     })
   })
 
+  it('accepts nested workflowState for create and preserves artifact requirements', async () => {
+    const tool = new FinanceWorkflowStateTool()
+    const result = JSON.parse(await tool.call('tool-nested', {
+      action: 'create',
+      workflowState: {
+        contract: 'finance-workflow-state-v1',
+        workflowKind: 'evidence_review',
+        assetClass: 'mixed',
+        intentMode: 'review',
+        executionMode: 'none',
+        confirmationState: 'none',
+        safetyBoundary: 'macro evidence is analysis context only',
+        evidenceRefs: ['macro_evidence', 'artifact_registry'],
+        requiredArtifacts: [{
+          kindAnyOf: ['report', 'dashboard'],
+          mustInclude: ['sourceTime', 'fetchedAt'],
+        }],
+        requiredVerifier: {
+          tool: 'WorkflowVerifier',
+          action: 'check',
+          workflow: 'macro_factor_lookup',
+        },
+      },
+    }, tempToolContext()))
+
+    expect(result.workflowState).toMatchObject({
+      workflowKind: 'evidence_review',
+      requiredArtifacts: [expect.objectContaining({ kindAnyOf: ['report', 'dashboard'] })],
+      requiredVerifier: { tool: 'WorkflowVerifier', workflow: 'macro_factor_lookup' },
+    })
+  })
+
   it('rejects incomplete state with correction guidance', async () => {
     const tool = new FinanceWorkflowStateTool()
     await expect(tool.call('tool-2', {

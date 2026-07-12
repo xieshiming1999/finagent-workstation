@@ -27,7 +27,7 @@ import {
 import { maybeBuildFundCandidateDiscoveryAnswer } from './finance-fund-candidate-summary'
 import { maybeBuildFundMonitorReviewSummary } from './finance-fund-monitor-summary'
 import { maybeBuildFundStrategyWatchAnswer } from './finance-fund-watch-summary'
-import { maybeBuildMacroEvidenceAnswer } from './finance-macro-evidence-summary'
+import { collectMacroEvidence, maybeBuildMacroEvidenceAnswer } from './finance-macro-evidence-summary'
 import { maybeBuildPortfolioMonitorReviewSummary } from './finance-portfolio-monitor-summary'
 import { maybeBuildPositionSizingAnswer } from './finance-position-sizing-summary'
 import { maybeBuildPriorAnalysisValidationAnswer } from './finance-prior-analysis-validation-summary'
@@ -588,9 +588,14 @@ export function maybeBuildFinanceBoundedAnswer(messages: Message[]): string | nu
   const macroEvidenceAnswer = maybeBuildMacroEvidenceAnswer(messages.slice(lastUserIndex), {
     failureSummary: '本轮已使用结构化宏观 readback 和来源证据；如需刷新来源，应进入显式 macro source update / extraction workflow。',
   })
+  const macroArtifactGate = macroArtifactFinalizationGate(messages, workflowState, lastUserIndex)
+  const macroArtifactGateSatisfied = macroArtifactGate.required &&
+    macroArtifactGate.artifactRegistered &&
+    macroArtifactGate.verifierChecked
   if (
     macroEvidenceAnswer &&
-    !requiresMacroStockQuoteRecovery(messages.slice(lastUserIndex)) &&
+    (!macroArtifactGate.required || macroArtifactGateSatisfied) &&
+    (!requiresMacroStockQuoteRecovery(messages.slice(lastUserIndex)) || macroArtifactGateSatisfied) &&
     !hasPendingMacroConditionWatchlistWorkflow(messages.slice(lastUserIndex), workflowState) &&
     !hasPendingWatchlistStateWorkflow(messages.slice(lastUserIndex))
   ) {
@@ -653,6 +658,9 @@ export function buildFinanceRecovery(messages: Message[]): DomainRecovery | null
     }
   }
 
+  const macroArtifactRecovery = buildMacroArtifactFinalizationRecovery(messages)
+  if (macroArtifactRecovery) return macroArtifactRecovery
+
   const macroStockRecovery = buildMacroStockQuoteRecovery(messages)
   if (macroStockRecovery) {
     return {
@@ -662,6 +670,158 @@ export function buildFinanceRecovery(messages: Message[]): DomainRecovery | null
   }
 
   return null
+}
+
+function buildMacroArtifactFinalizationRecovery(messages: Message[]): DomainRecovery | null {
+  const lastUserIndex = findLastIndex(messages, (message) => message.role === Role.User)
+  if (lastUserIndex < 0) return null
+  const workflowState = latestFinanceWorkflowState(messages, lastUserIndex)
+  const gate = macroArtifactFinalizationGate(messages, workflowState, lastUserIndex)
+  if (!gate.required) return null
+
+  const turnMessages = messages.slice(lastUserIndex)
+  const evidence = collectMacroEvidence(turnMessages)
+  if (!evidence.hasMacroEvidence) return null
+
+  const toolCalls: ToolUse[] = []
+  if (!gate.artifactRegistered) {
+    toolCalls.push({
+      id: 'auto-macro-artifact-register',
+      name: 'ArtifactRegistry',
+      input: {
+        action: 'register',
+        kind: gate.artifactKind,
+        title: '宏观影响证据报告',
+        source: 'macro_factor_lookup',
+        verificationStatus: 'unverified',
+        freshness: {
+          sourceTime: firstEvidenceTime(evidence) ?? null,
+          fetchedAt: new Date().toISOString(),
+          status: evidence.missingLines.length > 0 ? 'unknown' : 'fresh',
+        },
+        provenance: {
+          workflow: 'macro_factor_lookup',
+          evidenceTier: 'governed_macro_readback',
+          sourceDataTime: firstEvidenceTime(evidence) ?? null,
+          missingEvidence: evidence.missingLines,
+          confidenceEffect: firstOrDefault(evidence.decisionLines, firstOrDefault(evidence.reliabilityLines, '宏观证据用于调整分析信心和观察优先级。')),
+          affectedAssets: macroAffectedAssets(evidence),
+        },
+        metadata: {
+          workflow: 'macro_factor_lookup',
+          workflowState,
+          macroEvidenceSummary: {
+            contract: 'macro-artifact-evidence-summary-v1',
+            topic: 'macro_factor_lookup',
+            sourceTime: firstEvidenceTime(evidence) ?? null,
+            fetchedAt: new Date().toISOString(),
+            freshnessStatus: evidence.missingLines.length > 0 ? 'unknown' : 'fresh',
+            confidenceEffect: firstOrDefault(evidence.decisionLines, firstOrDefault(evidence.reliabilityLines, '宏观证据用于调整分析信心和观察优先级。')),
+            affectedAssets: macroAffectedAssets(evidence),
+            missingEvidence: evidence.missingLines.length > 0 ? evidence.missingLines : ['未发现阻断性缺失证据；仍需在后续刷新中复核来源时效。'],
+            failureClass: evidence.missingLines.length > 0 ? 'missing_evidence' : null,
+          },
+          sourceLines: evidence.sourceLines,
+          contentLines: evidence.contentLines,
+          factorLines: evidence.factorLines,
+          evidenceLines: evidence.evidenceLines,
+          reliabilityLines: evidence.reliabilityLines,
+          assetImpactLines: evidence.assetImpactLines,
+          decisionLines: evidence.decisionLines,
+        },
+      },
+    })
+  }
+  if (!gate.verifierChecked) {
+    toolCalls.push({
+      id: 'auto-macro-workflow-verify',
+      name: 'WorkflowVerifier',
+      input: {
+        action: 'check',
+        workflow: gate.verifierWorkflow,
+        requireWorkflowState: false,
+      },
+    })
+  }
+  return toolCalls.length > 0
+    ? {
+        toolCalls,
+        answerAfterTools: maybeBuildFinanceBoundedAnswer,
+      }
+    : null
+}
+
+function macroArtifactFinalizationGate(
+  messages: Message[],
+  workflowState: FinanceWorkflowState | null,
+  turnStartIndex: number,
+): {
+  required: boolean
+  artifactRegistered: boolean
+  verifierChecked: boolean
+  artifactKind: 'report' | 'dashboard'
+  verifierWorkflow: string
+} {
+  const requiredArtifacts = Array.isArray(workflowState?.requiredArtifacts)
+    ? workflowState.requiredArtifacts
+    : []
+  const requiresReviewableMacroArtifact = requiredArtifacts.some((item) => {
+    const kinds = Array.isArray(item.kindAnyOf) ? item.kindAnyOf.map((kind) => String(kind)) : []
+    return kinds.some((kind) => kind === 'report' || kind === 'dashboard')
+  })
+  const requiredVerifier = workflowState?.requiredVerifier
+  const verifierWorkflow = String(requiredVerifier?.workflow ?? 'macro_factor_lookup')
+  const requiresMacroVerifier = requiredVerifier?.tool === 'WorkflowVerifier' &&
+    verifierWorkflow === 'macro_factor_lookup'
+  const evidence = collectMacroEvidence(messages.slice(turnStartIndex))
+  const required = evidence.hasMacroEvidence && (requiresReviewableMacroArtifact || requiresMacroVerifier)
+  const turnMessages = messages.slice(turnStartIndex)
+  return {
+    required,
+    artifactRegistered: hasSuccessfulToolAction(turnMessages, 'ArtifactRegistry', 'register'),
+    verifierChecked: hasSuccessfulToolAction(turnMessages, 'WorkflowVerifier', 'check'),
+    artifactKind: requiredArtifacts.some((item) =>
+      Array.isArray(item.kindAnyOf) && item.kindAnyOf.map((kind) => String(kind)).includes('dashboard'),
+    ) ? 'dashboard' : 'report',
+    verifierWorkflow,
+  }
+}
+
+function hasSuccessfulToolAction(messages: Message[], toolName: string, action: string): boolean {
+  const callById = new Map<string, ToolUse>()
+  for (const message of messages) {
+    if (message.role !== Role.Assistant) continue
+    for (const call of message.toolUses ?? []) {
+      if (call.name === toolName && String(call.input.action ?? '') === action) {
+        callById.set(call.id, call)
+      }
+    }
+  }
+  for (const message of messages) {
+    const result = message.toolResult
+    if (message.role !== Role.Tool || !result || result.isError) continue
+    if (callById.has(result.toolUseId)) return true
+  }
+  return false
+}
+
+function firstOrDefault(values: string[], fallback: string): string {
+  return values.find((value) => value.trim()) ?? fallback
+}
+
+function firstEvidenceTime(evidence: ReturnType<typeof collectMacroEvidence>): string | undefined {
+  const joined = [
+    ...evidence.factorLines,
+    ...evidence.contentLines,
+    ...evidence.evidenceLines,
+    ...evidence.reliabilityLines,
+  ].join(' ')
+  return joined.match(/\d{4}-\d{2}-\d{2}(?:T[\d:.+-Z]+)?/)?.[0]
+}
+
+function macroAffectedAssets(evidence: ReturnType<typeof collectMacroEvidence>): string[] {
+  if (evidence.assetImpactLines.length > 0) return evidence.assetImpactLines.slice(0, 8)
+  return ['industry_watchlist', 'stock_watchlist', 'fund_watchlist', 'strategy_assumptions']
 }
 
 export const financeWorkflowHooks: DomainWorkflowHooks = {

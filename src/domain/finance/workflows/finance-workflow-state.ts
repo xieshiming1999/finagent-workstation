@@ -31,6 +31,8 @@ export interface FinanceWorkflowState {
   source: string
   hasUnsupportedExecutableParts?: boolean
   blockedTools?: string[]
+  requiredArtifacts?: Array<Record<string, unknown>>
+  requiredVerifier?: Record<string, unknown>
 }
 
 export function latestFinanceWorkflowState(messages: Message[], turnStartIndex = 0): FinanceWorkflowState | null {

@@ -72,7 +72,7 @@ export class FinanceWorkflowStateTool implements Tool {
     if (action !== 'create' && action !== 'validate' && action !== 'save') {
       throw new Error(`Invalid FinanceWorkflowState action "${action}". Use action="help" for supported actions.`)
     }
-    const state = action === 'validate' || action === 'save'
+    const state = input.workflowState && typeof input.workflowState === 'object'
       ? normalizeState(input.workflowState)
       : normalizeState(input)
     const errors = validateState(state)
@@ -127,6 +127,8 @@ function normalizeState(value: unknown): Partial<FinanceWorkflowState> {
     updatedAt: optionalString(input.updatedAt),
     hasUnsupportedExecutableParts: input.hasUnsupportedExecutableParts === true,
     blockedTools: stringList(input.blockedTools),
+    requiredArtifacts: objectList(input.requiredArtifacts),
+    requiredVerifier: objectValue(input.requiredVerifier),
   }
 }
 
@@ -155,6 +157,14 @@ function optionalString(value: unknown): string | undefined {
 function stringList(value: unknown): string[] {
   if (!Array.isArray(value)) return []
   return [...new Set(value.map((item) => String(item ?? '').trim()).filter(Boolean))]
+}
+
+function objectList(value: unknown): Array<Record<string, unknown>> | undefined {
+  if (!Array.isArray(value)) return undefined
+  const rows = value.filter((item): item is Record<string, unknown> =>
+    !!item && typeof item === 'object' && !Array.isArray(item),
+  )
+  return rows.length > 0 ? rows : undefined
 }
 
 type WorkflowStateStatus = 'active' | 'blocked' | 'complete' | 'cancelled'

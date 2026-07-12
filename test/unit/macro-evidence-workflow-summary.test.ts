@@ -684,6 +684,89 @@ describe('macro evidence workflow summary', () => {
     expect(answer).toContain('宏观假设和失效条件')
   })
 
+  it('requires artifact registration and workflow verification for structured macro artifact output', () => {
+    const workflowState = {
+      contract: 'finance-workflow-state-v1',
+      workflowKind: 'evidence_review',
+      assetClass: 'mixed',
+      intentMode: 'review',
+      executionMode: 'none',
+      confirmationState: 'none',
+      safetyBoundary: 'macro evidence is analysis context only',
+      evidenceRefs: ['macro_evidence', 'artifact_registry'],
+      requiredArtifacts: [{
+        kindAnyOf: ['report', 'dashboard'],
+        purpose: 'reviewable macro impact output',
+        mustInclude: ['sourceTime', 'fetchedAt', 'missingEvidence', 'confidenceEffect', 'affectedAssets'],
+      }],
+      requiredVerifier: {
+        tool: 'WorkflowVerifier',
+        action: 'check',
+        workflow: 'macro_factor_lookup',
+      },
+      source: 'scenario-workflow-state',
+    }
+    const messages = [
+      userMessage(`macro report\ndata: ${JSON.stringify({ workflowState })}`),
+      assistantMessage('', [
+        { id: 'runbook', name: 'Runbook', input: { action: 'get', workflow: 'macro_factor_lookup' } },
+        { id: 'factor', name: 'DataStore', input: { action: 'query_macro_factors', target: 'energy rates dollar' } },
+        { id: 'evidence', name: 'DataStore', input: { action: 'query_macro_research_evidence', family: 'commodity_research' } },
+      ]),
+      toolMessage('runbook', JSON.stringify({ workflow: 'macro_factor_lookup' })),
+      toolMessage('factor', JSON.stringify({
+        action: 'query_macro_factors',
+        rows: [{
+          title: 'Energy inventory evidence',
+          family: 'commodity_research',
+          sourceDataTime: '2026-07-01',
+          fetchedAt: '2026-07-12T06:00:00.000Z',
+          affectedAssets: ['energy equities', 'manufacturing margin', 'commodity funds'],
+          confidenceEffect: 'Raises observation priority for energy-sensitive assets.',
+        }],
+      })),
+      toolMessage('evidence', JSON.stringify({
+        action: 'query_macro_research_evidence',
+        rows: [{
+          source_name: 'EIA',
+          sourceDataTime: '2026-07-01',
+          confidenceEffect: 'official numeric evidence supports energy factor monitoring',
+          affectedAssets: ['energy equities', 'commodity funds'],
+        }],
+      })),
+    ]
+
+    expect(maybeBuildFinanceBoundedAnswer(messages)).toBeNull()
+    const recovery = buildFinanceRecovery(messages)
+
+    expect(recovery?.toolCalls.map((call) => `${call.name}.${call.input.action}`)).toEqual([
+      'ArtifactRegistry.register',
+      'WorkflowVerifier.check',
+    ])
+    expect(recovery?.toolCalls[0].input).toMatchObject({
+      kind: 'dashboard',
+      source: 'macro_factor_lookup',
+    })
+
+    const recoveredMessages = [
+      ...messages,
+      assistantMessage('', recovery?.toolCalls ?? []),
+      toolMessage('auto-macro-artifact-register', JSON.stringify({
+        contract: 'artifact-registry-record-v1',
+        artifact: { kind: 'dashboard', id: 'dashboard:macro', source: 'macro_factor_lookup' },
+      })),
+      toolMessage('auto-macro-workflow-verify', JSON.stringify({
+        contract: 'workflow-verifier-check-v1',
+        workflow: 'macro_factor_lookup',
+        passed: true,
+      })),
+    ]
+
+    const answer = maybeBuildFinanceBoundedAnswer(recoveredMessages)
+    expect(answer).toContain('宏观证据与来源状态')
+    expect(answer).toContain('Energy inventory evidence')
+  })
+
   it('preserves structured non-macro context in bounded macro answers', () => {
     const answer = maybeBuildFinanceBoundedAnswer([
       userMessage('macro analysis'),

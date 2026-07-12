@@ -238,7 +238,7 @@ function buildMacroEvidenceSection(evidence: MacroEvidence): string[] {
     lines.push(`- 资产影响（行业/基金/策略口径）：${evidence.assetImpactLines.slice(0, 5).join('；')}。`)
   }
   if (evidence.decisionLines.length > 0) {
-    lines.push(`- 置信度/下一步：${evidence.decisionLines.slice(0, 5).join('；')}。`)
+    lines.push(`- 信心影响/置信度/下一步：${evidence.decisionLines.slice(0, 5).join('；')}。`)
   }
   lines.push(
     '',
