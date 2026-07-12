@@ -111,7 +111,10 @@ export async function* runAgentLoop(args: AgentLoopArgs, depth = 0): AsyncGenera
     }
   }
 
-  const preflightEvidenceSearches = args.domainWorkflowHooks.buildPreflightToolCalls(args.messages)
+  const preflightEvidenceSearches = availableToolCalls(
+    args.domainWorkflowHooks.buildPreflightToolCalls(args.messages),
+    args.tools,
+  )
   if (preflightEvidenceSearches) {
     yield { type: 'stream-start' }
     args.pushAndPersist(assistantMessage('', preflightEvidenceSearches))
@@ -253,7 +256,10 @@ export async function* runAgentLoop(args: AgentLoopArgs, depth = 0): AsyncGenera
 
   const reasoning = reasoningBuffer.join('') || undefined
   if (toolCalls.length === 0) {
-    const requiredEvidenceSearches = args.domainWorkflowHooks.buildPreflightToolCalls(args.messages)
+    const requiredEvidenceSearches = availableToolCalls(
+      args.domainWorkflowHooks.buildPreflightToolCalls(args.messages),
+      args.tools,
+    )
     if (requiredEvidenceSearches) {
       text = ''
       toolCalls.push(...requiredEvidenceSearches)
@@ -465,6 +471,12 @@ export async function* runAgentLoop(args: AgentLoopArgs, depth = 0): AsyncGenera
   }
   args.messages.push(assistantMessage(''))
   yield* runAgentLoop(args, depth + 1)
+}
+
+function availableToolCalls(toolCalls: ToolUse[] | null, tools: ToolRegistry): ToolUse[] | null {
+  if (!toolCalls) return null
+  const filtered = toolCalls.filter((call) => !!tools.get(call.name))
+  return filtered.length > 0 ? filtered : null
 }
 
 function collectToolCalls(messages: Message[]): ToolUse[] {

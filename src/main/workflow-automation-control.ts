@@ -356,7 +356,9 @@ export class WorkflowAutomationControl {
       }, boundedTimeout);
     }
     try {
-      for await (const event of agent.run(prompt)) {
+      for await (const event of agent.run(prompt, {
+        disabledTools: limits.disallowTools,
+      })) {
         events.push(event);
         this.deps.emitAgentEvent?.(event);
         if (event.type === "tool-use-start") {
@@ -1944,7 +1946,7 @@ function buildWorkflowPrompt(
     lines.push("This workflow-test-control block applies only to the current user request and supersedes earlier workflow-test-control blocks.");
   }
   if (expected.length > 0) {
-    lines.push(`These tools are allowed and expected when needed for this current request: ${expected.join(", ")}.`);
+    lines.push(`This workflow requires these observable tools before the final answer: ${expected.join(", ")}.`);
   }
   if (disallowed.length > 0) {
     lines.push(`Do not call these tools in this workflow test: ${disallowed.join(", ")}.`);

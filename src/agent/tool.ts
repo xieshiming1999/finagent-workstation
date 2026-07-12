@@ -111,6 +111,20 @@ export class ToolRegistry {
     return Array.from(this.tools.values())
   }
 
+  filtered(options: { disabledTools?: Iterable<string> }): ToolRegistry {
+    const disabled = new Set(
+      Array.from(options.disabledTools ?? [])
+        .map((name) => name.trim().toLowerCase())
+        .filter(Boolean),
+    )
+    const registry = new ToolRegistry()
+    for (const tool of this.list()) {
+      if (disabled.has(tool.name.toLowerCase())) continue
+      registry.register(tool)
+    }
+    return registry
+  }
+
   capabilities(): ToolCapabilitySummary[] {
     return this.list().map((tool) => summarizeToolCapability(tool))
   }

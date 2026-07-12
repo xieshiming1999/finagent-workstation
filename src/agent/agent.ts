@@ -79,6 +79,7 @@ export class Agent {
   private contextHints = new Map<string, string>()
 
   private tools: ToolRegistry
+  private turnScopedTools: ToolRegistry | null = null
   private basePath: string
   private workDir: string
   private assetsPath: string
@@ -184,13 +185,18 @@ export class Agent {
   }
 
   private get systemPrompt(): string {
+    const tools = this.activeTools()
     return buildSystemPrompt(
       this.overridePrompt,
       this.promptBuilder,
       this.pluginSkillPaths,
-      this.tools,
+      tools,
       () => this.defaultPrompt(),
     )
+  }
+
+  private activeTools(): ToolRegistry {
+    return this.turnScopedTools ?? this.tools
   }
 
   private readFileTimestamps = new Map<string, number>()
@@ -214,8 +220,13 @@ export class Agent {
 
   private turnMessageStartIndex = 0
 
-  async *run(prompt: string, opts?: { images?: Array<{ data: string; mediaType?: string }> }): AsyncGenerator<AgentEvent> {
-    yield* runAgentTurn({
+  async *run(prompt: string, opts?: { images?: Array<{ data: string; mediaType?: string }>; disabledTools?: string[] }): AsyncGenerator<AgentEvent> {
+    const previousTurnScopedTools = this.turnScopedTools
+    this.turnScopedTools = opts?.disabledTools?.length
+      ? this.tools.filtered({ disabledTools: opts.disabledTools })
+      : null
+    try {
+      yield* runAgentTurn({
       isRunning: () => this.running,
       isCancelled: () => this.cancelled,
       setRunning: (value) => { this.running = value },
@@ -252,7 +263,10 @@ export class Agent {
       agentLoop: () => this.agentLoop(),
       appendTurnToHistory: () => this.appendTurnToHistory(),
       runPostTurnHooks: () => this.runPostTurnHooks(),
-    }, prompt, opts)
+      }, prompt, opts)
+    } finally {
+      this.turnScopedTools = previousTurnScopedTools
+    }
   }
 
   clearSession(): void {
@@ -430,7 +444,7 @@ export class Agent {
       contextScrubber: this.contextScrubber,
       llm: this.llm,
       systemPrompt: this.systemPrompt,
-      tools: this.tools,
+      tools: this.activeTools(),
       contextWindow: this.contextWindow,
       setLastPromptTokens: (value) => { this.lastPromptTokens = value },
       setLastPromptMsgCount: (value) => { this.lastPromptMsgCount = value },
