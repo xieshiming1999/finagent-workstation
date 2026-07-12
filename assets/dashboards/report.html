@@ -68,6 +68,15 @@ var CONFIG = {
   sections: []
 };
 
+window.__FINAGENT_REPORT_STATUS__ = {
+  contract: 'finagent-report-render-status-v1',
+  rendered: false,
+  loading: true,
+  error: null,
+  title: '',
+  sectionCount: 0
+};
+
 function escapeHtml(value) {
   return String(value == null ? '' : value)
     .replace(/&/g, '&amp;')
@@ -127,6 +136,17 @@ function renderErrorFallback(error) {
   var c = document.getElementById('content');
   if (!c) return;
   var title = nonEmpty(CONFIG.title) ? CONFIG.title : document.title;
+  window.__FINAGENT_REPORT_STATUS__ = {
+    contract: 'finagent-report-render-status-v1',
+    rendered: false,
+    loading: false,
+    error: {
+      message: error && error.message ? String(error.message) : 'Unknown render error',
+      stack: error && error.stack ? String(error.stack) : ''
+    },
+    title: title || 'Report',
+    sectionCount: 0
+  };
   c.innerHTML = '<div class="report-header"><div class="report-title">' +
     escapeHtml(title || 'Report') +
     '</div></div>' +
@@ -584,7 +604,8 @@ function render() {
   if (reportDate) html += '<div class="report-date">' + reportDate + '</div>';
   html += '</div>';
 
-  buildSectionsFromConfig(CONFIG).filter(hasRenderableSection).forEach(function(s) {
+  var renderedSections = buildSectionsFromConfig(CONFIG).filter(hasRenderableSection);
+  renderedSections.forEach(function(s) {
     html += '<div class="section">';
     if (s.title) html += '<div class="section-title">' + s.title + '</div>';
 
@@ -659,6 +680,14 @@ function render() {
   });
 
   c.innerHTML = html;
+  window.__FINAGENT_REPORT_STATUS__ = {
+    contract: 'finagent-report-render-status-v1',
+    rendered: true,
+    loading: false,
+    error: null,
+    title: title || 'Report',
+    sectionCount: renderedSections.length
+  };
 }
 
 function inferSectionType(section) {

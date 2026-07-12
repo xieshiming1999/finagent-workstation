@@ -17,7 +17,7 @@ export class WebViewTool implements Tool {
     properties: {
       action: {
         type: 'string',
-        enum: ['help', 'open', 'navigate', 'extract', 'execute', 'screenshot', 'cookies', 'dom', 'click', 'input', 'scroll', 'wait_for', 'back', 'forward', 'reload', 'get_info', 'get_html', 'list', 'locate', 'refresh'],
+        enum: ['help', 'open', 'navigate', 'extract', 'execute', 'screenshot', 'cookies', 'dom', 'click', 'input', 'scroll', 'wait_for', 'back', 'forward', 'reload', 'get_info', 'get_html', 'verify_report', 'list', 'locate', 'refresh'],
         description: 'Action to perform. list/locate/refresh manage panels; others interact with content.',
       },
       id: { type: 'string', description: 'WebView panel ID (e.g., "eastmoney", "xueqiu")' },
@@ -319,6 +319,28 @@ export class WebViewTool implements Tool {
         return await execJS(js)
       }
 
+      case 'verify_report': {
+        const js = reportVerificationScript()
+        let raw: string
+        try {
+          raw = await execJS(js)
+        } catch (error) {
+          const fallback = await this.staticDashboardInfo(panelId, ctx, error)
+          if (fallback) return reportVerificationFromStaticFallback(fallback)
+          throw error
+        }
+        const verification = parseReportVerification(raw, panelId)
+        if (!verification.rendered || verification.error) {
+          throw new Error(
+            `WEBVIEW_REPORT_RENDER_FAILED: report panel "${verification.resolvedId}" did not render. ` +
+            `error=${verification.errorMessage || 'none'} loading=${verification.loading}. ` +
+            'Use Dashboard(template:"report", config:<corrected structured config>) to regenerate, then call WebView(action:"verify_report", id:<dashboard id>) again. ' +
+            'If the page is an existing generated file, rewrite it from the current report template while preserving CONFIG.',
+          )
+        }
+        return JSON.stringify(verification, null, 2)
+      }
+
       case 'list': {
         if (!this.panelQuery) return toolError('panel query not available')
         let panels: PanelSummary[]
@@ -397,7 +419,7 @@ export class WebViewTool implements Tool {
       }
 
       default:
-        return toolError(`Unknown action: ${action}. Available: open, navigate, extract, execute, screenshot, cookies, dom, click, input, scroll, wait_for, back, forward, reload, get_info, get_html, list, locate, refresh`)
+        return toolError(`Unknown action: ${action}. Available: open, navigate, extract, execute, screenshot, cookies, dom, click, input, scroll, wait_for, back, forward, reload, get_info, get_html, verify_report, list, locate, refresh`)
     }
   }
 
@@ -489,6 +511,7 @@ function webViewHelp(): string {
       navigation: ['open', 'navigate', 'back', 'forward', 'reload', 'refresh'],
       interaction: ['click', 'input', 'scroll', 'wait_for'],
       extraction: ['extract', 'execute', 'dom', 'cookies', 'screenshot'],
+      verification: ['verify_report'],
     },
     requiredFields: {
       open: ['id', 'url'],
@@ -504,6 +527,7 @@ function webViewHelp(): string {
       'Use list before assuming a panel exists.',
       'Use get_info or wait_for before screenshot when page readiness matters.',
       'Use screenshot plus MultimodalAgent for visual verification.',
+      'Use verify_report after creating a report dashboard; failed render checks return a tool error with recovery guidance.',
       'Use refresh only for file-backed pages; reload is native browser reload.',
     ],
   }, null, 2)
@@ -621,6 +645,106 @@ function reportConfigToText(config: Record<string, unknown> | null): string {
   add(config.dataNote)
   add(config['数据说明'])
   return parts.join(' ').replace(/\s+/g, ' ').trim()
+}
+
+function reportVerificationScript(): string {
+  return `JSON.stringify((function() {
+    var text = (document.body && document.body.innerText ? document.body.innerText : '').replace(/\\s+/g, ' ').trim();
+    var status = window.__FINAGENT_REPORT_STATUS__ || null;
+    var errorNode = document.querySelector('.text-block strong');
+    var visibleError = errorNode && /Report render error/i.test(errorNode.textContent || '')
+      ? (errorNode.parentElement ? errorNode.parentElement.textContent : errorNode.textContent)
+      : '';
+    var sections = Array.from(document.querySelectorAll('.section-title')).map(function(el) {
+      return (el.textContent || '').trim();
+    }).filter(Boolean);
+    var loading = /Loading report\\.\\.\\./i.test(text);
+    var rendered = !!(status && status.rendered === true) && !loading && !visibleError;
+    return {
+      contract: 'webview-report-verification-v1',
+      rendered: rendered,
+      loading: loading || !!(status && status.loading === true),
+      error: status && status.error ? status.error : (visibleError ? { message: visibleError } : null),
+      title: status && status.title ? status.title : document.title,
+      url: window.location.href,
+      readyState: document.readyState,
+      sectionCount: sections.length || (status && status.sectionCount) || 0,
+      sections: sections.slice(0, 20),
+      textLength: text.length,
+      textSnippet: text.slice(0, 800)
+    };
+  })())`
+}
+
+function parseReportVerification(raw: string, requestedId: string): Record<string, unknown> & {
+  rendered: boolean
+  loading: boolean
+  error: unknown
+  errorMessage: string
+  resolvedId: string
+} {
+  let decoded: unknown = raw
+  try {
+    decoded = JSON.parse(raw)
+  } catch {
+    // Keep raw fallback below.
+  }
+  if (typeof decoded === 'string') {
+    try {
+      decoded = JSON.parse(decoded)
+    } catch {
+      decoded = { textSnippet: decoded }
+    }
+  }
+  const obj = decoded && typeof decoded === 'object' && !Array.isArray(decoded)
+    ? decoded as Record<string, unknown>
+    : {}
+  const error = obj.error
+  const errorMessage = error && typeof error === 'object' && !Array.isArray(error)
+    ? String((error as Record<string, unknown>).message ?? JSON.stringify(error))
+    : String(error ?? '')
+  return {
+    contract: 'webview-report-verification-v1',
+    requestedId,
+    resolvedId: requestedId,
+    rendered: obj.rendered === true,
+    loading: obj.loading === true,
+    error: error ?? null,
+    errorMessage,
+    title: obj.title ?? '',
+    url: obj.url ?? '',
+    readyState: obj.readyState ?? '',
+    sectionCount: typeof obj.sectionCount === 'number' ? obj.sectionCount : 0,
+    sections: Array.isArray(obj.sections) ? obj.sections : [],
+    textLength: typeof obj.textLength === 'number' ? obj.textLength : 0,
+    textSnippet: obj.textSnippet ?? '',
+    nextAction: obj.rendered === true && !error
+      ? 'Report dashboard rendered. The agent may cite this UI artifact as verified evidence.'
+      : 'Regenerate or rewrite the dashboard artifact, then verify_report again before finalizing.',
+  }
+}
+
+function reportVerificationFromStaticFallback(fallback: string): string {
+  const info = JSON.parse(fallback) as Record<string, unknown>
+  const text = String(info.textSnippet ?? '')
+  return JSON.stringify({
+    contract: 'webview-report-verification-v1',
+    requestedId: info.requestedId ?? '',
+    resolvedId: info.resolvedId ?? '',
+    rendered: !/Loading report/i.test(text) && text.trim().length > 0,
+    loading: /Loading report/i.test(text),
+    error: null,
+    title: info.title ?? '',
+    url: info.url ?? '',
+    readyState: info.readyState ?? 'static-file',
+    sectionCount: 0,
+    sections: [],
+    textLength: text.length,
+    textSnippet: text.slice(0, 800),
+    fallback: info.fallback,
+    liveRendererError: info.liveRendererError,
+    nextAction: 'Static dashboard artifact was inspected because live renderer verification failed. Prefer live verify_report again if visual evidence is required.',
+  }, null, 2)
 }
 
 function decodeHtml(value: string): string {

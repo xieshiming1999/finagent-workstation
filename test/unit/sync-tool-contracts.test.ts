@@ -55,6 +55,7 @@ describe('sync tool contracts', () => {
       innerHTML: '<div>Loading report...</div>',
     }
     const context = vm.createContext({
+      window: {},
       document: {
         title: 'Report',
         getElementById: (id: string) => id === 'content' ? element : null,
@@ -67,6 +68,13 @@ describe('sync tool contracts', () => {
     expect(element.innerHTML).toContain('东方财富')
     expect(element.innerHTML).toContain('20.92 +12.47%')
     expect(element.innerHTML).not.toContain('Loading report')
+    expect((context as unknown as { window: Record<string, unknown> }).window.__FINAGENT_REPORT_STATUS__).toMatchObject({
+      contract: 'finagent-report-render-status-v1',
+      rendered: true,
+      loading: false,
+      title: '东方财富（300059）股票研究看板',
+      sectionCount: 1,
+    })
   })
 
   it('UIControl help is available before a renderer handler is registered', async () => {
@@ -126,6 +134,56 @@ describe('sync tool contracts', () => {
       script: 'new Promise(() => {})',
       timeout: 100,
     }, makeCtx(mkdtempSync(join(tmpdir(), 'fin-webview-timeout-'))))).rejects.toThrow('WEBVIEW_EXECUTION_TIMEOUT')
+  })
+
+  it('WebView verify_report returns structured render evidence for rendered reports', async () => {
+    const tool = new WebViewTool()
+    tool.setPanelQuery(async () => [{ id: 'dash-report', title: 'Report', url: '/tmp/report.html', type: 'dashboard', isActive: true }])
+    tool.setRequestHandler(async () => JSON.stringify({
+      contract: 'webview-report-verification-v1',
+      rendered: true,
+      loading: false,
+      error: null,
+      title: '东方财富（300059）股票研究看板',
+      url: 'file:///tmp/report.html',
+      readyState: 'complete',
+      sectionCount: 7,
+      sections: ['行情', 'K线 / 技术摘要'],
+      textLength: 500,
+      textSnippet: '东方财富（300059）股票研究看板 行情 K线 / 技术摘要',
+    }))
+
+    const result = JSON.parse(await tool.call('wv-report-ok', {
+      action: 'verify_report',
+      id: 'report',
+    }, makeCtx(mkdtempSync(join(tmpdir(), 'fin-webview-report-ok-')))))
+
+    expect(result.rendered).toBe(true)
+    expect(result.sectionCount).toBe(7)
+    expect(result.nextAction).toContain('verified evidence')
+  })
+
+  it('WebView verify_report fails through the tool error channel when report rendering failed', async () => {
+    const tool = new WebViewTool()
+    tool.setPanelQuery(async () => [{ id: 'dash-report', title: 'Report', url: '/tmp/report.html', type: 'dashboard', isActive: true }])
+    tool.setRequestHandler(async () => JSON.stringify({
+      contract: 'webview-report-verification-v1',
+      rendered: false,
+      loading: false,
+      error: { message: 'row.forEach is not a function' },
+      title: '东方财富（300059）股票研究看板',
+      url: 'file:///tmp/report.html',
+      readyState: 'complete',
+      sectionCount: 0,
+      sections: [],
+      textLength: 120,
+      textSnippet: 'Report render error row.forEach is not a function',
+    }))
+
+    await expect(tool.call('wv-report-fail', {
+      action: 'verify_report',
+      id: 'report',
+    }, makeCtx(mkdtempSync(join(tmpdir(), 'fin-webview-report-fail-'))))).rejects.toThrow(/WEBVIEW_REPORT_RENDER_FAILED.*row\.forEach/)
   })
 
   it('UIControl openPage observes the dashboard panel', async () => {

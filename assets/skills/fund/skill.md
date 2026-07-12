@@ -212,7 +212,7 @@ metric as per-10k income / 7-day annualized yield. Do not fetch or retry
 ordinary `fund_nav` after the fund identity shows it is a money fund.
 
 After `Dashboard` succeeds, verify once with
-`WebView(action: "get_info", id: "fund-compare-000009-000001")` or the
+`WebView(action: "verify_report", id: "fund-compare-000009-000001")` or the
 observed `dash-...` panel id. If live renderer verification times out but the
 tool returns `fallback:"static-dashboard-file"`, disclose that the dashboard
 artifact exists and live DOM evidence should be retried later if visual proof is
@@ -220,7 +220,7 @@ required.
 
 When continuing or refreshing an existing report dashboard, reuse the same
 dashboard `id` with `Dashboard(template: "report", config: "...")`, then verify
-with WebView. Do not recommend `UIControl.pushData` for report-template
+with `WebView(action:"verify_report")`. Do not recommend `UIControl.pushData` for report-template
 refreshes; it is for runtime-only panel updates, not the normal persisted
 dashboard artifact path.
 

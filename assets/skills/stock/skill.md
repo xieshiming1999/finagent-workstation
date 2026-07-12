@@ -164,12 +164,14 @@ DataStore(action: "query_fundamental", code: "600519", limit: 8)
 DataStore(action: "query_money_flow", code: "600519", limit: 20)
 DataProcess(action: "summary", code: "600519", limit: 120)
 Dashboard(template: "report", id: "...", title: "...", config: "{...}")
-WebView(action: "get_info", id: "...")
+WebView(action: "verify_report", id: "...")
 ```
 
 This normal stock-analysis dashboard route is closed after the app dashboard
-tool reports an observed panel/render and the chat answer summarizes the
-evidence. Do not switch to `Skill(skill:"dashboard")`, `Skill(skill:"html-artifact")`,
+tool reports an observed panel and `WebView(action:"verify_report")` confirms
+the report rendered. If `verify_report` fails, regenerate or rewrite the
+dashboard from the report template with corrected structured config, then
+verify again before finalizing. Do not switch to `Skill(skill:"dashboard")`, `Skill(skill:"html-artifact")`,
 `Skill(skill:"tradingview")`, `Write`, `Edit`, or custom
 `memory/pages/*.html` generation for this route unless the user explicitly asks
 for custom HTML, a TradingView widget, or a hand-built page. Do not keep
@@ -312,7 +314,7 @@ Dashboard template.
    `bundle/dashboards/report/template.html` or `finagent_workstation/dashboards/report.html`.
 3. After a successful `Dashboard(template: ...)` call, do not use `Read` to
    inspect the generated dashboard HTML. Verify rendering with
-   `WebView(action:"get_info")` or one `WebView(action:"screenshot")`, then
+   `WebView(action:"verify_report")` for report dashboards, or one `WebView(action:"screenshot")`, then
    summarize the visible result in chat, including the explicit PE/PB valuation
    status when valuation evidence is part of the dashboard.
 4. Never use `Write`/`FileWrite` as a shortcut for normal dashboard creation.
