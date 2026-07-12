@@ -30,6 +30,21 @@ observation conditions, risks, and data gaps into the dashboard config.
 Do not mutate `Watchlist` in the same turn unless the user explicitly asks to
 add the candidates to a watchlist, observation pool, or self-selected list.
 
+If typed workflow state is present and it says `intentMode:"watchlist_add"` or
+`executionMode:"watchlist"`, treat the request as a stock-selection to
+watchlist-handoff workflow:
+
+1. Use at most one bounded candidate source plus one local valuation/readback
+   source before mutation.
+2. Call `Runbook(action:"get", workflow:"watchlist_handoff")`.
+3. Add a small observation-only candidate set with `Watchlist(action:"add")`.
+4. Read it back with `Watchlist(action:"list")`.
+5. Check `WorkflowVerifier(action:"check", workflow:"watchlist_handoff")`.
+
+Do not continue broad Wind, K-line, selected-code fundamental refresh, or
+provider diagnostic expansion once enough candidate evidence exists for
+observation-only handoff.
+
 ## Provenance gate
 
 Before live discovery or validation, check the governed interface and local

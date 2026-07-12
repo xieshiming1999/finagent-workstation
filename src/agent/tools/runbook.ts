@@ -44,22 +44,22 @@ const RUNBOOKS: Record<string, Runbook> = {
   },
   stock_selection: {
     workflow: 'stock_selection',
-    purpose: 'Create a bounded stock observation shortlist with explicit evidence, missing-evidence disclosure, and no watchlist mutation unless the user asks for it.',
+    purpose: 'Create a bounded stock observation shortlist with explicit evidence and missing-evidence disclosure. If the request already asks to save, add, persist, or observe candidates, switch to watchlist_handoff before mutating watchlist state.',
     requiredEvidence: ['market_context', 'screening_or_candidate_source', 'sector_or_theme', 'quote_or_snapshot', 'risk_or_missing_reason', 'data_provenance'],
-    allowedTools: ['MarketData', 'DataStore', 'DataProcess', 'Research', 'WorkflowEvidence', 'CapabilityStatus'],
+    allowedTools: ['Runbook', 'MarketData', 'DataStore', 'DataProcess', 'Research', 'WorkflowEvidence', 'CapabilityStatus'],
     artifactTypes: ['analysis', 'data_evidence'],
-    approvalBoundary: 'No watchlist mutation, monitor creation, or order placement unless the user explicitly requests that next step.',
+    approvalBoundary: 'No watchlist mutation, monitor creation, or order placement in analysis-only selection mode. When observation persistence is requested, use watchlist_handoff and keep it observation-only.',
     failureHandling: [
       'Keep the first candidate set bounded.',
       'Name stale, missing, or provider-limited evidence instead of broad retry loops.',
-      'If the user later asks to add candidates to a watchlist, switch to a watchlist/monitor workflow and preserve the candidate evidence.',
+      'If observation persistence is requested, do not keep expanding evidence after a bounded candidate set; hand off to Watchlist and read back the mutation.',
     ],
     firstPassPlan: [
       'Use a governed market or sector context plus one bounded screening/candidate source.',
       'For each candidate, cite the specific evidence class used and the evidence class still missing.',
-      'Do not create or update watchlist state in the selection answer unless the user explicitly asked for persistence.',
+      'If persistence is requested, stop stock_selection after the bounded candidate set and continue with watchlist_handoff.',
     ],
-    verifier: 'WorkflowVerifier(action:"check", workflow:"stock_selection") when available; otherwise CapabilityStatus(action:"evaluate").',
+    verifier: 'WorkflowVerifier(action:"check", workflow:"stock_selection") for analysis-only selection; use WorkflowVerifier(action:"check", workflow:"watchlist_handoff") when candidates were added to observation/watchlist state.',
   },
   watchlist_handoff: {
     workflow: 'watchlist_handoff',
@@ -72,6 +72,7 @@ const RUNBOOKS: Record<string, Runbook> = {
       'Add only candidates with enough evidence to justify observation.',
       'Use Watchlist(action:"list") after mutation to verify persisted symbol/name/status/conditions.',
       'If conditions cannot be represented structurally, keep unsupported parts visible in the final answer.',
+      'Do not continue broad fundamental, Wind, or K-line expansion after enough candidate evidence exists for observation-only handoff.',
     ],
     firstPassPlan: [
       'Start from existing candidate evidence or a bounded stock_selection pass.',
