@@ -68,15 +68,23 @@ export interface StrategyValidation {
 }
 
 function wantsDetailedCatalog(input: Record<string, unknown> = {}): boolean {
-  const detail = String(input.detail ?? input.mode ?? '').toLowerCase()
+  const params = input.params && typeof input.params === 'object' && !Array.isArray(input.params)
+    ? input.params as Record<string, unknown>
+    : {}
+  const detail = String(input.detail ?? input.mode ?? params.detail ?? params.mode ?? '').toLowerCase()
+  const code = String(input.code ?? params.code ?? '').toLowerCase()
   const requestedFields = Array.isArray(input.fields)
     ? input.fields.join(' ')
-    : String(input.fields ?? '')
+    : Array.isArray(params.fields)
+      ? params.fields.join(' ')
+      : String(input.fields ?? params.fields ?? '')
   return input.includeCatalog === true ||
     input.full === true ||
     input.indicators != null ||
     requestedFields.includes('indicatorCatalog') ||
     requestedFields.includes('indicators') ||
+    code === 'detail:catalog' ||
+    code === 'catalog' ||
     detail === 'catalog' ||
     detail === 'full' ||
     detail === 'detailed'
@@ -221,7 +229,24 @@ export function customStrategyHelp(input: Record<string, unknown> = {}): string 
         },
         positionSizing: { type: 'fixed_fraction', value: 0.2 },
       },
-      operators: ['>', '>=', '<', '<=', 'crosses_above', 'crosses_below'],
+      ruleCompositionExamples: {
+        declaredIndicatorPattern: {
+          description: 'Declare every indicator once in strategySpec.indicators with an id, then reference only that id or built-in series such as close/volume inside entry/exit rules. Do not put an indicator object inline inside entryRules or exitRules.',
+          indicators: [
+            { id: 'ema20', type: 'ema', source: 'close', params: { period: 20 } },
+            { id: 'ema60', type: 'ema', source: 'close', params: { period: 60 } },
+          ],
+          entryRule: { left: 'ema20', op: '>', right: { mul: ['ema60', 1] } },
+        },
+        volumeGreaterThanMovingAverageMultiple: {
+          description: 'For volume > N times average volume, declare volume_sma and compare built-in volume against {"mul":["volSma20", N]}.',
+          indicators: [
+            { id: 'volSma20', type: 'volume_sma', source: 'volume', params: { period: 20 } },
+          ],
+          entryRule: { left: 'volume', op: '>', right: { mul: ['volSma20', 1.5] } },
+        },
+      },
+      operators: ['>', '>=', '<', '<=', '==', '!=', 'crosses_above', 'crosses_below'],
       exits: ['stop_loss_pct', 'take_profit_pct', 'trailing_stop_pct', 'max_drawdown_stop_pct', 'atr_stop_loss', 'time_stop_bars'],
       positionSizing: ['full_capital', 'fixed_fraction', 'risk_per_trade', 'kelly_fraction'],
       rankingMetrics: ['score', 'total_return_pct', 'sharpe_ratio', 'max_drawdown_pct', 'trade_count', 'relative_strength_pct', 'rps'],
@@ -661,7 +686,7 @@ export function customStrategyHelp(input: Record<string, unknown> = {}): string 
         action: ['entry', 'exit', 'buy', 'sell', 'long', 'close'],
         condition: 'Simple comparisons joined by and/or.',
       },
-      grammar: '<series-or-indicator-id> (< | <= | > | >= | crosses_above | crosses_below) (<series-or-indicator-id> | number)',
+      grammar: '<series-or-indicator-id> (< | <= | > | >= | == | != | crosses_above | crosses_below) (<series-or-indicator-id> | number)',
       builtInSeries: ['close', 'volume'],
       examples: [
         { action: 'entry', condition: 'close > sma20 and sma20 > sma60' },
@@ -674,7 +699,6 @@ export function customStrategyHelp(input: Record<string, unknown> = {}): string 
     fundObservationV1.indicatorCatalog = fundIndicatorHelpCatalog
     fundObservationV1.indicatorCatalogByCategory = fundIndicatorCatalogByCategory()
   } else {
-    delete (payload.executableV1 as Record<string, unknown>).stockExample
     delete (payload.executableV1 as Record<string, unknown>).indicatorPreviewCatalog
     delete (payload.fundObservationV1 as Record<string, unknown>).ordinaryFundExample
     delete (payload.fundObservationV1 as Record<string, unknown>).moneyFundExample
@@ -774,7 +798,10 @@ export function customStrategyHelp(input: Record<string, unknown> = {}): string 
         coreFields: ['metrics', 'signals', 'validationSummary', 'validationIssues', 'repairPlan', 'unsupportedDetails', 'dataRequirements', 'dataCoverage', 'lifecycle', 'readback_only', 'lifecycleIssue'],
       },
     }
-    if (String(input.detail ?? '').toLowerCase() !== 'contracts') {
+    const params = input.params && typeof input.params === 'object' && !Array.isArray(input.params)
+      ? input.params as Record<string, unknown>
+      : {}
+    if (String(input.detail ?? params.detail ?? '').toLowerCase() !== 'contracts') {
       delete payload.inputContracts
       delete payload.outputContracts
     }

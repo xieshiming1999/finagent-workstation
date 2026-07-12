@@ -627,6 +627,17 @@ function rightValue(condition: Record<string, unknown>, indicatorIds = new Set<s
   }
   if (condition.right && typeof condition.right === 'object' && !('mul' in condition.right)) {
     const right = condition.right as Record<string, unknown>
+    const op = String(right.op ?? right.operator ?? '').trim()
+    if (op === '*') {
+      const left = right.left ?? right.indicator ?? right.type
+      const ref = typeof left === 'string' ? parseIndicatorRef(left) : refFromObject(right)
+      return {
+        mul: [
+          typeof left === 'string' && indicatorIds.has(left) ? left : ref.id,
+          numericValue(right.right) ?? numericValue(right.value) ?? numericValue(right.scale) ?? numericValue(right.multiplier) ?? numericValue(right.factor) ?? 1,
+        ],
+      }
+    }
     const ref = refFromObject(right)
     return { mul: [ref.id, numericValue(right.scale) ?? numericValue(right.multiplier) ?? numericValue(right.factor) ?? numericValue(right.value) ?? 1] }
   }
@@ -758,7 +769,7 @@ function conditionRulesFromDsl(raw: string): Array<Record<string, unknown> & { l
 }
 
 function parseDslComparison(raw: string): Record<string, unknown> | null {
-  const match = raw.trim().match(/^([a-zA-Z_][a-zA-Z0-9_]*|close|volume)\s*(crosses_above|crosses_below|>=|<=|>|<)\s*([a-zA-Z_][a-zA-Z0-9_]*|[0-9]+(?:\.[0-9]+)?)$/)
+  const match = raw.trim().match(/^([a-zA-Z_][a-zA-Z0-9_]*|close|volume)\s*(crosses_above|crosses_below|>=|<=|==|!=|>|<)\s*([a-zA-Z_][a-zA-Z0-9_]*|[0-9]+(?:\.[0-9]+)?)$/)
   if (!match) return null
   const [, left, operator, right] = match
   const numericRight = numericValue(right)

@@ -109,6 +109,13 @@ to compare against presets, optimize parameters, or rank alternatives.
 `custom_strategy_backtest` already returns benchmark/data/risk evidence; use
 that evidence before spending extra backtest calls.
 
+Save and rerun are separate lifecycle steps. Do not call
+`custom_strategy_save`, `custom_strategy_run`, `custom_strategy_read`, or
+`custom_strategy_compare` during a design/validate/backtest request unless the
+user explicitly asks to save, persist, reload/read back, rerun, compare saved
+strategies, monitor, or create a watch artifact. A saveable backtest means the
+strategy can be saved; it is not permission to save or rerun in the same turn.
+
 `custom_strategy_help` is progressive-disclosure by default. The normal
 `MarketData(action:"custom_strategy_help")` response is a compact contract
 summary with examples, categories, counts, preview indicator parameter schemas,

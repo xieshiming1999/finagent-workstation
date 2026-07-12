@@ -118,7 +118,7 @@ type RepairStep = {
   suggestion: string
 }
 
-export const allowedOps = new Set(['>', '>=', '<', '<=', 'crosses_above', 'crosses_below'])
+export const allowedOps = new Set(['>', '>=', '<', '<=', '==', '!=', 'crosses_above', 'crosses_below'])
 
 export function rejectedStrategySpec(
   strategyId: string,
@@ -1099,7 +1099,7 @@ function repairPatchHintForCategory(category: string): Record<string, unknown> {
     case 'operator':
       return {
         operation: 'replace_operator',
-        allowed: ['>', '>=', '<', '<=', 'crosses_above', 'crosses_below'],
+        allowed: ['>', '>=', '<', '<=', '==', '!=', 'crosses_above', 'crosses_below'],
       }
     case 'exit_type':
       return {
@@ -1132,7 +1132,7 @@ function repairPatchHintForCategory(category: string): Record<string, unknown> {
         operation: 'revise_condition_dsl_or_use_canonical_rule_group',
         catalog: 'custom_strategy_help.executableV1.conditionDslV1',
         allowedActions: ['entry', 'exit', 'buy', 'sell', 'long', 'close'],
-        grammar: '<series-or-indicator-id> (< | <= | > | >= | crosses_above | crosses_below) (<series-or-indicator-id> | number)',
+        grammar: '<series-or-indicator-id> (< | <= | > | >= | == | != | crosses_above | crosses_below) (<series-or-indicator-id> | number)',
       }
     case 'dataRequirements':
       return {
@@ -1346,7 +1346,7 @@ function unsupportedSuggestion(category: string): string {
     case 'rule_source':
       return 'Declare the referenced source as a StrategySpec indicator or use a built-in series such as close, volume, or turnover_rate.'
     case 'operator':
-      return 'Use one of >, >=, <, <=, crosses_above, or crosses_below.'
+      return 'Use one of >, >=, <, <=, ==, !=, crosses_above, or crosses_below.'
     case 'exit_type':
       return 'Use stop_loss_pct, take_profit_pct, trailing_stop_pct, max_drawdown_stop_pct, atr_stop_loss, or time_stop_bars.'
     case 'positionSizing':

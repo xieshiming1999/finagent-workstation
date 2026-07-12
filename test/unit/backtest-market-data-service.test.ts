@@ -54,6 +54,33 @@ describe('BacktestMarketDataService', () => {
     })
   })
 
+  it('accepts equality operators for executable flag-style StrategySpec rules', async () => {
+    const { validateStrategySpec } = await import('../../src/domain/market/strategy-spec/strategy-spec-engine')
+
+    const validation = validateStrategySpec({
+      name: 'volume flag equality',
+      market: 'cn',
+      universe: { type: 'single', symbols: ['300059'] },
+      indicators: [
+        { id: 'volBreak20', type: 'volume_breakout', source: 'volume', params: { period: 20 } },
+      ],
+      entry: {
+        all: [
+          { left: 'volBreak20', op: '==', right: 1 },
+        ],
+      },
+      exit: {
+        any: [
+          { left: 'volBreak20', op: '!=', right: 1 },
+          { type: 'stop_loss_pct', value: 6 },
+        ],
+      },
+    })
+
+    expect(validation.status).toBe('validated')
+    expect(validation.errors).toEqual([])
+  })
+
   it('uses local kline rows before sidecar fetch for backtest', async () => {
     const queryKline = vi.fn(() =>
       Array.from({ length: 120 }, (_, index) => ({
@@ -767,17 +794,29 @@ describe('BacktestMarketDataService', () => {
     expect(help.executableV1.indicatorCatalog).toBeUndefined()
     expect(help.fundObservationV1.indicatorPreviewCatalog).toBeUndefined()
     expect(help.fundObservationV1.indicatorCatalog).toBeUndefined()
-    expect(help.executableV1.stockExample).toBeUndefined()
+    expect(help.executableV1.stockExample).toMatchObject({
+      indicators: expect.arrayContaining([
+        expect.objectContaining({ id: 'ema20', type: 'ema' }),
+      ]),
+      entry: expect.objectContaining({ all: expect.any(Array) }),
+      exit: expect.objectContaining({ any: expect.any(Array) }),
+    })
+    expect(help.executableV1.ruleCompositionExamples.declaredIndicatorPattern.entryRule).toMatchObject({
+      left: 'ema20',
+      op: '>',
+    })
     expect(help.fundObservationV1.ordinaryFundExample).toBeUndefined()
     expect(help.proxyContract).toBeUndefined()
     expect(help.unsupportedV1).toBeUndefined()
     expect(help.inputContracts).toBeUndefined()
     expect(help.outputContracts).toBeUndefined()
-    expect(JSON.stringify(help).length).toBeLessThan(7000)
+    expect(JSON.stringify(help).length).toBeLessThan(9500)
     const contractHelp = JSON.parse(await service.readAction('custom_strategy_help', { detail: 'contracts' }, { basePath: '/tmp' } as any, '', 120))
     expect(contractHelp.outputContracts.custom_strategy_run.coreFields).toContain('lifecycle')
     expect(contractHelp.outputContracts.custom_strategy_compare.coreFields).toContain('strategies')
     expect(contractHelp.executableV1.indicatorCatalog).toBeUndefined()
+    const nestedContractHelp = JSON.parse(await service.readAction('custom_strategy_help', { params: { detail: 'contracts' } }, { basePath: '/tmp' } as any, '', 120))
+    expect(nestedContractHelp.outputContracts.custom_strategy_backtest.coreFields).toContain('dataCoverage')
     const fieldHelp = JSON.parse(await service.readAction('custom_strategy_help', { fields: 'executableV1.indicatorCatalog,executableV1.indicators', indicators: ['sma', 'rsi'] }, { basePath: '/tmp' } as any, '', 120))
     expect(fieldHelp.detail).toBe('catalog')
     expect(fieldHelp.executableV1.indicatorCatalog).toEqual(expect.arrayContaining([
@@ -788,6 +827,10 @@ describe('BacktestMarketDataService', () => {
       entry: expect.objectContaining({ all: expect.any(Array) }),
       exit: expect.objectContaining({ any: expect.any(Array) }),
     })
+    const nestedCatalogHelp = JSON.parse(await service.readAction('custom_strategy_help', { params: { detail: 'catalog' } }, { basePath: '/tmp' } as any, '', 120))
+    expect(nestedCatalogHelp.executableV1.indicatorCatalog).toEqual(expect.arrayContaining([
+      expect.objectContaining({ type: 'volume_breakout' }),
+    ]))
     const detailedHelp = JSON.parse(await service.readAction('custom_strategy_help', { detail: 'catalog' }, { basePath: '/tmp' } as any, '', 120))
     expect(detailedHelp).toMatchObject({
       action: 'custom_strategy_help',
@@ -3060,6 +3103,34 @@ describe('BacktestMarketDataService', () => {
     expect(validation.spec.entry).toHaveProperty('all')
     expect(validation.spec.exit).toHaveProperty('any')
     expect(validation.spec.entry.all.at(-1).right).toEqual({ mul: ['vol20', 1.5] })
+  })
+
+  it('preserves arithmetic right-hand multiplier objects in custom rules', async () => {
+    const { BacktestMarketDataService } = await import('../../src/domain/market/services/backtest-market-data-service')
+    const service = new BacktestMarketDataService()
+    const strategySpec = {
+      name: 'volume multiplier rule',
+      market: 'cn',
+      assetClass: 'stock',
+      indicators: [
+        { id: 'vol20', type: 'volume_sma', source: 'volume', params: { period: 20 } },
+      ],
+      entry: {
+        all: [
+          { left: 'volume', op: '>=', right: { left: 'volume_sma', op: '*', right: 1.2 } },
+        ],
+      },
+      exit: {
+        any: [
+          { type: 'stop_loss_pct', value: 8 },
+        ],
+      },
+    }
+
+    const validation = JSON.parse(await service.readAction('custom_strategy_validate', { strategySpec }, { basePath: '/tmp' } as any, '', 120))
+
+    expect(validation).toMatchObject({ action: 'custom_strategy_validate', status: 'validated' })
+    expect(validation.spec.entry.all.at(-1).right).toEqual({ mul: ['vol20', 1.2] })
   })
 
   it('accepts entryRules and exitRules custom strategy lists', async () => {

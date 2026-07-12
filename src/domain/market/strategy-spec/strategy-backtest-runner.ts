@@ -383,6 +383,8 @@ function evaluateRule(rule: Extract<Rule, { left: string }>, values: Record<stri
     case '>=': return left >= right
     case '<': return left < right
     case '<=': return left <= right
+    case '==': return left === right
+    case '!=': return left !== right
     case 'crosses_above': return prevLeft != null && prevRight != null && prevLeft <= prevRight && left > right
     case 'crosses_below': return prevLeft != null && prevRight != null && prevLeft >= prevRight && left < right
     default: return false
