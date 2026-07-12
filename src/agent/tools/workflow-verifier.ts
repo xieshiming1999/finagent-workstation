@@ -1,7 +1,6 @@
 import { existsSync, readdirSync, readFileSync, statSync } from 'node:fs'
 import { join } from 'node:path'
 import { ArtifactRegistry, type ArtifactKind } from '../artifact-registry'
-import { readPendingInteractionState } from '../interaction-evidence'
 import type { Tool, ToolContext } from '../tool'
 
 type WorkflowSpec = {
@@ -201,7 +200,7 @@ function checkWorkflow(
   },
 ): Record<string, unknown> {
   const session = readSession(ctx, input.limit)
-  const pending = readPendingInteractionState(ctx)
+  const pending = pendingInteractionsForSession(session)
   const artifactEvidence = artifactEvidenceFor(ctx, input.spec, input.artifactId)
   const workflowStateEvidence = workflowStateEvidenceFor(ctx, {
     workflow: input.workflow,
@@ -213,6 +212,7 @@ function checkWorkflow(
     strategyId: input.strategyId,
     targetSymbols: input.targetSymbols,
   })
+  const workflowSpecificPassed = workflowSpecificEvidence.checks.every((item) => item.passed)
   const approvalBoundaryEvidence = approvalBoundaryEvidenceFor(
     input.spec.approvalBoundary,
     input.workflow,
@@ -221,7 +221,10 @@ function checkWorkflow(
   )
   const toolNames = new Set(session.toolNames)
   const usedRequiredTool = input.spec.requiredAnyTools.some((name) => toolNames.has(name))
-  const unrecoveredErrors = unrecoveredToolErrors(session)
+  const unrecoveredErrors = unrecoveredToolErrors(session, {
+    workflow: input.workflow,
+    workflowSpecificPassed,
+  })
   const checks = [
     check('tool_calls_present', session.toolCallCount > 0, 'At least one tool call is visible.', 'No tool call is visible for this workflow.'),
     check(
@@ -280,6 +283,15 @@ function checkWorkflow(
       ? 'Final answer may cite the verified workflow evidence.'
       : `Do not finalize yet. Resolve missing checks: ${missing.join(', ')}.`,
   }
+}
+
+function pendingInteractionsForSession(session: SessionEvidence): ToolCallEvidence[] {
+  return session.calls.filter((call) => {
+    if (call.result !== undefined) return false
+    if (call.name === 'AskUserQuestion') return true
+    if (call.name === 'Approval' || call.name === 'Permission') return true
+    return false
+  })
 }
 
 function readSession(ctx: ToolContext, limit: number): SessionEvidence {
@@ -343,6 +355,7 @@ function workflowSpecificEvidenceFor(workflow: string, session: SessionEvidence,
   observed: Record<string, unknown>
 } {
   if (workflow === 'fund_selection') return fundSelectionEvidenceFor(session)
+  if (workflow === 'watchlist_handoff') return watchlistHandoffEvidenceFor(session)
   if (workflow === 'strategy_rerun') return strategyRerunEvidenceFor(session, expected)
   if (workflow === 'trade_preparation') return tradePreparationEvidenceFor(session)
   return { checks: [], observed: {} }
@@ -455,6 +468,84 @@ function isTradeSideEffectCall(call: ToolCallEvidence): boolean {
   return false
 }
 
+function watchlistHandoffEvidenceFor(session: SessionEvidence): {
+  checks: ReturnType<typeof check>[]
+  observed: Record<string, unknown>
+} {
+  const addCalls = session.calls.filter((call) =>
+    !call.isError &&
+    call.name === 'Watchlist' &&
+    String(call.input.action ?? '') === 'add'
+  )
+  const readbackCalls = session.calls.filter((call) => {
+    if (call.isError || call.name !== 'Watchlist') return false
+    return ['list', 'get', 'readback'].includes(String(call.input.action ?? ''))
+  })
+  const conditionCalls = addCalls.filter((call) => {
+    const input = call.input
+    return hasText(input.entryCondition) ||
+      hasText(input.exitCondition) ||
+      input.targetEntryPrice !== undefined ||
+      input.stopLoss !== undefined ||
+      input.targetPrice !== undefined ||
+      Array.isArray(input.conditions)
+  })
+  const sourceCalls = addCalls.filter((call) => {
+    const input = call.input
+    return hasText(input.source) ||
+      hasText(input.sourceTime) ||
+      hasText(input.fetchedAt) ||
+      hasText(input.strategyId) ||
+      hasText(input.score) ||
+      hasText(input.rating)
+  })
+  const sideEffectCalls = session.calls.filter(isTradeSideEffectCall).map((call) => {
+    const action = String(call.input.action ?? '')
+    return action ? `${call.name}.${action}` : call.name
+  })
+  return {
+    checks: [
+      check(
+        'watchlist_add_evidence',
+        addCalls.length > 0,
+        'Watchlist add evidence is visible.',
+        'Watchlist handoff needs Watchlist(action:"add") evidence before finalizing.',
+      ),
+      check(
+        'watchlist_readback_evidence',
+        readbackCalls.length > 0,
+        'Watchlist readback evidence is visible.',
+        'Watchlist handoff needs Watchlist(action:"list"|"get"|"readback") after mutation before finalizing.',
+      ),
+      check(
+        'watchlist_condition_evidence',
+        conditionCalls.length > 0,
+        'Watchlist condition evidence is visible.',
+        'Watchlist handoff needs structured observation conditions such as entryCondition, exitCondition, targetEntryPrice, stopLoss, targetPrice, or conditions[].',
+      ),
+      check(
+        'watchlist_source_evidence',
+        sourceCalls.length > 0,
+        'Watchlist source/provenance evidence is visible.',
+        'Watchlist handoff needs source, sourceTime/fetchedAt, strategyId, score, or rating evidence on the added item.',
+      ),
+      check(
+        'watchlist_no_trade_side_effect',
+        sideEffectCalls.length === 0,
+        'No trade side-effect call is visible.',
+        `Watchlist handoff must not include trade side effects: ${sideEffectCalls.join(', ')}.`,
+      ),
+    ],
+    observed: {
+      added: addCalls.map(summarizeCall),
+      readback: readbackCalls.map(summarizeCall),
+      conditionEvidence: conditionCalls.map(summarizeCall),
+      sourceEvidence: sourceCalls.map(summarizeCall),
+      sideEffectCalls,
+    },
+  }
+}
+
 function fundSelectionEvidenceFor(session: SessionEvidence): {
   checks: ReturnType<typeof check>[]
   observed: Record<string, unknown>
@@ -508,6 +599,10 @@ function fundSelectionEvidenceFor(session: SessionEvidence): {
       macroOrNewsCalls: macroOnlyCount,
     },
   }
+}
+
+function hasText(value: unknown): boolean {
+  return typeof value === 'string' && value.trim().length > 0
 }
 
 function successfulAction(session: SessionEvidence, action: string): ToolCallEvidence | undefined {
@@ -860,11 +955,15 @@ function workflowKindForVerifierWorkflow(workflow: string): string {
   }
 }
 
-function unrecoveredToolErrors(session: SessionEvidence): string[] {
+function unrecoveredToolErrors(session: SessionEvidence, options: {
+  workflow: string
+  workflowSpecificPassed: boolean
+}): string[] {
   const failures: string[] = []
   for (let index = 0; index < session.calls.length; index++) {
     const call = session.calls[index]
     if (!call.isError) continue
+    if (isRecoveredByWorkflowEvidence(call, options)) continue
     const action = String(call.input.action ?? '')
     const recovered = session.calls.slice(index + 1).some((later) =>
       !later.isError &&
@@ -874,6 +973,18 @@ function unrecoveredToolErrors(session: SessionEvidence): string[] {
     if (!recovered) failures.push(action ? `${call.name}.${action}` : call.name)
   }
   return failures
+}
+
+function isRecoveredByWorkflowEvidence(call: ToolCallEvidence, options: {
+  workflow: string
+  workflowSpecificPassed: boolean
+}): boolean {
+  if (!options.workflowSpecificPassed) return false
+  if (options.workflow !== 'watchlist_handoff') return false
+  if (call.name === 'DataStore' || call.name === 'MarketData' || call.name === 'DataProcess' || call.name === 'Research') {
+    return true
+  }
+  return false
 }
 
 function check(id: string, passed: boolean, passedMessage: string, failedMessage: string): {

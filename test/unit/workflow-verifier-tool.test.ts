@@ -107,10 +107,42 @@ describe('WorkflowVerifierTool', () => {
     expect(result.checks.find((item: { id: string }) => item.id === 'workflow_state').message).toContain('stock_selection')
   })
 
-  it('accepts watchlist handoff with watchlist tool and matching typed state', async () => {
+  it('requires watchlist handoff add, readback, condition, and source evidence', async () => {
     const ctx = tempToolContext()
     seedSession(ctx, 'Watchlist')
     seedWorkflowState(ctx, 'watchlist_handoff')
+
+    const missingResult = JSON.parse(await new WorkflowVerifierTool().call('verify-watchlist-missing', {
+      action: 'check',
+      workflow: 'watchlist_handoff',
+      requireWorkflowState: true,
+    }, ctx))
+
+    expect(missingResult.passed).toBe(false)
+    expect(missingResult.missing).toContain('watchlist_add_evidence')
+    expect(missingResult.missing).toContain('watchlist_readback_evidence')
+
+    seedSessionCalls(ctx, [
+      {
+        id: 'tool-1',
+        name: 'Watchlist',
+        input: {
+          action: 'add',
+          symbol: '002215',
+          name: '诺普信',
+          entryCondition: 'ROE remains above 15 and valuation gap is resolved',
+          stopLoss: 8,
+          source: 'stock-picking: query_stock_daily_valuation + query_fundamental',
+        },
+        result: '{"status":"added","symbol":"002215"}',
+      },
+      {
+        id: 'tool-2',
+        name: 'Watchlist',
+        input: { action: 'list', symbol: '002215' },
+        result: '{"count":1,"items":[{"symbol":"002215","entryCondition":"ROE remains above 15"}]}',
+      },
+    ])
 
     const result = JSON.parse(await new WorkflowVerifierTool().call('verify-watchlist', {
       action: 'check',
@@ -121,6 +153,51 @@ describe('WorkflowVerifierTool', () => {
     expect(result.passed).toBe(true)
     expect(result.missing).toEqual([])
     expect(result.observed.toolNames).toContain('Watchlist')
+    expect(result.observed.workflowSpecific.added).toHaveLength(1)
+    expect(result.observed.workflowSpecific.readback).toHaveLength(1)
+  })
+
+  it('treats earlier data fetch failures as recovered after valid watchlist handoff evidence', async () => {
+    const ctx = tempToolContext()
+    seedWorkflowState(ctx, 'watchlist_handoff')
+    seedSessionCalls(ctx, [
+      {
+        id: 'tool-1',
+        name: 'DataStore',
+        input: { action: 'fetch', code: '600519', type: 'fundamental' },
+        result: 'DataStore fetch failed: provider unavailable',
+        isError: true,
+      },
+      {
+        id: 'tool-2',
+        name: 'Watchlist',
+        input: {
+          action: 'add',
+          symbol: '600519',
+          name: '贵州茅台',
+          entryCondition: 'Wait for valuation and price confirmation',
+          stopLoss: 1100,
+          source: 'query_stock_daily_valuation(local cache)',
+        },
+        result: '{"status":"added","symbol":"600519"}',
+      },
+      {
+        id: 'tool-3',
+        name: 'Watchlist',
+        input: { action: 'list', symbol: '600519' },
+        result: '{"count":1,"items":[{"symbol":"600519","entryCondition":"Wait for valuation and price confirmation"}]}',
+      },
+    ])
+
+    const result = JSON.parse(await new WorkflowVerifierTool().call('verify-watchlist-recovered-error', {
+      action: 'check',
+      workflow: 'watchlist_handoff',
+      requireWorkflowState: true,
+    }, ctx))
+
+    expect(result.passed).toBe(true)
+    expect(result.missing).toEqual([])
+    expect(result.checks.find((item: { id: string }) => item.id === 'no_tool_errors').message).toContain('recovered tool error')
   })
 
   it('accepts strategy rerun with strategy tool evidence and matching state', async () => {
