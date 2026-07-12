@@ -68,6 +68,7 @@ const WORKFLOWS: Record<string, WorkflowSpec> = {
   trade_preparation: {
     requiredAnyTools: ['Portfolio', 'XueqiuTrade', 'AskUserQuestion'],
     artifactKinds: ['trade_preparation', 'analysis'],
+    artifactRequired: false,
     approvalBoundary: 'explicit_approval_required',
   },
   trade_review: {
@@ -212,6 +213,12 @@ function checkWorkflow(
     strategyId: input.strategyId,
     targetSymbols: input.targetSymbols,
   })
+  const approvalBoundaryEvidence = approvalBoundaryEvidenceFor(
+    input.spec.approvalBoundary,
+    input.workflow,
+    session,
+    pending.length,
+  )
   const toolNames = new Set(session.toolNames)
   const usedRequiredTool = input.spec.requiredAnyTools.some((name) => toolNames.has(name))
   const unrecoveredErrors = unrecoveredToolErrors(session)
@@ -235,11 +242,9 @@ function checkWorkflow(
     check('artifact_evidence', artifactEvidence.passed, artifactEvidence.reason, artifactEvidence.reason),
     check(
       'approval_boundary',
-      input.spec.approvalBoundary !== 'explicit_approval_required' || pending.length > 0,
-      input.spec.approvalBoundary === 'explicit_approval_required'
-        ? 'Trade-preparation boundary is explicit: approval or user question is pending.'
-        : 'Workflow has no trade approval boundary.',
-      'Trade-preparation workflow requires explicit approval evidence before any side-effect.',
+      approvalBoundaryEvidence.passed,
+      approvalBoundaryEvidence.passedMessage,
+      approvalBoundaryEvidence.reason,
     ),
     check(
       'workflow_state',
@@ -268,6 +273,7 @@ function checkWorkflow(
       artifact: artifactEvidence.artifact ?? null,
       workflowState: workflowStateEvidence.record ?? null,
       providerHealth: providerHealthEvidence.observed,
+      approvalBoundary: approvalBoundaryEvidence.observed,
       workflowSpecific: workflowSpecificEvidence.observed,
     },
     nextAction: missing.length === 0
@@ -338,7 +344,115 @@ function workflowSpecificEvidenceFor(workflow: string, session: SessionEvidence,
 } {
   if (workflow === 'fund_selection') return fundSelectionEvidenceFor(session)
   if (workflow === 'strategy_rerun') return strategyRerunEvidenceFor(session, expected)
+  if (workflow === 'trade_preparation') return tradePreparationEvidenceFor(session)
   return { checks: [], observed: {} }
+}
+
+function approvalBoundaryEvidenceFor(
+  boundary: WorkflowSpec['approvalBoundary'],
+  workflow: string,
+  session: SessionEvidence,
+  pendingCount: number,
+): {
+  passed: boolean
+  passedMessage: string
+  reason: string
+  observed: Record<string, unknown>
+} {
+  if (boundary !== 'explicit_approval_required') {
+    return {
+      passed: true,
+      passedMessage: 'Workflow has no trade approval boundary.',
+      reason: 'Workflow has no trade approval boundary.',
+      observed: { boundary },
+    }
+  }
+  if (workflow !== 'trade_preparation') {
+    return {
+      passed: pendingCount > 0,
+      passedMessage: 'Explicit approval or user question is pending.',
+      reason: 'Workflow requires explicit approval evidence before any side-effect.',
+      observed: { boundary, pendingInteractions: pendingCount },
+    }
+  }
+  const tradeEvidence = tradePreparationEvidenceFor(session)
+  const sideEffect = tradeEvidence.observed.sideEffectCalls as unknown[]
+  const sizing = tradeEvidence.observed.sizingEvidence === true
+  const account = tradeEvidence.observed.accountEvidence === true
+  const passed = sideEffect.length === 0 && sizing && account
+  return {
+    passed,
+    passedMessage: 'Trade-preparation boundary is satisfied: account/sizing evidence exists and no order side-effect is visible.',
+    reason: sideEffect.length > 0
+      ? `Trade-preparation has order side-effect calls: ${sideEffect.join(', ')}.`
+      : 'Trade-preparation needs account evidence and sizing/quote evidence while avoiding order side-effect calls.',
+    observed: tradeEvidence.observed,
+  }
+}
+
+function tradePreparationEvidenceFor(session: SessionEvidence): {
+  checks: ReturnType<typeof check>[]
+  observed: Record<string, unknown>
+} {
+  const accountCalls = session.calls.filter((call) => {
+    if (call.isError) return false
+    if (call.name === 'XueqiuTrade') return ['balance', 'portfolios', 'positions', 'history'].includes(String(call.input.action ?? ''))
+    if (call.name === 'Portfolio') return ['snapshot', 'positions'].includes(String(call.input.action ?? ''))
+    return false
+  })
+  const sizingCalls = session.calls.filter((call) => {
+    if (call.isError) return false
+    const action = String(call.input.action ?? '')
+    if (call.name === 'MarketData' && ['quote', 'query_quote'].includes(action)) return true
+    if (call.name === 'DataStore' && action === 'query_quote') return true
+    if (call.name === 'DataProcess' && ['position_sizing', 'risk_sizing', 'indicators', 'support'].includes(action)) return true
+    if (call.name === 'Portfolio' && ['preview_trade', 'position_sizing'].includes(action)) return true
+    return false
+  })
+  const sideEffectCalls = session.calls.filter(isTradeSideEffectCall).map((call) => {
+    const action = String(call.input.action ?? '')
+    return action ? `${call.name}.${action}` : call.name
+  })
+  return {
+    checks: [
+      check(
+        'trade_account_evidence',
+        accountCalls.length > 0,
+        'Simulated account or portfolio state evidence is visible.',
+        'Trade preparation needs simulated account/portfolio state before sizing.',
+      ),
+      check(
+        'trade_sizing_evidence',
+        sizingCalls.length > 0,
+        'Sizing, quote, or risk evidence is visible.',
+        'Trade preparation needs quote/sizing/risk evidence before finalizing.',
+      ),
+      check(
+        'trade_no_side_effect',
+        sideEffectCalls.length === 0,
+        'No simulated order or cash-transfer side-effect call is visible.',
+        `Trade preparation must not include order/cash-transfer side effects: ${sideEffectCalls.join(', ')}.`,
+      ),
+    ],
+    observed: {
+      accountEvidence: accountCalls.length > 0,
+      sizingEvidence: sizingCalls.length > 0,
+      sideEffectCalls,
+      accountCalls: accountCalls.map(summarizeCall),
+      sizingCalls: sizingCalls.map(summarizeCall),
+    },
+  }
+}
+
+function isTradeSideEffectCall(call: ToolCallEvidence): boolean {
+  const action = String(call.input.action ?? '').trim().toLowerCase()
+  if (call.name === 'XueqiuTrade') {
+    return new Set(['buy', 'sell', 'transfer_in', 'transfer_out', 'bank_transfer', 'add_transaction', 'transaction_add']).has(action)
+  }
+  if (call.name === 'Portfolio') {
+    return new Set(['trade', 'buy', 'sell', 'transfer']).has(action)
+  }
+  return false
 }
 
 function fundSelectionEvidenceFor(session: SessionEvidence): {

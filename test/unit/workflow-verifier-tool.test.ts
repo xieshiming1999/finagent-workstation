@@ -211,6 +211,45 @@ describe('WorkflowVerifierTool', () => {
     expect(result.missing).toEqual([])
   })
 
+  it('accepts trade preparation when sizing evidence exists and no order side effect is visible', async () => {
+    const ctx = tempToolContext()
+    seedSessionCalls(ctx, [
+      { id: 'tool-1', name: 'XueqiuTrade', input: { action: 'balance' }, result: '{"cash":100000}' },
+      { id: 'tool-2', name: 'MarketData', input: { action: 'quote', code: '600519' }, result: '{"price":1204.98}' },
+      { id: 'tool-3', name: 'DataProcess', input: { action: 'indicators', code: '600519' }, result: '{"rsi":40.9}' },
+    ])
+
+    const result = JSON.parse(await new WorkflowVerifierTool().call('verify-trade-prep', {
+      action: 'check',
+      workflow: 'trade_preparation',
+    }, ctx))
+
+    expect(result.passed).toBe(true)
+    expect(result.missing).toEqual([])
+    expect(result.observed.approvalBoundary.accountEvidence).toBe(true)
+    expect(result.observed.approvalBoundary.sizingEvidence).toBe(true)
+    expect(result.observed.approvalBoundary.sideEffectCalls).toEqual([])
+  })
+
+  it('rejects trade preparation when an order side effect is visible', async () => {
+    const ctx = tempToolContext()
+    seedSessionCalls(ctx, [
+      { id: 'tool-1', name: 'XueqiuTrade', input: { action: 'balance' }, result: '{"cash":100000}' },
+      { id: 'tool-2', name: 'MarketData', input: { action: 'quote', code: '600519' }, result: '{"price":1204.98}' },
+      { id: 'tool-3', name: 'XueqiuTrade', input: { action: 'buy', symbol: 'SH600519', shares: 8 }, result: '{"success":true}' },
+    ])
+
+    const result = JSON.parse(await new WorkflowVerifierTool().call('verify-trade-prep-write', {
+      action: 'check',
+      workflow: 'trade_preparation',
+    }, ctx))
+
+    expect(result.passed).toBe(false)
+    expect(result.missing).toContain('approval_boundary')
+    expect(result.missing).toContain('trade_no_side_effect')
+    expect(result.observed.approvalBoundary.sideEffectCalls).toEqual(['XueqiuTrade.buy'])
+  })
+
   it('accepts matching typed workflow state', async () => {
     const ctx = tempToolContext()
     seedSession(ctx, 'MarketData')

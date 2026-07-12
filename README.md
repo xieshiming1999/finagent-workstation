@@ -21,6 +21,8 @@ FinAgent Workstation is an Electron and React finance workstation with a TypeScr
 - Rerun my saved 600519 strategy and explain why its metrics changed from the previous run.
 - Compare funds 110011 and 000083 using available performance and holdings data, and explain the main risks.
 - Which of funds 110011 and 000083 better fits a lower-risk portfolio based on available NAV, drawdown, and holdings evidence?
+- Prepare a paper-buy plan for 600519, show the evidence, and stop for confirmation before any simulated trade.
+- Review my paper portfolio and prepare a rebalance proposal, but do not place any simulated trade without confirmation.
 
 ## Quick Start
 
