@@ -16,9 +16,24 @@ describe('ProviderRouterTool', () => {
 
     expect(result.contract).toBe('provider-router-route-v1')
     expect(result.order).toEqual(['eastmoneyDirect'])
+    expect(result.interfaceRows).toEqual(expect.arrayContaining([
+      expect.objectContaining({
+        interfaceId: 'stock.quote',
+        provider: 'eastmoney',
+        status: 'supported',
+        canonicalSchema: 'quote_snapshot',
+      }),
+    ]))
     expect(result.providerModules).toEqual(expect.arrayContaining([
       expect.objectContaining({
         provider: 'eastmoneyDirect',
+        interfaceRowCount: expect.any(Number),
+        interfaceRows: expect.arrayContaining([
+          expect.objectContaining({
+            interfaceId: 'stock.quote',
+            provider: 'eastmoney',
+          }),
+        ]),
         descriptorStatus: 'registered',
         descriptor: expect.objectContaining({
           category: 'public-direct-http',

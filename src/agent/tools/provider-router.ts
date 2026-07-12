@@ -133,6 +133,7 @@ function route(
   const preferred = normalizeFinanceProviders(input.preferredProviders)
   const order = providerOrder(task, effectiveGates, preferred)
   const base = RAW_ORDERS[task]
+  const interfaceRows = routeInterfaceRows(task)
   const skipped = base
     .filter((provider) => !order.includes(provider))
     .map((provider) => ({
@@ -144,13 +145,21 @@ function route(
     runtime: 'finagent-workstation',
     task,
     order,
+    interfaceRows,
     providerModules: base.map((provider) => {
       const descriptor = descriptorForProvider(provider)
+      const providerRows = interfaceRows.filter((row) => row.provider === provider || (
+        provider === 'eastmoneyDirect' && row.provider === 'eastmoney'
+      ) || (
+        provider === 'yfinance' && row.provider === 'yahoo'
+      ))
       return {
         provider,
         routeEffect: order.includes(provider) ? 'selected' : 'skipped',
         ...(descriptor ? { descriptor } : {}),
         descriptorStatus: descriptor ? 'registered' : 'missing',
+        interfaceRowCount: providerRows.length,
+        interfaceRows: providerRows,
       }
     }),
     preferredProviders: preferred,
@@ -171,6 +180,41 @@ function route(
       ? 'No provider is currently allowed. Use cache/readback, configure credentials, or clear temporary provider blocks before retrying.'
       : 'Use providers in returned order; do not override order from prompt knowledge.',
   }
+}
+
+function routeInterfaceRows(task: FinanceDataTask): Array<RouteInterfaceRow> {
+  const interfaceIds = taskInterfaceIds(task)
+  if (interfaceIds.length === 0) return []
+  const wanted = new Set(interfaceIds)
+  const contract = dataApiInterfaces as DataApiInterfaceContract
+  const rows: RouteInterfaceRow[] = []
+  for (const definition of contract.interfaces ?? []) {
+    if (!wanted.has(definition.id)) continue
+    for (const capability of definition.capabilities ?? []) {
+      rows.push({
+        interfaceId: definition.id,
+        label: definition.label,
+        provider: capability.provider,
+        capabilityId: capability.id,
+        status: capability.status ?? 'unknown',
+        canonicalSchema: definition.canonicalSchema,
+        canonicalTable: capability.canonicalTable ?? null,
+        queryActions: definition.queryActions ?? [],
+        dataStoreTables: definition.dataStoreTables ?? [],
+        normalizer: capability.normalizer ?? null,
+        adapter: capability.adapter ?? null,
+        upstreamOrigin: capability.upstreamOrigin ?? null,
+        probeId: capability.probeId ?? null,
+        priority: capability.priority ?? null,
+        reason: capability.reason ?? null,
+        marketScope: capability.marketScope ?? [],
+      })
+    }
+  }
+  return rows.sort((left, right) =>
+    `${left.interfaceId}:${left.provider}:${left.capabilityId ?? ''}`.localeCompare(
+      `${right.interfaceId}:${right.provider}:${right.capabilityId ?? ''}`,
+    ))
 }
 
 function descriptorForProvider(provider: FinanceProvider) {
@@ -346,6 +390,10 @@ interface DataApiInterfaceContract {
 
 interface DataApiInterfaceDefinition {
   id: string
+  label?: string
+  canonicalSchema?: string
+  dataStoreTables?: string[]
+  queryActions?: string[]
   capabilities?: DataApiCapability[]
 }
 
@@ -353,8 +401,33 @@ interface DataApiCapability {
   id?: string
   provider?: string
   status?: string
+  upstreamOrigin?: string
+  adapter?: string
+  normalizer?: string
+  canonicalTable?: string
   probeId?: string
+  priority?: number
   reason?: string
+  marketScope?: string[]
+}
+
+interface RouteInterfaceRow {
+  interfaceId: string
+  label?: string
+  provider?: string
+  capabilityId?: string
+  status: string
+  canonicalSchema?: string
+  canonicalTable?: string | null
+  queryActions: string[]
+  dataStoreTables: string[]
+  normalizer?: string | null
+  adapter?: string | null
+  upstreamOrigin?: string | null
+  probeId?: string | null
+  priority?: number | null
+  reason?: string | null
+  marketScope: string[]
 }
 
 function runtimeHealthStatus(records: ApiCallRecord[], failures: ApiCallRecord[]): string {
