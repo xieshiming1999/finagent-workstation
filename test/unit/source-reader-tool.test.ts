@@ -32,6 +32,54 @@ describe('SourceReaderTool', () => {
       tempToolContext(),
     )).rejects.toThrow('requires exactly one of url or path')
   })
+
+  it('creates structured macro evidence from a source record', async () => {
+    const ctx = tempToolContext()
+    const sourcePath = join(ctx.basePath, 'energy.html')
+    writeFileSync(sourcePath, '<html><title>Energy Outlook</title><body>2026-07-10 oil supply risk</body></html>')
+    const tool = new SourceReaderTool()
+
+    const sourceResult = JSON.parse(await tool.call('source-read', {
+      action: 'read',
+      path: sourcePath,
+      source: 'local-energy',
+      topic: 'energy',
+    }, ctx))
+
+    const macroResult = JSON.parse(await tool.call('macro-evidence', {
+      action: 'macroEvidence',
+      sourceRecordPath: sourceResult.artifactHint.path,
+      topic: 'energy price shock',
+      region: 'global',
+      assetClass: 'commodity/equity/fund',
+      keyClaims: ['Oil supply risk may keep energy prices elevated.'],
+      affectedAssets: ['energy sector', 'airlines', 'commodity funds'],
+      confidenceEffect: 'Raises confidence that energy-sensitive assets need scenario monitoring.',
+      freshness: 'current',
+      evidenceClass: 'public-research',
+      missingEvidence: ['No official inventory series attached yet.'],
+    }, ctx))
+
+    expect(macroResult.contract).toBe('source-reader-macro-evidence-result-v1')
+    expect(macroResult.record).toMatchObject({
+      contract: 'macro-evidence-record-v1',
+      title: 'Energy Outlook',
+      topic: 'energy price shock',
+    })
+    expect(macroResult.record.tradeBoundary).toContain('not a direct buy/sell rule')
+    expect(existsSync(macroResult.artifactHint.path)).toBe(true)
+  })
+
+  it('rejects macro evidence without structured fields', async () => {
+    await expect(new SourceReaderTool().call(
+      'macro-error',
+      {
+        action: 'macroEvidence',
+        topic: 'rates',
+      },
+      tempToolContext(),
+    )).rejects.toThrow('missing required structured fields')
+  })
 })
 
 function tempToolContext(): ToolContext {
