@@ -270,6 +270,52 @@ describe('fetchKlineDaily', () => {
     expect(calls[0]).not.toContain('/akshare/stock_zh_a_hist')
   })
 
+  it('falls back to governed unadjusted K-line when broad adjusted providers are unavailable', async () => {
+    const calls: string[] = []
+    const fetchMock = vi.fn(async (url: string) => {
+      calls.push(url)
+      if (url.includes('money.finance.sina.com.cn')) {
+        return {
+          ok: true,
+          json: async () => [
+            { day: '2026-06-01', open: '10', high: '11', low: '9', close: '10.5', volume: '1000' },
+            { day: '2026-06-02', open: '10.5', high: '11.5', low: '10', close: '11', volume: '1100' },
+          ],
+        }
+      }
+      return {
+        ok: true,
+        json: async () => ({ List: [], data: { klines: [] }, dataList: [] }),
+        arrayBuffer: async () => new TextEncoder().encode('{}').buffer,
+      }
+    })
+    vi.stubGlobal('fetch', fetchMock)
+
+    const { fetchKlineDaily } = await import('../../src/agent/data/fetchers/fetcher-kline-daily')
+    const result = await fetchKlineDaily('600519', { skipCache: true })
+
+    expect(result.source).toBe('sina')
+    expect(result.data).toHaveLength(2)
+    expect(result.data[0]).toMatchObject({
+      code: '600519',
+      date: '2026-06-01',
+      close: 10.5,
+      adjust: 'none',
+      source: 'sina',
+    })
+    expect(result.provenance).toMatchObject({
+      interfaceId: 'stock.daily_kline',
+      capabilityId: 'sina.stock.daily_kline',
+      provider: 'sina',
+      canonicalSchema: 'kline_daily',
+      canonicalTable: 'kline_daily',
+      cacheStatus: 'provider-hit',
+      cacheMode: 'live-only',
+    })
+    expect(result.provenance?.cacheDecision).toContain('Adjusted qfq provider route failed')
+    expect(calls.some((url) => url.includes('money.finance.sina.com.cn'))).toBe(true)
+  })
+
   it('honors strict EastMoney K-line provider requests with canonical provenance', async () => {
     const calls: string[] = []
     const fetchMock = vi.fn(async (url: string) => {

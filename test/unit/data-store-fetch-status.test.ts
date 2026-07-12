@@ -199,6 +199,56 @@ describe('DataStore fetch_status provenance', () => {
     })
   })
 
+  it('returns degraded reusable-cache evidence when live K-line refresh fails after local readback exists', async () => {
+    store.saveKline(Array.from({ length: 12 }, (_, index) => ({
+      code: '300059',
+      date: `2026-06-${String(index + 1).padStart(2, '0')}`,
+      open: 20 + index / 10,
+      high: 21 + index / 10,
+      low: 19 + index / 10,
+      close: 20.5 + index / 10,
+      volume: 1000 + index,
+      amount: 2000 + index,
+      change_pct: 0.5,
+      turnover_rate: null,
+      adjust: 'qfq',
+      source: 'local-fixture',
+    })))
+
+    const fakeQueue = {
+      enqueue: (taskType: string, code: string | null, params: Record<string, unknown>, priority: number) => {
+        const id = store.createTask(taskType, code, params, priority)
+        store.updateTaskStatus(id, 'failed', null, 'All kline providers failed')
+        return id
+      },
+      start: async () => {},
+    }
+
+    const payload = JSON.parse(await fetchDataStore(store, fakeQueue as any, {
+      action: 'fetch',
+      type: 'kline',
+      code: '300059',
+    }))
+
+    expect(payload.ok).toBe(true)
+    expect(payload.retrieval_status).toBe('degraded_reusable_cache')
+    expect(payload.failed[0]).toMatchObject({
+      type: 'kline_daily',
+      code: '300059',
+      status: 'failed',
+    })
+    expect(payload.reusableFallback).toMatchObject({
+      readbackAction: 'query_kline',
+      canonicalSchema: 'kline_daily',
+      canonicalTable: 'kline_daily',
+      codes: ['300059'],
+      rowCount: 12,
+      cacheStatus: 'local-reusable-after-provider-refresh-failed',
+    })
+    expect(payload.reusableFallback.latestByCode['300059']).toBe('2026-06-12')
+    expect(payload.note).toContain('Live provider refresh failed')
+  })
+
   it('accepts fundCode as a fetch alias for fund holding tasks', async () => {
     const fakeQueue = {
       enqueue: (taskType: string, code: string | null, params: Record<string, unknown>, priority: number) => {

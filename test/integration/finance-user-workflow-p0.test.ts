@@ -593,7 +593,9 @@ describe('finance agent P0 user workflow integration', () => {
     const html = readFileSync(join(basePath, 'dashboards', 'report-metrics-fixture.html'), 'utf-8')
     const content = { innerHTML: '' }
     const script = html.match(/<script>([\s\S]*)<\/script>/)?.[1] ?? ''
+    const window = {} as Record<string, unknown>
     runInNewContext(script, {
+      window,
       document: {
         title: 'Metrics 报告看板',
         getElementById: (id: string) => id === 'content' ? content : null,
@@ -606,5 +608,80 @@ describe('finance agent P0 user workflow integration', () => {
     expect(content.innerHTML).toContain('最近有效PE')
     expect(content.innerHTML).toContain('13.8')
     expect(content.innerHTML).toContain('DataStore query_quote')
+  })
+
+  it('renders stock report sections with keyed columns and object rows', async () => {
+    const dashboard = new DashboardTool()
+    dashboard.setAssetsPath(join(process.cwd(), 'assets'))
+    dashboard.setPanelQuery(async () => [
+      { id: 'dash-stock-report-fixture', title: '东方财富研究看板', url: join(basePath, 'dashboards', 'stock-report-fixture.html'), type: 'dashboard', isActive: true },
+    ])
+
+    const ctx = {
+      basePath,
+      workDir: process.cwd(),
+      memoryDir: join(basePath, 'memory'),
+      bundleDir: join(basePath, 'bundle'),
+      projectLocalDir: join(basePath, 'project'),
+    } as ToolContext
+
+    await dashboard.call('dash-stock-report', {
+      id: 'stock-report-fixture',
+      title: '东方财富研究看板',
+      template: 'report',
+      config: JSON.stringify({
+        symbol: '300059',
+        name: '东方财富',
+        reportTitle: '东方财富（300059）可复核股票研究看板',
+        sections: [
+          {
+            type: 'kpi',
+            title: '关键指标',
+            items: [
+              { label: '最新价', value: '20.19', change: '-1.94%', source: 'stock.quote', provider: 'local', asOf: '2026-07-12T08:28:18Z', fetchedAt: '2026-07-12T08:28:18Z', cacheStatus: 'local-hit' },
+            ],
+          },
+          {
+            type: 'table',
+            title: '基本面季度数据',
+            columns: [
+              { key: 'report', label: '报告期' },
+              { key: 'rev', label: '营收增速' },
+              { key: 'roe', label: 'ROE' },
+            ],
+            rows: [
+              { report: '2026一季报', rev: '+44.34%', roe: '3.99%' },
+              { report: '2025年报', rev: '+38.46%', roe: '14.03%' },
+            ],
+            source: 'stock.daily_valuation',
+            provider: 'eastmoney:earnings',
+            asOf: '2026-03-31',
+            fetchedAt: '2026-07-12T08:24:14Z',
+            cacheStatus: 'local-hit',
+          },
+        ],
+      }),
+    }, ctx)
+
+    const html = readFileSync(join(basePath, 'dashboards', 'stock-report-fixture.html'), 'utf-8')
+    const content = { innerHTML: '' }
+    const script = html.match(/<script>([\s\S]*)<\/script>/)?.[1] ?? ''
+    const window = {} as Record<string, unknown>
+    runInNewContext(script, {
+      window,
+      document: {
+        title: '东方财富研究看板',
+        getElementById: (id: string) => id === 'content' ? content : null,
+      },
+    })
+
+    expect(content.innerHTML).not.toContain('Loading report')
+    expect(content.innerHTML).toContain('东方财富（300059）可复核股票研究看板')
+    expect(content.innerHTML).toContain('关键指标')
+    expect(content.innerHTML).toContain('基本面季度数据')
+    expect(content.innerHTML).toContain('报告期')
+    expect(content.innerHTML).toContain('2026一季报')
+    expect(content.innerHTML).toContain('14.03%')
+    expect(content.innerHTML).toContain('stock.daily_valuation')
   })
 })

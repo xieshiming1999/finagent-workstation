@@ -35,13 +35,45 @@ export async function fetchKlineDaily(
   const requestedProviders = [
     opts.provider,
     ...(opts.providers ?? []),
-  ].filter(Boolean)
+  ].filter((provider): provider is string => Boolean(provider))
   const adjust = opts.adjust ?? (interfaceId === 'bond.convertible_daily_kline'
     ? 'none'
     : requestedProviders.includes('sina') ? 'none' : 'qfq')
   if (interfaceId === 'bond.convertible_daily_kline' && adjust !== 'none') {
     throw new Error('Convertible bond daily K-line is governed only for unadjusted Tencent bars; use adjust:"none".')
   }
+  try {
+    return await fetchKlineDailyWithAdjust(code, opts, {
+      adjust,
+      market,
+      interfaceId,
+      requestedProviders,
+    })
+  } catch (error) {
+    if (!shouldFallbackToUnadjustedKline(adjust, requestedProviders, interfaceId)) throw error
+    const fallback = await fetchKlineDailyWithAdjust(code, opts, {
+      adjust: 'none',
+      market,
+      interfaceId,
+      requestedProviders,
+      fallbackReason: `Adjusted ${adjust} provider route failed; returned governed unadjusted daily K-line instead. Original failure: ${error instanceof Error ? error.message : String(error)}`,
+    })
+    return fallback
+  }
+}
+
+async function fetchKlineDailyWithAdjust(
+  code: string,
+  opts: DataApiFetchOptions & { start?: string; end?: string; adjust?: string; market?: string; instrumentType?: 'stock' | 'etf' | 'convertible_bond' },
+  route: {
+    adjust: string
+    market: string
+    interfaceId: string
+    requestedProviders: string[]
+    fallbackReason?: string
+  },
+): Promise<FetchResult<KlineRow>> {
+  const { adjust, market, interfaceId, requestedProviders, fallbackReason } = route
   const effectiveOpts = (market === 'US' || market === 'HK') && !opts.provider && !opts.providers?.length
     ? { ...opts, provider: 'yahoo', providerMode: 'strict' as const, allowFallback: false }
     : opts
@@ -77,8 +109,20 @@ export async function fetchKlineDaily(
     canonicalTable: 'kline_daily',
     cacheStatus: routed.cacheStatus,
     cacheMode: routed.cacheMode,
-    cacheDecision: routed.cacheDecision,
+    cacheDecision: fallbackReason
+      ? `${fallbackReason}; ${routed.cacheDecision ?? 'provider route returned rows'}`
+      : routed.cacheDecision,
   })
+}
+
+function shouldFallbackToUnadjustedKline(
+  adjust: string,
+  requestedProviders: string[],
+  interfaceId: string,
+): boolean {
+  return adjust !== 'none' &&
+    requestedProviders.length === 0 &&
+    (interfaceId === 'stock.daily_kline' || interfaceId === 'fund.etf_daily_ohlcv_bars')
 }
 
 function klineSource(

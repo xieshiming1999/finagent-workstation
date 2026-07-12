@@ -246,7 +246,7 @@ async function waitForFetchTasks(
   while (Date.now() <= deadline) {
     const tasks = getFetchTasks(ds, taskIds)
     if (tasks.length === taskIds.length && tasks.every((t) => t.status === 'done' || t.status === 'failed' || t.status === 'cancelled')) {
-      return fetchTaskResult(tasks)
+      return fetchTaskResult(ds, tasks)
     }
     await new Promise((r) => setTimeout(r, 500))
   }
@@ -281,10 +281,22 @@ function getFetchTasks(ds: DataStore, ids: number[]): FetchTask[] {
   return rows.map(parseFetchTask)
 }
 
-function fetchTaskResult(tasks: FetchTask[]): string {
+function fetchTaskResult(ds: DataStore, tasks: FetchTask[]): string {
   const failed = tasks.filter((t) => t.status === 'failed' || t.status === 'cancelled')
   const provenance = fetchTaskQueueProvenance()
   if (failed.length > 0) {
+    const reusableFallback = reusableFallbackForFailedFetch(ds, failed)
+    if (reusableFallback) {
+      return JSON.stringify({
+        ok: true,
+        action: 'fetch',
+        retrieval_status: 'degraded_reusable_cache',
+        provenance,
+        failed: failed.map(summarizeFetchTask),
+        reusableFallback,
+        note: 'Live provider refresh failed, but governed reusable local rows exist. Use the listed readback action and disclose the refresh failure as a data freshness gap; do not immediately retry broad providers.',
+      }, null, 2)
+    }
     return toolError(`DataStore fetch failed: ${JSON.stringify({
       provenance,
       failed: failed.map(summarizeFetchTask),
@@ -315,6 +327,36 @@ function fetchTaskResult(tasks: FetchTask[]): string {
     tasks: summaries,
     note: 'Requested data has been persisted in local DataStore. Query it with DataStore coverage/query_* actions before calling external APIs again.',
   }, null, 2)
+}
+
+function reusableFallbackForFailedFetch(ds: DataStore, failed: FetchTask[]): Record<string, unknown> | null {
+  if (failed.length === 0) return null
+  if (!failed.every((task) => task.taskType === 'kline_daily' && task.code)) return null
+  const rows = failed.flatMap((task) => {
+    const qfq = ds.queryKline(String(task.code), { adjust: 'qfq', limit: 120 })
+    if (qfq.length > 0) return qfq.map((row) => ({ task, row }))
+    return ds.queryKline(String(task.code), { adjust: 'none', limit: 120 }).map((row) => ({ task, row }))
+  })
+  if (rows.length === 0) return null
+  const codes = [...new Set(rows.map((entry) => String(entry.task.code)))]
+  const latestByCode = Object.fromEntries(codes.map((code) => {
+    const latest = rows
+      .filter((entry) => String(entry.task.code) === code)
+      .map((entry) => entry.row.date)
+      .filter(Boolean)
+      .sort()
+      .at(-1)
+    return [code, latest ?? null]
+  }))
+  return {
+    readbackAction: 'query_kline',
+    canonicalSchema: 'kline_daily',
+    canonicalTable: 'kline_daily',
+    codes,
+    rowCount: rows.length,
+    latestByCode,
+    cacheStatus: 'local-reusable-after-provider-refresh-failed',
+  }
 }
 
 function persistedRowCount(task: FetchTask): number {
