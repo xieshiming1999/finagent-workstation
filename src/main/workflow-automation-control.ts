@@ -1108,6 +1108,18 @@ async function handleRequest(
     writeJson(res, 200, await control.sessionEvidence());
     return;
   }
+  if (req.method === "GET" && req.url === "/sessions/current") {
+    writeJson(
+      res,
+      200,
+      {
+        ok: true,
+        kind: "session.current",
+        ...(await control.sessionEvidence()),
+      },
+    );
+    return;
+  }
   if (req.method === "GET" && req.url === "/workflow/panels") {
     writeJson(res, 200, await control.panelState());
     return;

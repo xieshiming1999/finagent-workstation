@@ -1115,6 +1115,14 @@ describe("WorkflowAutomationControl", () => {
     expect(session.json.rawSessionAvailable).toBe(true);
     expect(session.json.rawLineCount).toBeGreaterThan(0);
 
+    const serviceSession = await getJson(server!.port, "/sessions/current");
+    expect(serviceSession.status).toBe(200);
+    expect(serviceSession.json).toMatchObject({
+      ok: true,
+      kind: "session.current",
+      rawSessionAvailable: true,
+    });
+
     const reports = await getJson(server!.port, "/workflow/reports?limit=5");
     expect(reports.status).toBe(200);
     expect(reports.json.count).toBeGreaterThan(0);
