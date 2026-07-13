@@ -19,6 +19,7 @@ import { tencentStockList } from '../tencent-fetcher'
 
 const GOTDX = 'http://127.0.0.1:19801'
 const SIDECAR = 'http://127.0.0.1:19800'
+const GOTDX_STOCK_LIST_TIMEOUT_MS = 30_000
 
 export async function fetchStockListA(opts: DataApiFetchOptions = {}): Promise<FetchResult<StockInfo>> {
   const routed = await runDataApiInterfaceRoute(
@@ -76,23 +77,30 @@ function stockListSource(
 }
 
 async function fetchStockListTdx(): Promise<FetchResult<StockInfo>> {
-  // TDX returns stocks in pages of ~1000. Fetch market 0 (SZ) and 1 (SH).
+  // Use the provider count and the bounded range endpoint. The legacy
+  // stock_list endpoint defaults to 100 rows and is not a completeness signal.
   const now = new Date().toISOString()
   const data: StockInfo[] = []
 
   for (const market of [0, 1]) {
-    let start = 0
-    while (true) {
-      const res = await fetch(`${GOTDX}/stock_list?market=${market}&start=${start}`, { signal: AbortSignal.timeout(10000) })
-      if (!res.ok) throw new Error(`TDX stock_list: ${res.status}`)
-      const json = await res.json() as any
-      const list = json?.List ?? json?.reply?.List ?? []
-      if (!list?.length) break
+    const countJson = await fetchTdxJson(`${GOTDX}/count?market=${market}`, 'stock count')
+    const total = Number(countJson?.Count ?? countJson?.count ?? 0)
+    if (!Number.isInteger(total) || total < 100) throw new Error(`TDX stock count: invalid market ${market} count ${total}`)
 
+    let start = 0
+    const seenCodes = new Set<string>()
+    while (start < total) {
+      const requested = Math.min(1000, total - start)
+      const list = await fetchTdxStockListPage(market, start, requested)
+
+      let unseenCount = 0
       for (const s of list) {
         const code = String(s.Code ?? s.code ?? '')
         const name = String(s.Name ?? s.name ?? '')
-        if (code.length >= 6 && name) {
+        if (seenCodes.has(code)) continue
+        seenCodes.add(code)
+        unseenCount += 1
+        if (isAshareEquityCode(code, market) && name) {
           data.push({
             code, name,
             market: market === 1 ? 'SH' : 'SZ',
@@ -102,13 +110,50 @@ async function fetchStockListTdx(): Promise<FetchResult<StockInfo>> {
         }
       }
 
-      if (list.length < 1000) break
+      if (unseenCount === 0) throw new Error(`TDX stock_list: page added no identities at market ${market} start ${start}`)
       start += list.length
     }
   }
 
   if (data.length < 100) throw new Error(`TDX stock_list: only ${data.length}`)
   return { data, source: 'tdx', fetchedAt: now }
+}
+
+async function fetchTdxStockListPage(market: number, start: number, count: number): Promise<any[]> {
+  for (let attempt = 1; attempt <= 3; attempt += 1) {
+    const json = await fetchTdxJson(
+      `${GOTDX}/stock_list_range?market=${market}&start=${start}&count=${count}`,
+      `stock_list market ${market} start ${start}`,
+    )
+    const list = json?.List ?? json?.reply?.List ?? []
+    if (Array.isArray(list) && list.length > 0) return list
+    if (attempt < 3) await new Promise((resolve) => setTimeout(resolve, 100 * attempt))
+  }
+  throw new Error(`TDX stock_list: empty page at market ${market} start ${start}`)
+}
+
+async function fetchTdxJson(url: string, label: string): Promise<any> {
+  let lastError: unknown
+  for (let attempt = 1; attempt <= 3; attempt += 1) {
+    try {
+      const response = await fetch(url, { signal: AbortSignal.timeout(GOTDX_STOCK_LIST_TIMEOUT_MS) })
+      if (!response.ok) throw new Error(`HTTP ${response.status}`)
+      return await response.json()
+    } catch (error) {
+      lastError = error
+      if (attempt < 3) await new Promise((resolve) => setTimeout(resolve, 200 * attempt))
+    }
+  }
+  const detail = lastError instanceof Error ? lastError.message : String(lastError)
+  throw new Error(`TDX ${label}: ${detail}`)
+}
+
+function isAshareEquityCode(code: string, market: number): boolean {
+  if (!/^\d{6}$/.test(code)) return false
+  const prefixes = market === 1
+    ? ['600', '601', '603', '605', '688', '689']
+    : ['000', '001', '002', '003', '300', '301']
+  return prefixes.some((prefix) => code.startsWith(prefix))
 }
 
 async function fetchStockListAkshare(url: string, source = 'akshare'): Promise<FetchResult<StockInfo>> {

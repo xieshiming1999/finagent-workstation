@@ -365,6 +365,7 @@ describe('provider endpoint routing contracts', () => {
     vi.stubGlobal('fetch', vi.fn(async (input: string | URL) => {
       const url = String(input)
       calls.push(url)
+      if (url.includes('127.0.0.1:19801/count')) return jsonResponse({ Count: 200 })
       if (url.includes('127.0.0.1:19801/stock_list')) return jsonResponse({ List: [] })
       if (url.includes('Market_Center.getHQNodeData')) return jsonResponse([])
       if (url.includes('push2delay.eastmoney.com/api/qt/clist/get')) {
@@ -387,6 +388,58 @@ describe('provider endpoint routing contracts', () => {
       provider: 'eastmoney',
       cacheStatus: 'provider-hit',
     })
+  })
+
+  it('uses count-driven TDX stock-list ranges for complete pagination', async () => {
+    const starts: string[] = []
+    vi.stubGlobal('fetch', vi.fn(async (input: string | URL) => {
+      const url = new URL(String(input))
+      if (url.pathname.endsWith('/count')) return jsonResponse({ Count: 200 })
+      if (!url.pathname.endsWith('/stock_list_range')) throw new Error(`unexpected URL ${url}`)
+      const market = Number(url.searchParams.get('market'))
+      const start = Number(url.searchParams.get('start'))
+      starts.push(`${market}:${start}`)
+      return jsonResponse({
+        List: Array.from({ length: 200 }, (_, index) => ({
+          Code: `${market === 1 ? '600' : '000'}${String(start + index).padStart(3, '0')}`,
+          Name: `Stock ${market}-${start + index}`,
+        })),
+      })
+    }))
+
+    const { fetchStockListA } = await import('../../src/agent/data/fetchers/fetcher-stock-list')
+    const result = await fetchStockListA({ provider: 'tdx', skipCache: true })
+
+    expect(result.data).toHaveLength(400)
+    expect(starts).toEqual(['0:0', '1:0'])
+    expect(result.provenance).toMatchObject({ provider: 'tdx', cacheStatus: 'provider-hit' })
+  })
+
+  it('recovers from a transient TDX stock-count failure in the same provider call', async () => {
+    let countCalls = 0
+    vi.stubGlobal('fetch', vi.fn(async (input: string | URL) => {
+      const url = new URL(String(input))
+      if (url.pathname.endsWith('/count')) {
+        countCalls += 1
+        if (countCalls === 1) return jsonResponse({ error: 'temporary' }, 500)
+        return jsonResponse({ Count: 100 })
+      }
+      if (!url.pathname.endsWith('/stock_list_range')) throw new Error(`unexpected URL ${url}`)
+      const market = Number(url.searchParams.get('market'))
+      return jsonResponse({
+        List: Array.from({ length: 100 }, (_, index) => ({
+          Code: `${market === 1 ? '600' : '000'}${String(index).padStart(3, '0')}`,
+          Name: `Stock ${market}-${index}`,
+        })),
+      })
+    }))
+
+    const { fetchStockListA } = await import('../../src/agent/data/fetchers/fetcher-stock-list')
+    const result = await fetchStockListA({ provider: 'tdx', skipCache: true })
+
+    expect(countCalls).toBe(3)
+    expect(result.data).toHaveLength(200)
+    expect(result.provenance).toMatchObject({ provider: 'tdx', cacheStatus: 'provider-hit' })
   })
 
   it('uses explicit EastMoney sidecar hints for HK and US stock lists', async () => {
