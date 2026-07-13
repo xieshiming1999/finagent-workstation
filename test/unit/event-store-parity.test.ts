@@ -73,6 +73,45 @@ describe('event-agent renderer parity', () => {
     })
   })
 
+  it('clears a matching permission prompt when an external resolver denies it', () => {
+    useAgentStore.getState().handleEvent({
+      type: 'tool-confirm-request',
+      requestId: 'tc-trade',
+      name: 'Portfolio',
+      input: { action: 'trade' },
+    })
+    expect(useAgentStore.getState().pendingConfirm?.requestId).toBe('tc-trade')
+
+    useAgentStore.getState().handleEvent({
+      type: 'tool-result',
+      id: 'tc-trade',
+      name: 'Portfolio',
+      result: 'Tool use was rejected by the user.',
+      durationMs: 0,
+      isError: true,
+    })
+
+    expect(useAgentStore.getState().pendingConfirm).toBeNull()
+  })
+
+  it('clears a matching permission prompt when an external resolver approves it', () => {
+    useAgentStore.getState().handleEvent({
+      type: 'tool-confirm-request',
+      requestId: 'tc-approved',
+      name: 'Portfolio',
+      input: { action: 'trade' },
+    })
+
+    useAgentStore.getState().handleEvent({
+      type: 'tool-use-start',
+      id: 'tc-approved',
+      name: 'Portfolio',
+      input: { action: 'trade' },
+    })
+
+    expect(useAgentStore.getState().pendingConfirm).toBeNull()
+  })
+
   it('uses the same compact WebView execute label in chat and event stores', () => {
     const startEvent = {
       type: 'tool-use-start' as const,

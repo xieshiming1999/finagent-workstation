@@ -142,6 +142,9 @@ export const useAgentStore = create<AgentState>((set, get) => ({
               },
             ],
             status: `${t('running')} ${event.name}...`,
+            pendingConfirm: s.pendingConfirm?.requestId === event.id
+              ? null
+              : s.pendingConfirm,
           }
         })
         break
@@ -160,7 +163,12 @@ export const useAgentStore = create<AgentState>((set, get) => ({
               break
             }
           }
-          return { messages: msgs }
+          return {
+            messages: msgs,
+            pendingConfirm: s.pendingConfirm?.requestId === event.id
+              ? null
+              : s.pendingConfirm,
+          }
         })
         break
 
