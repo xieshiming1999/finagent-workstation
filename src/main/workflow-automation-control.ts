@@ -29,6 +29,7 @@ import {
   type StrategyLibraryItem,
 } from "./strategy-library";
 import { strategyArtifactPaths } from "../domain/market/strategy-spec/strategy-artifact-contract";
+import { RunServiceUiRuntimeCoordinator } from "./run-service-ui-runtime/ui-runtime-coordinator";
 
 export interface WorkflowAutomationControlDeps {
   getAgent: () => Agent | null;
@@ -50,6 +51,7 @@ export interface WorkflowAutomationControlDeps {
     monitorId: string,
     options?: { timeoutMs?: number },
   ) => Promise<Record<string, unknown>>;
+  uiRuntimeCoordinator?: RunServiceUiRuntimeCoordinator;
 }
 
 export interface WorkflowAutomationRunResult {
@@ -222,8 +224,11 @@ export interface WorkflowAutomationStrategyLibraryActionResult
 
 export class WorkflowAutomationControl {
   private readonly runService: RunServiceController;
+  private readonly uiRuntimeCoordinator: RunServiceUiRuntimeCoordinator;
 
   constructor(private readonly deps: WorkflowAutomationControlDeps) {
+    this.uiRuntimeCoordinator =
+      deps.uiRuntimeCoordinator ?? new RunServiceUiRuntimeCoordinator();
     this.runService = new RunServiceController(
       (request) => this.runServicePromptRunner(request),
       {
@@ -396,57 +401,59 @@ export class WorkflowAutomationControl {
     request: Required<Pick<RunServiceRunRequest, "prompt">> & RunServiceRunRequest,
   ) {
     const uiRuntime = request.uiRuntime ?? "visible";
-    if (uiRuntime !== "visible") {
+    return await this.uiRuntimeCoordinator.use(uiRuntime, async (uiPreparation) => {
+      if (!uiPreparation.available) {
+        return {
+          ok: false,
+          finalAnswer: "",
+          sessionId: this.deps.getAgent()?.session.id,
+          error: uiPreparation.error,
+          provenance: { uiRuntime },
+        };
+      }
+      const sessionError = this.prepareRunServiceSession(request);
+      if (sessionError) {
+        return {
+          ok: false,
+          finalAnswer: "",
+          sessionId: this.deps.getAgent()?.session.id,
+          error: sessionError,
+          provenance: { uiRuntime },
+        };
+      }
+      const run = await this.sendPrompt(request.prompt, {
+        timeoutMs: request.timeoutMs,
+        timeoutReason: "run-service",
+      });
       return {
-        ok: false,
-        finalAnswer: "",
-        sessionId: this.deps.getAgent()?.session.id,
-        error: `RUN_SERVICE_UI_RUNTIME_UNSUPPORTED: ${uiRuntime} requires a service-owned UI backend; retry with uiRuntime visible`,
-        provenance: { uiRuntime },
+        ok: run.ok,
+        finalAnswer: assistantReviewText(run),
+        sessionId: run.sessionId,
+        error: run.error,
+        toolCalls: run.messages.flatMap((message) =>
+          message.toolUses?.map((tool) => ({
+            id: tool.id,
+            tool: tool.name,
+            input: tool.input,
+          })) ?? [],
+        ),
+        toolResults: run.messages
+          .map((message) => message.toolResult)
+          .filter((result): result is NonNullable<typeof result> => Boolean(result))
+          .map((result) => ({
+            toolUseId: result.toolUseId,
+            isError: result.isError,
+            contentPreview: previewText(result.content),
+            imagePaths: result.imagePaths,
+          })),
+        uiArtifacts: run.uiArtifacts ?? [],
+        provenance: {
+          reportPath: run.reportPath,
+          sessionPath: run.sessionPath,
+          uiRuntime,
+        },
       };
-    }
-    const sessionError = this.prepareRunServiceSession(request);
-    if (sessionError) {
-      return {
-        ok: false,
-        finalAnswer: "",
-        sessionId: this.deps.getAgent()?.session.id,
-        error: sessionError,
-        provenance: { uiRuntime: request.uiRuntime ?? "visible" },
-      };
-    }
-    const run = await this.sendPrompt(request.prompt, {
-      timeoutMs: request.timeoutMs,
-      timeoutReason: "run-service",
     });
-    return {
-      ok: run.ok,
-      finalAnswer: assistantReviewText(run),
-      sessionId: run.sessionId,
-      error: run.error,
-      toolCalls: run.messages.flatMap((message) =>
-        message.toolUses?.map((tool) => ({
-          id: tool.id,
-          tool: tool.name,
-          input: tool.input,
-        })) ?? [],
-      ),
-      toolResults: run.messages
-        .map((message) => message.toolResult)
-        .filter((result): result is NonNullable<typeof result> => Boolean(result))
-        .map((result) => ({
-          toolUseId: result.toolUseId,
-          isError: result.isError,
-          contentPreview: previewText(result.content),
-          imagePaths: result.imagePaths,
-        })),
-      uiArtifacts: run.uiArtifacts ?? [],
-      provenance: {
-        reportPath: run.reportPath,
-        sessionPath: run.sessionPath,
-        uiRuntime: request.uiRuntime ?? "visible",
-      },
-    };
   }
 
   private prepareRunServiceSession(request: RunServiceRunRequest): string | undefined {
