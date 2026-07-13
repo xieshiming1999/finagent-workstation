@@ -189,8 +189,14 @@ export class FetchQueue {
   private async execStockList(task: FetchTask): Promise<void> {
     const market = (task.params.market as string) ?? 'A'
     const providers = taskProviders(task)
+    const provider = normalizeFinanceProviders(task.params.provider)[0]
     const fetcher = market === 'HK' ? fetchStockListHK : market === 'US' ? fetchStockListUS : fetchStockListA
-    const result = await rateLimitedFetch('akshare', () => fetcher({ providers }))
+    const result = await rateLimitedFetch('akshare', () => fetcher({
+      providers,
+      provider,
+      providerMode: provider ? 'strict' : undefined,
+      skipCache: Boolean(task.params.forceLive),
+    }))
     this.store.saveStockList(result.data)
     task.progress = { fetched: result.data.length, total: result.data.length, message: `${result.data.length} stocks saved` }
   }
