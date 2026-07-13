@@ -138,6 +138,7 @@ describe("run service CLI", () => {
       JSON.stringify({ id: "10", method: "session.create", params: { reason: "new context" } }) + "\n",
       JSON.stringify({ id: "11", method: "artifact.list", params: { limit: 3 } }) + "\n",
       JSON.stringify({ id: "12", method: "artifact.get", params: { artifactId: "run-1" } }) + "\n",
+      JSON.stringify({ id: "13", method: "adapter.capability", params: {} }) + "\n",
     ]);
     const code = await runServiceCli(["serve", "--stdio"], {
       stdin,
@@ -164,7 +165,7 @@ describe("run service CLI", () => {
     });
     expect(code).toBe(0);
     const messages = writes.map((line) => JSON.parse(line));
-    expect(messages).toHaveLength(12);
+    expect(messages).toHaveLength(13);
     expect(messages[0]).toMatchObject({ id: "1", ok: true });
     expect(messages[1]).toMatchObject({ id: "2", ok: true, result: { path: "/runs/run-1/events?after=0" } });
     expect(messages[2]).toMatchObject({ id: "3", ok: true, result: { path: "/runs/run-1/result" } });
@@ -177,5 +178,6 @@ describe("run service CLI", () => {
     expect(messages[9]).toMatchObject({ id: "10", ok: true, result: { runId: "run-1" } });
     expect(messages[10]).toMatchObject({ id: "11", ok: true, result: { path: "/artifacts?limit=3" } });
     expect(messages[11]).toMatchObject({ id: "12", ok: true, result: { path: "/artifacts/run-1" } });
+    expect(messages[12]).toMatchObject({ id: "13", ok: true, result: { path: "/adapter/capabilities" } });
   });
 });

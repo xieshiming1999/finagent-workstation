@@ -233,6 +233,11 @@ async function handleStdioLine(
       input.stdout.write(`${JSON.stringify({ id, ok: true, result })}\n`);
       return;
     }
+    if (method === "adapter.capability") {
+      const result = await input.getJson("/adapter/capabilities");
+      input.stdout.write(`${JSON.stringify({ id, ok: true, result })}\n`);
+      return;
+    }
     if (method === "session.current") {
       const result = await input.getJson("/sessions/current");
       input.stdout.write(`${JSON.stringify({ id, ok: true, result })}\n`);

@@ -110,6 +110,22 @@ export function runServiceCapabilityDescriptor(input: {
   supportsPermissionResponse?: boolean;
   notes?: string[];
 }): Record<string, unknown> {
+  const routes = input.routes ?? [
+    "POST /runs",
+    "GET /runs/{runId}/events?after={sequence}",
+    "GET /runs/{runId}/result",
+    "POST /runs/{runId}/responses",
+    ...(input.supportsPermissionResponse
+      ? ["POST /runs/{runId}/permissions"]
+      : []),
+    "POST /runs/{runId}/interrupt",
+    "GET /runs/capabilities",
+    "GET /sessions",
+    "POST /sessions",
+    "GET /sessions/current",
+    "GET /artifacts",
+    "GET /artifacts/{artifactId}",
+  ];
   return {
     ok: true,
     contract: "finagent.run-service.v1",
@@ -120,22 +136,7 @@ export function runServiceCapabilityDescriptor(input: {
     sessionModes: runServiceSessionModes,
     uiRuntimeModes: runServiceUiRuntimeModes,
     eventTypes: runServiceEventTypes,
-    routes: input.routes ?? [
-      "POST /runs",
-      "GET /runs/{runId}/events?after={sequence}",
-      "GET /runs/{runId}/result",
-      "POST /runs/{runId}/responses",
-      ...(input.supportsPermissionResponse
-        ? ["POST /runs/{runId}/permissions"]
-        : []),
-      "POST /runs/{runId}/interrupt",
-      "GET /runs/capabilities",
-      "GET /sessions",
-      "POST /sessions",
-      "GET /sessions/current",
-      "GET /artifacts",
-      "GET /artifacts/{artifactId}",
-    ],
+    routes,
     transports: {
       http: true,
       cli: input.supportsCli ?? false,
@@ -154,6 +155,48 @@ export function runServiceCapabilityDescriptor(input: {
     },
     notes: input.notes ?? [],
   };
+}
+
+export function runServiceAdapterDescriptor(input: {
+  runtime: "mobile" | "workstation";
+  supportsPermissionResponse?: boolean;
+  supportsStdio?: boolean;
+  supportsCli?: boolean;
+}): Record<string, unknown> {
+  const capability = runServiceCapabilityDescriptor(input);
+  const operations = [
+    operationDescriptor("finagent.workflow.run", "POST /runs", "Start a run with prompt, session mode, UI runtime, and optional structured payload."),
+    operationDescriptor("finagent.workflow.events", "GET /runs/{runId}/events?after={sequence}", "Replay typed run events after a sequence cursor."),
+    operationDescriptor("finagent.workflow.result", "GET /runs/{runId}/result", "Fetch the final run snapshot with answer, trace, artifacts, and errors."),
+    operationDescriptor("finagent.workflow.answer", "POST /runs/{runId}/responses", "Answer a pending AskUserQuestion with an explicit caller-selected value."),
+    ...(input.supportsPermissionResponse
+      ? [operationDescriptor("finagent.workflow.permission", "POST /runs/{runId}/permissions", "Resolve a pending permission request with an explicit approve/deny decision.")]
+      : []),
+    operationDescriptor("finagent.workflow.interrupt", "POST /runs/{runId}/interrupt", "Request cancellation for a run."),
+    operationDescriptor("finagent.session.current", "GET /sessions/current", "Inspect the active session evidence."),
+    operationDescriptor("finagent.session.list", "GET /sessions", "List current and archived sessions without switching context."),
+    operationDescriptor("finagent.session.create", "POST /sessions", "Archive the current session and create a fresh active session."),
+    operationDescriptor("finagent.artifact.list", "GET /artifacts", "List workflow artifacts available to external callers."),
+    operationDescriptor("finagent.artifact.get", "GET /artifacts/{artifactId}", "Fetch a workflow artifact by id."),
+    operationDescriptor("finagent.capability.help", "GET /runs/capabilities", "Inspect the run-service contract and supported routes."),
+  ];
+  return {
+    ok: true,
+    kind: "run-service-adapter",
+    contract: "finagent.run-service.v1",
+    adapterContract: "finagent.service-adapter.v1",
+    runtime: input.runtime,
+    transports: capability.transports,
+    operations,
+    notes: [
+      "Adapter operations are a stable local bridge for code agents; they map to the run-service HTTP/stdio contract.",
+      "Callers must handle AskUserQuestion and permission replies explicitly; no hidden answer selection is provided.",
+    ],
+  };
+}
+
+function operationDescriptor(id: string, route: string, description: string): Record<string, string> {
+  return { id, route, description };
 }
 
 export function parseRunServiceCommand(args: string[]): RunServiceCommandPlan {

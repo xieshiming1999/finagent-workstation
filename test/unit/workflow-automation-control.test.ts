@@ -1243,6 +1243,22 @@ describe("WorkflowAutomationControl", () => {
       permissionResponse: true,
     });
 
+    const adapter = await getJson(server!.port, "/adapter/capabilities");
+    expect(adapter.status).toBe(200);
+    expect(adapter.json).toMatchObject({
+      ok: true,
+      kind: "run-service-adapter",
+      adapterContract: "finagent.service-adapter.v1",
+      runtime: "workstation",
+    });
+    expect(adapter.json.operations).toEqual(
+      expect.arrayContaining([
+        expect.objectContaining({ id: "finagent.workflow.run" }),
+        expect.objectContaining({ id: "finagent.workflow.permission" }),
+        expect.objectContaining({ id: "finagent.artifact.list" }),
+      ]),
+    );
+
     const cleared = await postJson(server!.port, "/workflow/clear_session", {});
     expect(cleared.status).toBe(200);
     expect(cleared.json).toMatchObject({

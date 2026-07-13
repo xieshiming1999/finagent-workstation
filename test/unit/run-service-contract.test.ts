@@ -1,6 +1,7 @@
 import { describe, expect, it } from "vitest";
 import {
   parseRunServiceCommand,
+  runServiceAdapterDescriptor,
   runServiceCapabilityDescriptor,
   runServiceEventTypes,
 } from "../../src/agent/run-service-contract";
@@ -99,5 +100,27 @@ describe("run service contract", () => {
     expect(descriptor.routes).toContain("GET /artifacts");
     expect(descriptor.routes).toContain("GET /artifacts/{artifactId}");
     expect(descriptor.routes).toContain("POST /runs/{runId}/permissions");
+  });
+
+  it("describes code-agent adapter operations", () => {
+    const descriptor = runServiceAdapterDescriptor({
+      runtime: "workstation",
+      supportsCli: true,
+      supportsStdio: true,
+      supportsPermissionResponse: true,
+    });
+    expect(descriptor).toMatchObject({
+      ok: true,
+      kind: "run-service-adapter",
+      adapterContract: "finagent.service-adapter.v1",
+      runtime: "workstation",
+    });
+    expect(descriptor.operations).toEqual(
+      expect.arrayContaining([
+        expect.objectContaining({ id: "finagent.workflow.run", route: "POST /runs" }),
+        expect.objectContaining({ id: "finagent.workflow.permission" }),
+        expect.objectContaining({ id: "finagent.artifact.get" }),
+      ]),
+    );
   });
 });

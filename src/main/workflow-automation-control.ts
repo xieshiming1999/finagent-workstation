@@ -15,7 +15,10 @@ import {
   RunServiceController,
   type RunServiceRunRequest,
 } from "../agent/run-service-controller";
-import { runServiceCapabilityDescriptor } from "../agent/run-service-contract";
+import {
+  runServiceAdapterDescriptor,
+  runServiceCapabilityDescriptor,
+} from "../agent/run-service-contract";
 import type { RunServiceResultSnapshot } from "../agent/run-service-event-store";
 import { RunServiceEventStore } from "../agent/run-service-event-store";
 import { queueStatusEvent } from "../agent/agent-background";
@@ -1216,6 +1219,19 @@ async function handleRequest(
           "CLI and stdio currently connect to an existing loopback HTTP host.",
           "Permission replies are exposed through structured run-service routes and stdio methods.",
         ],
+      }),
+    );
+    return;
+  }
+  if (req.method === "GET" && req.url === "/adapter/capabilities") {
+    writeJson(
+      res,
+      200,
+      runServiceAdapterDescriptor({
+        runtime: "workstation",
+        supportsCli: true,
+        supportsStdio: true,
+        supportsPermissionResponse: true,
       }),
     );
     return;
