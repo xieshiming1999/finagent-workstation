@@ -74,6 +74,19 @@ export class RunServiceController {
           : {}),
       },
     });
+    const modeError = validateSessionMode(normalizedRequest.sessionMode, sessionId);
+    if (modeError) {
+      this.eventStore.append({
+        runId,
+        type: "run.failed",
+        sessionId,
+        payload: {
+          error: modeError,
+          recovery: "Create a session first or pass --session-id with resume/preload.",
+        },
+      });
+      return this.eventStore.result(runId);
+    }
     this.eventStore.append({
       runId,
       type: "run.status.changed",
@@ -136,4 +149,14 @@ export class RunServiceController {
   private newRunId(): string {
     return `run-${this.clock().getTime()}`;
   }
+}
+
+function validateSessionMode(
+  mode: RunServiceSessionMode,
+  sessionId?: string,
+): string {
+  if ((mode === "resume" || mode === "preload") && !String(sessionId ?? "").trim()) {
+    return `sessionId is required when sessionMode is ${mode}`;
+  }
+  return "";
 }

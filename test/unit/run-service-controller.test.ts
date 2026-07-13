@@ -50,5 +50,25 @@ describe("run service controller", () => {
     expect(result.status).toBe("failed");
     expect(result.error).toContain("provider unavailable");
   });
-});
 
+  it("rejects resume and preload without session id before running prompt", async () => {
+    let called = false;
+    const controller = new RunServiceController(async () => {
+      called = true;
+      return { ok: true, finalAnswer: "unexpected" };
+    });
+
+    const result = await controller.runPrompt(
+      { prompt: "continue", sessionMode: "preload" },
+      { runId: "run-missing-session" },
+    );
+
+    expect(called).toBe(false);
+    expect(result.status).toBe("failed");
+    expect(result.error).toContain("sessionId is required");
+    expect(result.events.map((event) => event.type)).toEqual([
+      "run.created",
+      "run.failed",
+    ]);
+  });
+});

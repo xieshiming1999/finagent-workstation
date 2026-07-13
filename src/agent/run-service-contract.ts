@@ -255,8 +255,8 @@ export function parseRunServiceCommand(args: string[]): RunServiceCommandPlan {
     }
   }
 
-  if (sessionMode === "resume" && !sessionId) {
-    throw new Error("--session-id is required when --session resume");
+  if ((sessionMode === "resume" || sessionMode === "preload") && !sessionId) {
+    throw new Error(`--session-id is required when --session ${sessionMode}`);
   }
 
   return {

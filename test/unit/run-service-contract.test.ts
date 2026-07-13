@@ -62,6 +62,9 @@ describe("run service contract", () => {
     expect(() =>
       parseRunServiceCommand(["analysis", "run", "--session", "resume"]),
     ).toThrow("--session-id is required");
+    expect(() =>
+      parseRunServiceCommand(["analysis", "run", "--session", "preload"]),
+    ).toThrow("--session-id is required");
   });
 
   it("exposes canonical event wire names", () => {
