@@ -227,6 +227,7 @@ export interface WorkflowAutomationStrategyLibraryActionResult
 export class WorkflowAutomationControl {
   private readonly runService: RunServiceController;
   private readonly uiRuntimeCoordinator: RunServiceUiRuntimeCoordinator;
+  private nextRunServiceFailure?: string;
 
   constructor(private readonly deps: WorkflowAutomationControlDeps) {
     this.uiRuntimeCoordinator =
@@ -248,6 +249,13 @@ export class WorkflowAutomationControl {
 
   enabled(): boolean {
     return process.env.FINAGENT_WORKSTATION_WORKFLOW_AUTOMATION === "1";
+  }
+
+  armRunServiceFailure(mode: string): Record<string, unknown> {
+    if (!this.enabled()) throw new Error("run-service failure injection requires workflow automation");
+    if (mode !== "next-llm-call") throw new Error(`unsupported run-service failure mode: ${mode}`);
+    this.nextRunServiceFailure = mode;
+    return { ok: true, kind: "run.failure.armed", mode, oneShot: true };
   }
 
   health(): Record<string, unknown> {
@@ -469,6 +477,11 @@ export class WorkflowAutomationControl {
           error: uiPreparation.error,
           provenance: { uiRuntime },
         };
+      }
+      const injectedFailure = this.nextRunServiceFailure;
+      if (injectedFailure) {
+        this.nextRunServiceFailure = undefined;
+        throw new Error(`RUN_SERVICE_TEST_AGENT_FAILURE: deterministic ${injectedFailure} failure`);
       }
       const sessionError = this.prepareRunServiceSession(request);
       if (sessionError) {
@@ -1420,6 +1433,11 @@ async function handleRequest(
         reason: body.reason == null ? undefined : String(body.reason),
       }),
     );
+    return;
+  }
+  if (req.method === "POST" && req.url === "/test/run-service/failure") {
+    const body = await readJsonBody(req);
+    writeJson(res, 200, control.armRunServiceFailure(String(body.mode ?? "")));
     return;
   }
   if (req.method === "GET" && req.url === "/workflow/panels") {

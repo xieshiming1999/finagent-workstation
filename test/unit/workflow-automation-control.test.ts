@@ -1528,6 +1528,43 @@ describe("WorkflowAutomationControl", () => {
     expect(afterClear.json.messages).toEqual([]);
   });
 
+  it("injects one run-service agent failure and recovers in process", async () => {
+    process.env.FINAGENT_WORKSTATION_WORKFLOW_AUTOMATION = "1";
+    const { control } = makeControl(
+      basePath,
+      new MockLLM([{ text: "recovered" }]),
+    );
+    server = await startWorkflowAutomationServer(control);
+
+    const armed = await postJson(server!.port, "/test/run-service/failure", {
+      mode: "next-llm-call",
+    });
+    expect(armed.json).toMatchObject({ ok: true, oneShot: true });
+
+    const failed = await postJson(server!.port, "/runs", {
+      prompt: "fail once",
+      uiRuntime: "visible",
+      sessionMode: "new",
+    });
+    expect(failed.json).toMatchObject({
+      status: "failed",
+      error: expect.stringContaining("RUN_SERVICE_TEST_AGENT_FAILURE"),
+      errors: [expect.objectContaining({
+        payload: expect.objectContaining({ category: "agent.runtime" }),
+      })],
+    });
+
+    const recovered = await postJson(server!.port, "/runs", {
+      prompt: "recover now",
+      uiRuntime: "visible",
+      sessionMode: "new",
+    });
+    expect(recovered.json).toMatchObject({
+      status: "completed",
+      finalAnswer: "recovered",
+    });
+  });
+
   it("serves strategy library action endpoint through real agent intake", async () => {
     process.env.FINAGENT_WORKSTATION_WORKFLOW_AUTOMATION = "1";
     mkdirSync(join(basePath, "data"), { recursive: true });
