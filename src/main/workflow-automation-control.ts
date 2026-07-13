@@ -1651,6 +1651,16 @@ async function handleRequest(
     const payload = body.payload && typeof body.payload === "object" && !Array.isArray(body.payload)
       ? body.payload as Record<string, unknown>
       : {};
+    if (contract === "finagent.finance-operation.v1") {
+      payload.commandPlan = {
+        category: String(body.category ?? "").trim(),
+        operation: String(body.operation ?? "").trim(),
+        payload: body.arguments && typeof body.arguments === "object" && !Array.isArray(body.arguments)
+          ? body.arguments as Record<string, unknown>
+          : payload,
+      };
+      payload.externalOperationContract = contract;
+    }
     if (!prompt && contract === "finagent.finance-operation.v1") {
       try {
         prompt = promptForExternalFinanceOperation({
