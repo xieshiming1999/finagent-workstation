@@ -1,5 +1,8 @@
 import { describe, expect, it } from "vitest";
 import { RunServiceEventStore } from "../../src/agent/run-service-event-store";
+import { mkdtempSync, readFileSync } from "fs";
+import { join } from "path";
+import { tmpdir } from "os";
 
 describe("run service event store", () => {
   it("replays events after cursor and collects completed result", () => {
@@ -67,5 +70,31 @@ describe("run service event store", () => {
     expect(store.result("run-a").status).toBe("failed");
     expect(store.result("run-b").status).toBe("running");
   });
-});
 
+  it("persists and reloads append-only event logs", () => {
+    const dir = mkdtempSync(join(tmpdir(), "run-service-events-"));
+    const path = join(dir, "events.jsonl");
+    const first = new RunServiceEventStore(
+      () => new Date("2026-07-13T01:02:03.000Z"),
+      { persistencePath: path },
+    );
+    first.append({ runId: "run-durable", type: "run.created" });
+    first.append({
+      runId: "run-durable",
+      type: "run.completed",
+      payload: { finalAnswer: "persisted" },
+    });
+    expect(readFileSync(path, "utf-8").trim().split("\n")).toHaveLength(2);
+
+    const second = new RunServiceEventStore(
+      () => new Date("2026-07-13T01:02:04.000Z"),
+      { persistencePath: path },
+    );
+    expect(second.result("run-durable")).toMatchObject({
+      status: "completed",
+      finalAnswer: "persisted",
+    });
+    const next = second.append({ runId: "run-next", type: "run.created" });
+    expect(next.sequence).toBe(3);
+  });
+});

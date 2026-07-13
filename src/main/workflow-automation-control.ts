@@ -17,6 +17,7 @@ import {
 } from "../agent/run-service-controller";
 import { runServiceCapabilityDescriptor } from "../agent/run-service-contract";
 import type { RunServiceResultSnapshot } from "../agent/run-service-event-store";
+import { RunServiceEventStore } from "../agent/run-service-event-store";
 import { queueStatusEvent } from "../agent/agent-background";
 import {
   buildStrategyLibraryActionPrompt,
@@ -211,11 +212,23 @@ export interface WorkflowAutomationStrategyLibraryActionResult
 }
 
 export class WorkflowAutomationControl {
-  private readonly runService = new RunServiceController((request) =>
-    this.runServicePromptRunner(request),
-  );
+  private readonly runService: RunServiceController;
 
-  constructor(private readonly deps: WorkflowAutomationControlDeps) {}
+  constructor(private readonly deps: WorkflowAutomationControlDeps) {
+    this.runService = new RunServiceController(
+      (request) => this.runServicePromptRunner(request),
+      {
+        eventStore: new RunServiceEventStore(undefined, {
+          persistencePath: join(
+            this.deps.getBasePath(),
+            "data",
+            "run-service",
+            "events.jsonl",
+          ),
+        }),
+      },
+    );
+  }
 
   enabled(): boolean {
     return process.env.FINAGENT_WORKSTATION_WORKFLOW_AUTOMATION === "1";

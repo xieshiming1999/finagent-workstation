@@ -1,3 +1,5 @@
+import { existsSync, mkdirSync, readFileSync, appendFileSync } from "fs";
+import { dirname } from "path";
 import type { RunServiceEventType } from "./run-service-contract";
 
 export interface RunServiceEventRecord {
@@ -23,8 +25,15 @@ export interface RunServiceResultSnapshot {
 export class RunServiceEventStore {
   private nextSequence = 1;
   private readonly eventsByRun = new Map<string, RunServiceEventRecord[]>();
+  private readonly persistencePath?: string;
 
-  constructor(private readonly clock: () => Date = () => new Date()) {}
+  constructor(
+    private readonly clock: () => Date = () => new Date(),
+    options: { persistencePath?: string } = {},
+  ) {
+    this.persistencePath = options.persistencePath;
+    if (this.persistencePath) this.loadPersistedEvents(this.persistencePath);
+  }
 
   append(input: {
     runId: string;
@@ -47,6 +56,7 @@ export class RunServiceEventStore {
     const events = this.eventsByRun.get(input.runId) ?? [];
     events.push(event);
     this.eventsByRun.set(input.runId, events);
+    this.persistEvent(event);
     return event;
   }
 
@@ -78,6 +88,53 @@ export class RunServiceEventStore {
       ...(terminal?.payload?.error != null ? { error: String(terminal.payload.error) } : {}),
       events,
     };
+  }
+
+  private persistEvent(event: RunServiceEventRecord): void {
+    if (!this.persistencePath) return;
+    mkdirSync(dirname(this.persistencePath), { recursive: true });
+    appendFileSync(this.persistencePath, `${JSON.stringify(event)}\n`, "utf-8");
+  }
+
+  private loadPersistedEvents(filePath: string): void {
+    if (!existsSync(filePath)) return;
+    const content = readFileSync(filePath, "utf-8");
+    for (const line of content.split(/\r?\n/)) {
+      if (!line.trim()) continue;
+      const parsed = parsePersistedEvent(line);
+      if (!parsed) continue;
+      const events = this.eventsByRun.get(parsed.runId) ?? [];
+      events.push(parsed);
+      this.eventsByRun.set(parsed.runId, events);
+      this.nextSequence = Math.max(this.nextSequence, parsed.sequence + 1);
+    }
+  }
+}
+
+function parsePersistedEvent(line: string): RunServiceEventRecord | null {
+  try {
+    const decoded = JSON.parse(line);
+    if (!decoded || typeof decoded !== "object" || Array.isArray(decoded)) return null;
+    const sequence = Number(decoded.sequence);
+    const runId = String(decoded.runId ?? "");
+    const type = String(decoded.type ?? "") as RunServiceEventType;
+    const createdAt = String(decoded.createdAt ?? "");
+    if (!Number.isFinite(sequence) || sequence <= 0 || !runId || !type || !createdAt) {
+      return null;
+    }
+    return {
+      sequence,
+      runId,
+      type,
+      createdAt,
+      ...(decoded.sessionId ? { sessionId: String(decoded.sessionId) } : {}),
+      ...(decoded.turnId ? { turnId: String(decoded.turnId) } : {}),
+      ...(decoded.payload && typeof decoded.payload === "object" && !Array.isArray(decoded.payload)
+        ? { payload: decoded.payload as Record<string, unknown> }
+        : {}),
+    };
+  } catch {
+    return null;
   }
 }
 
@@ -116,4 +173,3 @@ function hasPending(events: RunServiceEventRecord[]): boolean {
     pendingPermission > resolvedPermission
   );
 }
-
