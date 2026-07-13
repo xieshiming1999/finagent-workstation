@@ -113,8 +113,8 @@ export function externalFinanceCapabilityDescriptor(runtime: "mobile" | "worksta
       availability: "runtime-check-required",
       readinessReason: "Paper-account readiness and explicit permission are required at run time.",
       recovery: "Use execution.preview, then answer the exact permission request with an idempotency key.",
-      inputSchema: objectSchema({ account: { type: "string" }, symbol: { type: "string" }, side: { enum: ["buy", "sell"] }, quantity: { type: "number", exclusiveMinimum: 0 }, idempotencyKey: { type: "string", minLength: 1 } }, ["account", "symbol", "side", "quantity", "idempotencyKey"]),
-      resultContract: "execution-receipt-v1",
+      inputSchema: objectSchema({ account: { type: "string" }, symbol: { type: "string" }, side: { enum: ["buy", "sell"] }, quantity: { type: "number", exclusiveMinimum: 0 }, price: { type: "number", exclusiveMinimum: 0 }, idempotencyKey: { type: "string", minLength: 1 } }, ["account", "symbol", "side", "quantity", "price", "idempotencyKey"]),
+      resultContract: "finagent.execution-receipt.v1",
       requiredProviders: [],
       interaction: "required",
       permission: "required",
@@ -166,9 +166,13 @@ export function promptForExternalFinanceOperation(input: {
   if (descriptor.availability === "unavailable") {
     throw new Error(`${id} is unavailable: ${descriptor.readinessReason}`);
   }
+  const operationInstruction = id === "execution.simulate"
+    ? simulatedExecutionInstruction(input.arguments)
+    : "Let the agent select the appropriate tools from the typed operation and return the declared result contract.";
   return [
     "Execute the following typed external finance operation through the normal FinAgent agent and tool contracts.",
     "Do not infer missing side-effect consent. Preserve the declared result contract and provider provenance.",
+    operationInstruction,
     JSON.stringify({
       contract: "finagent.finance-operation.v1",
       operationId: id,
@@ -176,5 +180,25 @@ export function promptForExternalFinanceOperation(input: {
       resultContract: descriptor.resultContract,
       sideEffect: descriptor.sideEffect,
     }),
+  ].join("\n");
+}
+
+function simulatedExecutionInstruction(args: Record<string, unknown>): string {
+  const account = String(args.account ?? "").trim();
+  const symbol = String(args.symbol ?? "").trim();
+  const side = String(args.side ?? "").trim().toLowerCase();
+  const quantity = Number(args.quantity);
+  const price = Number(args.price);
+  const idempotencyKey = String(args.idempotencyKey ?? "").trim();
+  if (!account.startsWith("local-paper-")) throw new Error("execution.simulate supports only local-paper-* accounts");
+  const market = account.slice("local-paper-".length);
+  if (!["cn", "us", "hk"].includes(market)) throw new Error("execution.simulate account market must be cn, us, or hk");
+  if (!symbol || !["buy", "sell"].includes(side) || !(quantity > 0) || !(price > 0) || !idempotencyKey) {
+    throw new Error("execution.simulate requires symbol, side, positive quantity, positive price, and idempotencyKey");
+  }
+  return [
+    "Call Portfolio exactly once with the JSON input below. Do not ask for confirmation in assistant prose:",
+    JSON.stringify({ action: "trade", market, symbol, side, shares: quantity, price, idempotencyKey }),
+    "The normal Portfolio permission resolver must emit permission.required and pause this same run before the tool mutates paper state.",
   ].join("\n");
 }

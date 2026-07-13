@@ -1,4 +1,5 @@
 import { describe, expect, it } from "vitest";
+import { promptForExternalFinanceOperation } from "../../src/agent/external-finance-contract";
 import {
   parseRunServiceCommand,
   runServiceAdapterDescriptor,
@@ -7,6 +8,25 @@ import {
 } from "../../src/agent/run-service-contract";
 
 describe("run service contract", () => {
+  it("maps typed simulated execution to a permission-gated Portfolio call", () => {
+    const prompt = promptForExternalFinanceOperation({
+      runtime: "workstation",
+      category: "execution",
+      operation: "simulate",
+      arguments: {
+        account: "local-paper-cn",
+        symbol: "600519",
+        side: "buy",
+        quantity: 100,
+        price: 100,
+        idempotencyKey: "workstation-contract-1",
+      },
+    });
+    expect(prompt).toContain("Call Portfolio exactly once");
+    expect(prompt).toContain('\"action\":\"trade\"');
+    expect(prompt).toContain('\"shares\":100');
+    expect(prompt).toContain("permission.required");
+  });
   it("parses plain text run command with explicit service options", () => {
     const plan = parseRunServiceCommand([
       "run",

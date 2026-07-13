@@ -121,7 +121,7 @@ def main(argv=None) -> int:
     start = commands.add_parser("start"); start.add_argument("--request", required=True)
     stream = commands.add_parser("stream"); stream.add_argument("run_id"); stream.add_argument("--after", type=int, default=0); stream.add_argument("--compact", action="store_true")
     sync = commands.add_parser("run-sync"); sync.add_argument("--request", required=True); sync.add_argument("--compact", action="store_true")
-    operation = commands.add_parser("operation"); operation.add_argument("category", choices=("data", "analysis", "strategy", "execution")); operation.add_argument("operation"); operation.add_argument("--arguments", default="{}"); operation.add_argument("--session-mode", choices=("new", "resume", "preload", "ephemeral", "attached"), default="ephemeral"); operation.add_argument("--session-id"); operation.add_argument("--ui-runtime", choices=("visible", "headless", "mirror"), default="headless")
+    operation = commands.add_parser("operation"); operation.add_argument("category", choices=("data", "analysis", "strategy", "execution")); operation.add_argument("operation"); operation.add_argument("--arguments", default="{}"); operation.add_argument("--session-mode", choices=("new", "resume", "preload", "ephemeral", "attached"), default="new"); operation.add_argument("--session-id"); operation.add_argument("--ui-runtime", choices=("visible", "headless", "mirror"), default="headless")
     for name in ("state", "pending", "result"):
         command = commands.add_parser(name); command.add_argument("run_id")
     wait = commands.add_parser("wait"); wait.add_argument("run_id"); wait.add_argument("--after", type=int, default=0); wait.add_argument("--wait-ms", type=int, default=DEFAULT_WAIT_MS)
