@@ -78,9 +78,10 @@ describe("run service CLI", () => {
       JSON.stringify({ id: "2", method: "events", params: { runId: "run-1", after: 0 } }) + "\n",
       JSON.stringify({ id: "3", method: "result", params: { runId: "run-1" } }) + "\n",
       JSON.stringify({ id: "4", method: "respond", params: { runId: "run-1", answer: "1" } }) + "\n",
-      JSON.stringify({ id: "5", method: "interrupt", params: { runId: "run-1", reason: "stop" } }) + "\n",
-      JSON.stringify({ id: "6", method: "capability", params: {} }) + "\n",
-      JSON.stringify({ id: "7", method: "session.current", params: {} }) + "\n",
+      JSON.stringify({ id: "5", method: "permission", params: { runId: "run-1", approved: true, alwaysAllow: true } }) + "\n",
+      JSON.stringify({ id: "6", method: "interrupt", params: { runId: "run-1", reason: "stop" } }) + "\n",
+      JSON.stringify({ id: "7", method: "capability", params: {} }) + "\n",
+      JSON.stringify({ id: "8", method: "session.current", params: {} }) + "\n",
     ]);
     const code = await runServiceCli(["serve", "--stdio"], {
       stdin,
@@ -89,11 +90,15 @@ describe("run service CLI", () => {
       postJson: async (_path, body) => ({
         runId: _path.includes("/responses")
           ? "run-1-response"
+          : _path.includes("/permissions")
+            ? "run-1-permission"
           : _path.includes("/interrupt")
             ? "run-1-interrupt"
             : "run-1",
         status: body.prompt === "hello" ? "completed" : "failed",
         answer: body.answer,
+        approved: body.approved,
+        alwaysAllow: body.alwaysAllow,
         reason: body.reason,
       }),
       getJson: async (path) => ({
@@ -103,13 +108,14 @@ describe("run service CLI", () => {
     });
     expect(code).toBe(0);
     const messages = writes.map((line) => JSON.parse(line));
-    expect(messages).toHaveLength(7);
+    expect(messages).toHaveLength(8);
     expect(messages[0]).toMatchObject({ id: "1", ok: true });
     expect(messages[1]).toMatchObject({ id: "2", ok: true, result: { path: "/runs/run-1/events?after=0" } });
     expect(messages[2]).toMatchObject({ id: "3", ok: true, result: { path: "/runs/run-1/result" } });
     expect(messages[3]).toMatchObject({ id: "4", ok: true, result: { runId: "run-1-response", answer: "1" } });
-    expect(messages[4]).toMatchObject({ id: "5", ok: true, result: { runId: "run-1-interrupt", reason: "stop" } });
-    expect(messages[5]).toMatchObject({ id: "6", ok: true, result: { path: "/runs/capabilities" } });
-    expect(messages[6]).toMatchObject({ id: "7", ok: true, result: { path: "/sessions/current" } });
+    expect(messages[4]).toMatchObject({ id: "5", ok: true, result: { runId: "run-1-permission", approved: true, alwaysAllow: true } });
+    expect(messages[5]).toMatchObject({ id: "6", ok: true, result: { runId: "run-1-interrupt", reason: "stop" } });
+    expect(messages[6]).toMatchObject({ id: "7", ok: true, result: { path: "/runs/capabilities" } });
+    expect(messages[7]).toMatchObject({ id: "8", ok: true, result: { path: "/sessions/current" } });
   });
 });

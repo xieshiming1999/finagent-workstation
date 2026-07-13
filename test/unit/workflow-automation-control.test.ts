@@ -144,6 +144,13 @@ function makeControl(
     answer: string,
     options?: { timeoutMs?: number },
   ) => Promise<Record<string, unknown> | void> | Record<string, unknown> | void,
+  resolvePermission?: (
+    decision: {
+      approved: boolean;
+      alwaysAllow?: boolean;
+      rejectReason?: string;
+    },
+  ) => Promise<Record<string, unknown> | void> | Record<string, unknown> | void,
 ) {
   const registry = new ToolRegistry();
   registry.register(new EchoTool());
@@ -161,6 +168,7 @@ function makeControl(
     captureUiArtifact,
     triggerMonitor,
     answerUserQuestion,
+    resolvePermission,
   });
   return { agent, control, llm };
 }
@@ -992,6 +1000,14 @@ describe("WorkflowAutomationControl", () => {
     const { control } = makeControl(
       basePath,
       new MockLLM([{ text: "served" }, { text: "served from run service" }]),
+      [],
+      async () => [
+        { id: "api-health", type: "api-health", isActive: true },
+      ],
+      undefined,
+      undefined,
+      undefined,
+      async (decision) => ({ resolvedPermission: decision }),
     );
     server = await startWorkflowAutomationServer(control);
 
@@ -1095,6 +1111,27 @@ describe("WorkflowAutomationControl", () => {
       answer: "2",
     });
 
+    const runPermission = await postJson(
+      server!.port,
+      `/runs/${runId}/permissions`,
+      {
+        approved: true,
+        alwaysAllow: true,
+      },
+    );
+    expect(runPermission.status).toBe(200);
+    expect(runPermission.json).toMatchObject({
+      ok: true,
+      runId,
+      kind: "permission.response",
+      approved: true,
+      alwaysAllow: true,
+      resolvedPermission: {
+        approved: true,
+        alwaysAllow: true,
+      },
+    });
+
     const runInterrupt = await postJson(
       server!.port,
       `/runs/${runId}/interrupt`,
@@ -1150,6 +1187,10 @@ describe("WorkflowAutomationControl", () => {
       },
     });
     expect(capabilities.json.routes).toContain("POST /runs");
+    expect(capabilities.json.routes).toContain("POST /runs/{runId}/permissions");
+    expect(capabilities.json.interaction).toMatchObject({
+      permissionResponse: true,
+    });
 
     const cleared = await postJson(server!.port, "/workflow/clear_session", {});
     expect(cleared.status).toBe(200);

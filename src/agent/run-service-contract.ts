@@ -107,6 +107,7 @@ export function runServiceCapabilityDescriptor(input: {
   supportsStdio?: boolean;
   supportsFrontendBridge?: boolean;
   supportsHeadlessUi?: boolean;
+  supportsPermissionResponse?: boolean;
   notes?: string[];
 }): Record<string, unknown> {
   return {
@@ -124,6 +125,9 @@ export function runServiceCapabilityDescriptor(input: {
       "GET /runs/{runId}/events?after={sequence}",
       "GET /runs/{runId}/result",
       "POST /runs/{runId}/responses",
+      ...(input.supportsPermissionResponse
+        ? ["POST /runs/{runId}/permissions"]
+        : []),
       "POST /runs/{runId}/interrupt",
       "GET /runs/capabilities",
       "GET /sessions/current",
@@ -141,7 +145,7 @@ export function runServiceCapabilityDescriptor(input: {
     },
     interaction: {
       userQuestionResponse: true,
-      permissionResponse: false,
+      permissionResponse: input.supportsPermissionResponse ?? false,
       hiddenAutoAnswer: false,
     },
     notes: input.notes ?? [],

@@ -676,6 +676,11 @@ function initAgent() {
       }
     },
     getPendingUserQuestion: () => askUserQuestionTool.getPendingQuestion(),
+    resolvePermission: async (decision) => {
+      if (!agent) throw new Error('agent not initialized')
+      agent.resolvePermission(decision)
+      return { pendingPermission: null }
+    },
     triggerMonitor: async (monitorId, options) => {
       const monitor = monitorStore.get(monitorId)
       if (!monitor) {

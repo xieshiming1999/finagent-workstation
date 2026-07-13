@@ -177,6 +177,19 @@ async function handleStdioLine(
       input.stdout.write(`${JSON.stringify({ id, ok: true, result })}\n`);
       return;
     }
+    if (method === "permission") {
+      const runId = String(params.runId ?? "");
+      if (!runId) throw new Error("permission requires params.runId");
+      const result = await input.postJson(`/runs/${encodeURIComponent(runId)}/permissions`, {
+        approved: params.approved === true,
+        alwaysAllow: params.alwaysAllow === true,
+        ...(params.rejectReason != null
+          ? { rejectReason: String(params.rejectReason) }
+          : {}),
+      });
+      input.stdout.write(`${JSON.stringify({ id, ok: true, result })}\n`);
+      return;
+    }
     if (method === "interrupt") {
       const runId = String(params.runId ?? "");
       if (!runId) throw new Error("interrupt requires params.runId");

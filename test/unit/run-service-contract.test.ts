@@ -74,6 +74,7 @@ describe("run service contract", () => {
       runtime: "workstation",
       supportsCli: true,
       supportsStdio: true,
+      supportsPermissionResponse: true,
     });
     expect(descriptor).toMatchObject({
       ok: true,
@@ -86,12 +87,13 @@ describe("run service contract", () => {
       },
       interaction: {
         userQuestionResponse: true,
-        permissionResponse: false,
+        permissionResponse: true,
         hiddenAutoAnswer: false,
       },
     });
     expect(descriptor.categories).toContain("strategy");
     expect(descriptor.routes).toContain("GET /runs/capabilities");
     expect(descriptor.routes).toContain("GET /sessions/current");
+    expect(descriptor.routes).toContain("POST /runs/{runId}/permissions");
   });
 });

@@ -37,6 +37,11 @@ export interface WorkflowAutomationControlDeps {
     answer: string,
     options?: { timeoutMs?: number },
   ) => void | Promise<Record<string, unknown> | void>;
+  resolvePermission?: (decision: {
+    approved: boolean;
+    alwaysAllow?: boolean;
+    rejectReason?: string;
+  }) => void | Promise<Record<string, unknown> | void>;
   getPendingUserQuestion?: () => unknown;
   triggerMonitor?: (
     monitorId: string,
@@ -722,6 +727,26 @@ export class WorkflowAutomationControl {
     return { ok: true, answer: normalized, ...(evidence ?? {}) };
   }
 
+  async resolvePermission(input: {
+    approved: boolean;
+    alwaysAllow?: boolean;
+    rejectReason?: string;
+  }): Promise<Record<string, unknown>> {
+    if (!this.enabled()) throw new Error("WORKFLOW_AUTOMATION_DISABLED");
+    const evidence = await this.deps.resolvePermission?.({
+      approved: input.approved,
+      alwaysAllow: Boolean(input.alwaysAllow),
+      rejectReason: input.rejectReason,
+    });
+    return {
+      ok: true,
+      approved: input.approved,
+      alwaysAllow: Boolean(input.alwaysAllow),
+      ...(input.rejectReason ? { rejectReason: input.rejectReason } : {}),
+      ...(evidence ?? {}),
+    };
+  }
+
   async clearSession(): Promise<WorkflowAutomationClearSessionResult> {
     if (!this.enabled()) throw new Error("WORKFLOW_AUTOMATION_DISABLED");
     const agent = this.deps.getAgent();
@@ -1109,9 +1134,10 @@ async function handleRequest(
         runtime: "workstation",
         supportsCli: true,
         supportsStdio: true,
+        supportsPermissionResponse: true,
         notes: [
           "CLI and stdio currently connect to an existing loopback HTTP host.",
-          "Permission-specific replies are not yet exposed through run-service routes.",
+          "Permission replies are exposed through structured run-service routes and stdio methods.",
         ],
       }),
     );
@@ -1283,6 +1309,28 @@ async function handleRequest(
           kind: "interaction.response",
           ...(await control.answerUserQuestion(String(body.answer ?? ""), {
             timeoutMs: asOptionalNumber(body.timeoutMs),
+          })),
+        },
+      );
+      return;
+    }
+  }
+  {
+    const url = new URL(req.url ?? "/", "http://127.0.0.1");
+    const runPermissionMatch = url.pathname.match(/^\/runs\/([^/]+)\/permissions$/);
+    if (req.method === "POST" && runPermissionMatch) {
+      const body = await readJsonBody(req);
+      writeJson(
+        res,
+        200,
+        {
+          runId: decodeURIComponent(runPermissionMatch[1]),
+          kind: "permission.response",
+          ...(await control.resolvePermission({
+            approved: body.approved === true,
+            alwaysAllow: body.alwaysAllow === true,
+            rejectReason:
+              body.rejectReason == null ? undefined : String(body.rejectReason),
           })),
         },
       );
