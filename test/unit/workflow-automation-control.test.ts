@@ -1080,6 +1080,21 @@ describe("WorkflowAutomationControl", () => {
     expect(answered.status).toBe(200);
     expect(answered.json).toEqual({ ok: true, answer: "1" });
 
+    const runResponse = await postJson(
+      server!.port,
+      `/runs/${runId}/responses`,
+      {
+        answer: "2",
+      },
+    );
+    expect(runResponse.status).toBe(200);
+    expect(runResponse.json).toMatchObject({
+      ok: true,
+      runId,
+      kind: "interaction.response",
+      answer: "2",
+    });
+
     const session = await getJson(server!.port, "/workflow/session");
     expect(session.status).toBe(200);
     expect(session.json.rawSessionAvailable).toBe(true);

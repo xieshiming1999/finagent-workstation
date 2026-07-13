@@ -1211,6 +1211,25 @@ async function handleRequest(
     );
     return;
   }
+  {
+    const url = new URL(req.url ?? "/", "http://127.0.0.1");
+    const runResponseMatch = url.pathname.match(/^\/runs\/([^/]+)\/responses$/);
+    if (req.method === "POST" && runResponseMatch) {
+      const body = await readJsonBody(req);
+      writeJson(
+        res,
+        200,
+        {
+          runId: decodeURIComponent(runResponseMatch[1]),
+          kind: "interaction.response",
+          ...(await control.answerUserQuestion(String(body.answer ?? ""), {
+            timeoutMs: asOptionalNumber(body.timeoutMs),
+          })),
+        },
+      );
+      return;
+    }
+  }
   if (req.method === "POST" && req.url === "/workflow/clear_session") {
     writeJson(res, 200, await control.clearSession());
     return;

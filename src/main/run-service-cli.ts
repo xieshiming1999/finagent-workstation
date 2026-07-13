@@ -146,6 +146,20 @@ async function handleStdioLine(
       input.stdout.write(`${JSON.stringify({ id, ok: true, result })}\n`);
       return;
     }
+    if (method === "respond") {
+      const runId = String(params.runId ?? "");
+      const answer = String(params.answer ?? "");
+      if (!runId) throw new Error("respond requires params.runId");
+      if (!answer.trim()) throw new Error("respond requires params.answer");
+      const result = await input.postJson(`/runs/${encodeURIComponent(runId)}/responses`, {
+        answer,
+        ...(Number.isFinite(Number(params.timeoutMs))
+          ? { timeoutMs: Number(params.timeoutMs) }
+          : {}),
+      });
+      input.stdout.write(`${JSON.stringify({ id, ok: true, result })}\n`);
+      return;
+    }
     throw new Error(`unsupported method: ${method || "-"}`);
   } catch (error) {
     input.stdout.write(`${JSON.stringify({ id, ok: false, error: String(error) })}\n`);
