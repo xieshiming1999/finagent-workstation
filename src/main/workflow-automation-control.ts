@@ -1288,12 +1288,13 @@ async function handleRequest(
         supportsCli: true,
         supportsStdio: true,
         supportsHeadlessUi: control.supportsUiRuntime("headless"),
+        supportsMirrorUi: control.supportsUiRuntime("mirror"),
         supportsPermissionResponse: true,
         notes: [
           "CLI and stdio currently connect to an existing loopback HTTP host.",
           "Permission replies are exposed through structured run-service routes and stdio methods.",
           "Headless runs use service-owned hidden Electron webContents for DOM execution and capture without visible panels.",
-          "Mirror remains unavailable until visible projection is wired over the service-owned backend.",
+          "Mirror executes once in the service-owned hidden backend and projects resulting DOM and semantic UI state into visible panels.",
         ],
       }),
     );

@@ -2,6 +2,7 @@ import { describe, expect, it } from "vitest";
 import { RunServiceUiRuntimeCoordinator } from "../../src/main/run-service-ui-runtime/ui-runtime-coordinator";
 import type { RunServiceUiRuntime } from "../../src/main/run-service-ui-runtime/run-service-ui-runtime";
 import { HeadlessRunServiceUiRuntime } from "../../src/main/run-service-ui-runtime/headless-ui-runtime";
+import { MirrorRunServiceUiRuntime } from "../../src/main/run-service-ui-runtime/mirror-ui-runtime";
 import type {
   RunServicePanelSummary,
   RunServiceUiBackend,
@@ -92,10 +93,59 @@ describe("RunServiceUiRuntimeCoordinator", () => {
     expect(headless.disposeCount).toBe(1);
     expect(await router.requestUi({ type: "ui-widget" })).toContain("visible");
   });
+
+  it("executes mirror WebView requests once and projects the resulting DOM", async () => {
+    const visible = new RecordingBackend("visible");
+    const execution = new RecordingBackend("headless");
+    execution.webViewResult = JSON.stringify({
+      html: "<html><body>Projected report</body></html>",
+      url: "file:///report.html",
+      title: "Report",
+    });
+    const router = new RunServiceUiRuntimeRouter(visible);
+    const runtime = new MirrorRunServiceUiRuntime(
+      router,
+      visible,
+      () => execution,
+    );
+    const coordinator = new RunServiceUiRuntimeCoordinator([runtime]);
+
+    expect(coordinator.supports("mirror")).toBe(true);
+    await coordinator.use("mirror", async (preparation) => {
+      expect(preparation.available).toBe(true);
+      router.emit({ type: "webview-open", id: "report" });
+      await router.requestWebView("report", {
+        type: "executeJS",
+        script: "document.body.dataset.ready = 'true'",
+      });
+      await router.requestUi({ type: "ui-widget", action: "showTable" });
+    });
+
+    expect(execution.events).toHaveLength(1);
+    expect(visible.events).toHaveLength(1);
+    expect(visible.events[0]).toMatchObject({ mirrorProjection: true });
+    expect(execution.webViewRequests[0]?.request).toMatchObject({
+      script: "document.body.dataset.ready = 'true'",
+    });
+    expect(execution.webViewRequests).toHaveLength(2);
+    expect(visible.webViewRequests).toHaveLength(1);
+    expect(visible.webViewRequests[0]?.request.script).toContain(
+      "Projected report",
+    );
+    expect(execution.uiRequests).toHaveLength(1);
+    expect(visible.uiRequests).toHaveLength(1);
+    expect(execution.disposeCount).toBe(1);
+  });
 });
 
 class RecordingBackend implements RunServiceUiBackend {
   readonly events: Array<Record<string, unknown>> = [];
+  readonly webViewRequests: Array<{
+    panelId: string;
+    request: Record<string, unknown>;
+  }> = [];
+  readonly uiRequests: Array<Record<string, unknown>> = [];
+  webViewResult: string | undefined;
   disposeCount = 0;
 
   constructor(private readonly name: string) {}
@@ -108,11 +158,16 @@ class RecordingBackend implements RunServiceUiBackend {
     return [];
   }
 
-  async requestWebView(): Promise<string> {
-    return JSON.stringify({ runtime: this.name });
+  async requestWebView(
+    panelId: string,
+    request: Record<string, unknown>,
+  ): Promise<string> {
+    this.webViewRequests.push({ panelId, request });
+    return this.webViewResult ?? JSON.stringify({ runtime: this.name });
   }
 
-  async requestUi(): Promise<string> {
+  async requestUi(request: Record<string, unknown>): Promise<string> {
+    this.uiRequests.push(request);
     return JSON.stringify({ runtime: this.name });
   }
 

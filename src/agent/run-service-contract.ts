@@ -108,6 +108,7 @@ export function runServiceCapabilityDescriptor(input: {
   supportsStdio?: boolean;
   supportsFrontendBridge?: boolean;
   supportsHeadlessUi?: boolean;
+  supportsMirrorUi?: boolean;
   supportsPermissionResponse?: boolean;
   notes?: string[];
 }): Record<string, unknown> {
@@ -148,7 +149,7 @@ export function runServiceCapabilityDescriptor(input: {
     uiRuntime: {
       visible: true,
       headless: input.supportsHeadlessUi ?? false,
-      mirror: false,
+      mirror: input.supportsMirrorUi ?? false,
     },
     interaction: {
       userQuestionResponse: true,

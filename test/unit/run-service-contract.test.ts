@@ -78,6 +78,8 @@ describe("run service contract", () => {
       runtime: "workstation",
       supportsCli: true,
       supportsStdio: true,
+      supportsHeadlessUi: true,
+      supportsMirrorUi: true,
       supportsPermissionResponse: true,
     });
     expect(descriptor).toMatchObject({
@@ -93,6 +95,11 @@ describe("run service contract", () => {
         userQuestionResponse: true,
         permissionResponse: true,
         hiddenAutoAnswer: false,
+      },
+      uiRuntime: {
+        visible: true,
+        headless: true,
+        mirror: true,
       },
     });
     expect(descriptor.categories).toContain("strategy");

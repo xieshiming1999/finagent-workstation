@@ -313,7 +313,11 @@ function initAgent() {
       runServiceUiRouter,
       () => new ElectronHeadlessUiBackend(),
     ),
-    new MirrorRunServiceUiRuntime(),
+    new MirrorRunServiceUiRuntime(
+      runServiceUiRouter,
+      visibleUiBackend,
+      () => new ElectronHeadlessUiBackend(),
+    ),
   ])
   workflowPanelStateQuery = runServiceUiRouter.queryPanels
   configureWebViewTool(
