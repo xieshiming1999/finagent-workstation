@@ -166,6 +166,7 @@ export function runServiceAdapterDescriptor(input: {
   supportsPermissionResponse?: boolean;
   supportsStdio?: boolean;
   supportsCli?: boolean;
+  supportsFrontendBridge?: boolean;
 }): Record<string, unknown> {
   const capability = runServiceCapabilityDescriptor(input);
   const operations = [

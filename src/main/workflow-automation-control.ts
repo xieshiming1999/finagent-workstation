@@ -1333,6 +1333,7 @@ async function handleRequest(
         runtime: "workstation",
         supportsCli: true,
         supportsStdio: true,
+        supportsFrontendBridge: true,
         supportsHeadlessUi: control.supportsUiRuntime("headless"),
         supportsMirrorUi: control.supportsUiRuntime("mirror"),
         supportsPermissionResponse: true,
@@ -1354,6 +1355,7 @@ async function handleRequest(
         runtime: "workstation",
         supportsCli: true,
         supportsStdio: true,
+        supportsFrontendBridge: true,
         supportsPermissionResponse: true,
       }),
     );
