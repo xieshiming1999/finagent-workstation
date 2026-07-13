@@ -284,6 +284,8 @@ export class Agent {
   listHistory() { return this.session.listHistory() }
   listSessions() { return this.session.listSessions() }
   resumeSession(filePath: string): void { this.messages = this.session.resume(filePath).messages }
+  preloadSession(filePath: string): void { this.messages = this.session.preload(filePath).messages }
+  preloadCurrentSession(): void { this.messages = this.session.fork().messages }
   approveToolPermanently(toolName: string): void {
     this.approvedTools.add(toolName); this.permissionManager.approvePermanently(toolName); this.saveApprovedTools()
   }

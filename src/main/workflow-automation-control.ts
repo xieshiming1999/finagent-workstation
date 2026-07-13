@@ -530,7 +530,17 @@ export class WorkflowAutomationControl {
       return undefined;
     }
     if (mode === "preload") {
-      return "RUN_SERVICE_SESSION_MODE_UNSUPPORTED: preload requires forked context with a new durable session and is not implemented yet";
+      const requestedId = String(request.sessionId ?? "").trim();
+      if (agent.session.id === requestedId) {
+        agent.preloadCurrentSession();
+        return undefined;
+      }
+      const match = agent.listSessions().find((session) => session.id === requestedId);
+      if (!match) {
+        return `RUN_SERVICE_SESSION_NOT_FOUND: no durable session exists for sessionId ${requestedId}; use GET /sessions to discover preloadable ids`;
+      }
+      agent.preloadSession(match.path);
+      return undefined;
     }
     return "RUN_SERVICE_SESSION_MODE_UNSUPPORTED: ephemeral requires isolated non-history persistence and is not implemented yet";
   }

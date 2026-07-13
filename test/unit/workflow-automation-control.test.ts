@@ -1157,6 +1157,7 @@ describe("WorkflowAutomationControl", () => {
         { text: "first" },
         { text: "second" },
         { text: "resumed" },
+        { text: "preloaded" },
       ]),
     );
 
@@ -1182,13 +1183,18 @@ describe("WorkflowAutomationControl", () => {
     expect(resumed.sessionId).toBe(firstSessionId);
     expect(agent.messages.some((message) => message.content === "first turn")).toBe(true);
 
-    const unsupported = await control.runServicePrompt({
+    const preloaded = await control.runServicePrompt({
       prompt: "temporary context",
       sessionMode: "preload",
       sessionId: firstSessionId,
     });
-    expect(unsupported.status).toBe("failed");
-    expect(unsupported.error).toContain("RUN_SERVICE_SESSION_MODE_UNSUPPORTED");
+    expect(preloaded.status, JSON.stringify(preloaded)).toBe("completed");
+    expect(preloaded.sessionId).not.toBe(firstSessionId);
+    expect(agent.messages.some((message) => message.content === "first turn")).toBe(true);
+    expect(agent.messages.some((message) => message.content === "temporary context")).toBe(true);
+    const source = agent.listSessions().find((session) => session.id === firstSessionId);
+    expect(source).toBeDefined();
+    expect(readFileSync(source!.path, "utf-8")).not.toContain("temporary context");
 
     const unsupportedUi = await control.runServicePrompt({
       prompt: "render without a backend",

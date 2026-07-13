@@ -221,6 +221,17 @@ export class Session {
     return loaded
   }
 
+  /** Fork a durable session into a new current session without modifying the source. */
+  preload(filePath: string): { meta: SessionMeta; messages: Message[] } {
+    const loaded = this._parseSessionFile(filePath)
+    this.archive()
+    this.save(loaded.messages)
+    return {
+      meta: { id: this.id, createdAt: new Date().toISOString() },
+      messages: loaded.messages,
+    }
+  }
+
   /**
    * Fork the current session at a specific message index.
    * Creates a new session with messages up to (but not including) the fork point.
