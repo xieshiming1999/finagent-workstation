@@ -82,7 +82,14 @@ import { McpServer } from '../agent/mcp-server'
 import { wireIPC } from './ipc-handlers'
 import { migrateLegacyProjectBasePath, resolveProjectBasePath } from './project-path'
 import { createLLMFromModelConfig, createLLMProvider, createWindow, globalConfigPath, registerSession } from './main-runtime'
-import { configureDashboardTool, configureUiTools, configureWebViewTool, createRendererUiBridge } from './main-ui-tools'
+import { configureDashboardTool, configureUiTools, configureWebViewTool, createRendererUiBridge, createRendererUiQuery, createRendererWebViewRequestHandler } from './main-ui-tools'
+import { ElectronHeadlessUiBackend } from './run-service-ui-runtime/electron-headless-ui-backend'
+import { HeadlessRunServiceUiRuntime } from './run-service-ui-runtime/headless-ui-runtime'
+import { MirrorRunServiceUiRuntime } from './run-service-ui-runtime/mirror-ui-runtime'
+import { RunServiceUiRuntimeCoordinator } from './run-service-ui-runtime/ui-runtime-coordinator'
+import { RunServiceUiRuntimeRouter } from './run-service-ui-runtime/ui-runtime-router'
+import { VisibleRunServiceUiBackend } from './run-service-ui-runtime/visible-ui-backend'
+import { VisibleRunServiceUiRuntime } from './run-service-ui-runtime/visible-ui-runtime'
 import { reOpenWindowIfNeeded, startAppServices } from './main-startup'
 import { isActionableFeedTaskFailure } from '../agent/data/data-feed-failure-policy'
 import { WorkflowAutomationControl, startWorkflowAutomationServer, type WorkflowAutomationServer } from './workflow-automation-control'
@@ -292,9 +299,36 @@ function initAgent() {
   const webviewTool = new WebViewTool()
   const dashboardTool = new DashboardTool()
   const { emitToRenderer, queryRendererPanels, requestRendererUi } = createRendererUiBridge(() => mainWindow)
-  workflowPanelStateQuery = queryRendererPanels
-  configureWebViewTool(webviewTool, () => mainWindow, emitToRenderer, queryRendererPanels)
-  configureDashboardTool(dashboardTool, assetsPath, emitToRenderer, queryRendererPanels)
+  const visibleUiBackend = new VisibleRunServiceUiBackend({
+    emit: emitToRenderer,
+    queryPanels: queryRendererPanels,
+    requestWebView: createRendererWebViewRequestHandler(() => mainWindow),
+    requestUi: requestRendererUi,
+    query: createRendererUiQuery(() => mainWindow, queryRendererPanels),
+  })
+  const runServiceUiRouter = new RunServiceUiRuntimeRouter(visibleUiBackend)
+  const runServiceUiCoordinator = new RunServiceUiRuntimeCoordinator([
+    new VisibleRunServiceUiRuntime(),
+    new HeadlessRunServiceUiRuntime(
+      runServiceUiRouter,
+      () => new ElectronHeadlessUiBackend(),
+    ),
+    new MirrorRunServiceUiRuntime(),
+  ])
+  workflowPanelStateQuery = runServiceUiRouter.queryPanels
+  configureWebViewTool(
+    webviewTool,
+    () => mainWindow,
+    runServiceUiRouter.emit,
+    runServiceUiRouter.queryPanels,
+    runServiceUiRouter.requestWebView,
+  )
+  configureDashboardTool(
+    dashboardTool,
+    assetsPath,
+    runServiceUiRouter.emit,
+    runServiceUiRouter.queryPanels,
+  )
   registry.register(webviewTool)
   registry.register(dashboardTool)
   registry.register(new MarketDataTool())
@@ -388,7 +422,16 @@ function initAgent() {
   agentTool.setEventEmitter(emitToRenderer)
   registry.register(uiControlTool)
   const uiQueryTool = new UIQueryTool()
-  configureUiTools(uiControlTool, uiNotifyTool, uiQueryTool, () => mainWindow, emitToRenderer, queryRendererPanels, requestRendererUi)
+  configureUiTools(
+    uiControlTool,
+    uiNotifyTool,
+    uiQueryTool,
+    () => mainWindow,
+    runServiceUiRouter.emit,
+    runServiceUiRouter.queryPanels,
+    runServiceUiRouter.requestUi,
+    runServiceUiRouter.query,
+  )
   registry.register(uiQueryTool)
   registry.register(uiNotifyTool)
   registry.register(agentTool)
@@ -655,6 +698,7 @@ function initAgent() {
   const workflowControl = new WorkflowAutomationControl({
     getAgent: () => agent,
     getBasePath: () => basePath,
+    uiRuntimeCoordinator: runServiceUiCoordinator,
     getPanelState: async () => workflowPanelStateQuery ? await workflowPanelStateQuery() : [],
     emitAgentEvent: (event) => {
       mainWindow?.webContents.send('agent:event', event)

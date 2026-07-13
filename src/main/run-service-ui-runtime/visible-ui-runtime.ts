@@ -5,6 +5,7 @@ import type {
 
 export class VisibleRunServiceUiRuntime implements RunServiceUiRuntime {
   readonly mode = "visible" as const;
+  readonly configured = true;
 
   async prepare(): Promise<RunServiceUiRuntimePreparation> {
     return { mode: this.mode, available: true, dispose: async () => {} };

@@ -5,6 +5,7 @@ import type {
 
 export class MirrorRunServiceUiRuntime implements RunServiceUiRuntime {
   readonly mode = "mirror" as const;
+  readonly configured = false;
 
   async prepare(): Promise<RunServiceUiRuntimePreparation> {
     return {

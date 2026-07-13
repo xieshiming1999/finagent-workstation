@@ -35,6 +35,10 @@ export class RunServiceUiRuntimeCoordinator {
     return runtime.prepare();
   }
 
+  supports(mode: RunServiceUiRuntimeMode): boolean {
+    return this.runtimes.get(mode)?.configured ?? false;
+  }
+
   async use<T>(
     mode: RunServiceUiRuntimeMode,
     action: (preparation: RunServiceUiRuntimePreparation) => Promise<T>,

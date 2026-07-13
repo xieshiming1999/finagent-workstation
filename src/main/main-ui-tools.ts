@@ -144,10 +144,17 @@ export function configureWebViewTool(
   getMainWindow: () => BrowserWindow | null,
   emitToRenderer: (event: Record<string, unknown>) => void,
   queryRendererPanels: () => Promise<PanelSummary>,
+  requestHandler = createRendererWebViewRequestHandler(getMainWindow),
 ): void {
   webviewTool.setEventEmitter(emitToRenderer)
   webviewTool.setPanelQuery(queryRendererPanels)
-  webviewTool.setRequestHandler(async (panelId, request) => {
+  webviewTool.setRequestHandler(requestHandler)
+}
+
+export function createRendererWebViewRequestHandler(
+  getMainWindow: () => BrowserWindow | null,
+) {
+  return async (panelId: string, request: Record<string, unknown>) => {
     const mainWindow = getMainWindow()
     if (!mainWindow) throw new Error('WEBVIEW_WINDOW_MISSING: main window is not available')
     const rendererTimeoutMs = request.type === 'executeJS'
@@ -206,7 +213,7 @@ export function configureWebViewTool(
         throw new Error('WEBVIEW_UNSUPPORTED_REQUEST: ' + String(request.type));
       })()
     `, rendererTimeoutMs)
-  })
+  }
 }
 
 export function configureDashboardTool(
@@ -228,13 +235,21 @@ export function configureUiTools(
   emitToRenderer: (event: Record<string, unknown>) => void,
   queryRendererPanels: () => Promise<PanelSummary>,
   requestRendererUi: (request: Record<string, unknown>) => Promise<string>,
+  queryUi = createRendererUiQuery(getMainWindow, queryRendererPanels),
 ): void {
   uiControlTool.setEventEmitter(emitToRenderer)
   uiControlTool.setPanelQuery(queryRendererPanels)
   uiControlTool.setRequestHandler(requestRendererUi)
   uiNotifyTool.setEventEmitter(emitToRenderer)
   uiNotifyTool.setRequestHandler(requestRendererUi)
-  uiQueryTool.setHandler(async (key: string) => {
+  uiQueryTool.setHandler(queryUi)
+}
+
+export function createRendererUiQuery(
+  getMainWindow: () => BrowserWindow | null,
+  queryRendererPanels: () => Promise<PanelSummary>,
+) {
+  return async (key: string) => {
     switch (key) {
       case 'activePanels':
       case 'panels': {
@@ -260,5 +275,5 @@ export function configureUiTools(
       default:
         return JSON.stringify({ error: `Unknown key: ${key}`, available: ['activePanels', 'windowSize', 'theme'] })
     }
-  })
+  }
 }

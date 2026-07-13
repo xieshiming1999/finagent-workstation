@@ -9,5 +9,6 @@ export interface RunServiceUiRuntimePreparation {
 
 export interface RunServiceUiRuntime {
   readonly mode: RunServiceUiRuntimeMode;
+  readonly configured: boolean;
   prepare(): Promise<RunServiceUiRuntimePreparation>;
 }

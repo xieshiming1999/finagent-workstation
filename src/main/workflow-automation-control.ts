@@ -397,6 +397,10 @@ export class WorkflowAutomationControl {
     };
   }
 
+  supportsUiRuntime(mode: "visible" | "headless" | "mirror"): boolean {
+    return this.uiRuntimeCoordinator.supports(mode);
+  }
+
   private async runServicePromptRunner(
     request: Required<Pick<RunServiceRunRequest, "prompt">> & RunServiceRunRequest,
   ) {
@@ -1283,11 +1287,13 @@ async function handleRequest(
         runtime: "workstation",
         supportsCli: true,
         supportsStdio: true,
+        supportsHeadlessUi: control.supportsUiRuntime("headless"),
         supportsPermissionResponse: true,
         notes: [
           "CLI and stdio currently connect to an existing loopback HTTP host.",
           "Permission replies are exposed through structured run-service routes and stdio methods.",
-          "Only visible UI runtime is currently operational; headless and mirror fail explicitly until service-owned backends are implemented.",
+          "Headless runs use service-owned hidden Electron webContents for DOM execution and capture without visible panels.",
+          "Mirror remains unavailable until visible projection is wired over the service-owned backend.",
         ],
       }),
     );
