@@ -71,6 +71,58 @@ describe("run service CLI", () => {
     expect(writes.join("")).toContain('"path":"/runs/capabilities"');
   });
 
+  it("starts the workstation service host with workflow automation enabled", async () => {
+    const writes: string[] = [];
+    const spawned: Array<{ command: string; args: string[]; env: NodeJS.ProcessEnv }> = [];
+    const code = await runServiceCli(
+      ["service", "start", "--port", "39222", "--ui-runtime", "visible", "--jsonl"],
+      {
+        stdout: { write: (chunk: string) => { writes.push(chunk); return true; } },
+        stderr: { write: () => true },
+        spawnProcess: (command, args, options) => {
+          spawned.push({ command, args, env: options.env });
+          return { pid: 12345, unref: () => undefined };
+        },
+        postJson: async () => {
+          throw new Error("service start should not post /runs");
+        },
+      },
+    );
+    expect(code).toBe(0);
+    expect(spawned).toHaveLength(1);
+    expect(spawned[0]).toMatchObject({
+      command: "pnpm",
+      args: ["exec", "electron-vite", "dev"],
+    });
+    expect(spawned[0].env.FINAGENT_WORKSTATION_WORKFLOW_AUTOMATION).toBe("1");
+    expect(spawned[0].env.FINAGENT_WORKSTATION_WORKFLOW_AUTOMATION_PORT).toBe("39222");
+    expect(JSON.parse(writes[0])).toMatchObject({
+      type: "result",
+      result: {
+        kind: "service.started",
+        endpoint: "http://127.0.0.1:39222",
+        pid: 12345,
+      },
+    });
+  });
+
+  it("checks workstation service health without starting a prompt run", async () => {
+    const writes: string[] = [];
+    const code = await runServiceCli(["service", "status", "--jsonl"], {
+      stdout: { write: (chunk: string) => { writes.push(chunk); return true; } },
+      stderr: { write: () => true },
+      getJson: async (path) => ({ path, enabled: true }),
+      postJson: async () => {
+        throw new Error("service status should not post /runs");
+      },
+    });
+    expect(code).toBe(0);
+    expect(JSON.parse(writes[0])).toMatchObject({
+      type: "result",
+      result: { path: "/health", enabled: true },
+    });
+  });
+
   it("routes stdio JSONL run, events, and result methods", async () => {
     const writes: string[] = [];
     const stdin = Readable.from([

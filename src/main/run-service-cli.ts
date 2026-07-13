@@ -1,4 +1,5 @@
 #!/usr/bin/env node
+import { spawn as defaultSpawn } from "node:child_process";
 import { stdin as defaultStdin, stdout as defaultStdout, stderr as defaultStderr } from "node:process";
 import { parseRunServiceCommand, type RunServiceCommandPlan } from "../agent/run-service-contract";
 import type { RunServiceRunRequest } from "../agent/run-service-controller";
@@ -6,6 +7,15 @@ import type { RunServiceRunRequest } from "../agent/run-service-controller";
 export interface RunServiceCliDeps {
   postJson?: (path: string, body: Record<string, unknown>) => Promise<Record<string, unknown>>;
   getJson?: (path: string) => Promise<Record<string, unknown>>;
+  spawnProcess?: (
+    command: string,
+    args: string[],
+    options: {
+      env: NodeJS.ProcessEnv;
+      detached: boolean;
+      stdio: "ignore" | "inherit";
+    },
+  ) => { pid?: number; unref?: () => void };
   stdin?: NodeJS.ReadableStream;
   stdout?: Pick<NodeJS.WritableStream, "write">;
   stderr?: Pick<NodeJS.WritableStream, "write">;
@@ -51,6 +61,14 @@ export async function runServiceCli(
       : `${JSON.stringify(result, null, 2)}\n`);
     return 0;
   }
+  if (plan.category === "service") {
+    return await runServiceManagementCommand(plan, {
+      stdout,
+      stderr,
+      getJson,
+      spawnProcess: deps.spawnProcess ?? defaultSpawn,
+    });
+  }
   const request = requestFromPlan(plan);
   const result = await postJson("/runs", request as unknown as Record<string, unknown>);
   if (plan.jsonl) {
@@ -62,6 +80,63 @@ export async function runServiceCli(
     stdout.write(`${JSON.stringify(result, null, 2)}\n`);
   }
   return result.status === "failed" ? 1 : 0;
+}
+
+async function runServiceManagementCommand(
+  plan: RunServiceCommandPlan,
+  deps: {
+    stdout: Pick<NodeJS.WritableStream, "write">;
+    stderr: Pick<NodeJS.WritableStream, "write">;
+    getJson: (path: string) => Promise<Record<string, unknown>>;
+    spawnProcess: NonNullable<RunServiceCliDeps["spawnProcess"]>;
+  },
+): Promise<number> {
+  if (plan.operation === "status") {
+    const result = await deps.getJson("/health");
+    deps.stdout.write(plan.jsonl
+      ? `${JSON.stringify({ type: "result", result })}\n`
+      : `${JSON.stringify(result, null, 2)}\n`);
+    return 0;
+  }
+  if (plan.operation !== "start") {
+    deps.stderr.write(`unsupported service operation: ${plan.operation || "-"}\n`);
+    return 2;
+  }
+
+  const port = Number(plan.payload.port ?? process.env.FINAGENT_WORKSTATION_WORKFLOW_AUTOMATION_PORT ?? 39173);
+  if (!Number.isFinite(port) || port <= 0) {
+    deps.stderr.write("service start requires a positive --port value\n");
+    return 2;
+  }
+  const command = String(process.env.FINAGENT_WORKSTATION_SERVICE_START_COMMAND ?? "pnpm");
+  const args = process.env.FINAGENT_WORKSTATION_SERVICE_START_ARGS
+    ? splitCommandArgs(process.env.FINAGENT_WORKSTATION_SERVICE_START_ARGS)
+    : ["exec", "electron-vite", "dev"];
+  const child = deps.spawnProcess(command, args, {
+    detached: true,
+    stdio: "ignore",
+    env: {
+      ...process.env,
+      FINAGENT_WORKSTATION_WORKFLOW_AUTOMATION: "1",
+      FINAGENT_WORKSTATION_WORKFLOW_AUTOMATION_PORT: String(port),
+      ...(plan.uiRuntime ? { FINAGENT_WORKSTATION_UI_RUNTIME: plan.uiRuntime } : {}),
+    },
+  });
+  child.unref?.();
+  const result = {
+    ok: true,
+    kind: "service.started",
+    command,
+    args,
+    pid: child.pid ?? null,
+    endpoint: `http://127.0.0.1:${port}`,
+    uiRuntime: plan.uiRuntime,
+    note: "service start launches the workstation app with the run-service HTTP host enabled; poll service status before posting runs",
+  };
+  deps.stdout.write(plan.jsonl
+    ? `${JSON.stringify({ type: "result", result })}\n`
+    : `${JSON.stringify(result, null, 2)}\n`);
+  return 0;
 }
 
 export function requestFromPlan(plan: RunServiceCommandPlan): RunServiceRunRequest {
@@ -252,6 +327,10 @@ function stripFlag(argv: string[], flag: string): string[] {
   const index = argv.indexOf(flag);
   if (index < 0) return argv;
   return argv.filter((_, itemIndex) => itemIndex !== index && itemIndex !== index + 1);
+}
+
+function splitCommandArgs(value: string): string[] {
+  return value.split(/\s+/).map((part) => part.trim()).filter(Boolean);
 }
 
 function isRecord(value: unknown): value is Record<string, unknown> {
