@@ -2825,6 +2825,7 @@ function runServiceResultSummary(
     runId: result.runId,
     status: result.status,
     ...(result.sessionId ? { sessionId: result.sessionId } : {}),
+    ...(result.turnId ? { turnId: result.turnId } : {}),
     ...(created?.createdAt ? { createdAt: created.createdAt } : {}),
     ...(created?.payload?.sessionMode != null
       ? { sessionMode: String(created.payload.sessionMode) }

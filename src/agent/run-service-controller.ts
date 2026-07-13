@@ -16,6 +16,7 @@ export interface RunServiceRunRequest {
   timeoutMs?: number;
   payload?: Record<string, unknown>;
   serviceRunId?: string;
+  serviceTurnId?: string;
   emitServiceEvent?: (
     type: RunServiceEventType,
     payload?: Record<string, unknown>,
@@ -78,6 +79,7 @@ export class RunServiceController {
     const prompt = String(request.prompt ?? "").trim();
     if (!prompt) throw new Error("run service prompt is required");
     const runId = options.runId ?? this.newRunId();
+    const turnId = this.newTurnId(runId);
     const sessionId = request.sessionId;
     const normalizedRequest = {
       ...request,
@@ -85,6 +87,7 @@ export class RunServiceController {
       sessionMode: request.sessionMode ?? "new",
       uiRuntime: request.uiRuntime ?? "visible",
       serviceRunId: runId,
+      serviceTurnId: turnId,
       emitServiceEvent: (
         type: RunServiceEventType,
         payload: Record<string, unknown> = {},
@@ -93,6 +96,7 @@ export class RunServiceController {
           runId,
           type,
           sessionId: request.sessionId,
+          turnId,
           payload,
         });
       },
@@ -101,6 +105,7 @@ export class RunServiceController {
       runId,
       type: "run.created",
       sessionId,
+      turnId,
       payload: {
         acceptedMessage: prompt,
         sessionMode: normalizedRequest.sessionMode,
@@ -116,6 +121,7 @@ export class RunServiceController {
         runId,
         type: "run.failed",
         sessionId,
+        turnId,
         payload: {
           error: modeError,
           recovery: "Create a session first or pass --session-id with resume/preload.",
@@ -127,6 +133,7 @@ export class RunServiceController {
       runId,
       type: "run.status.changed",
       sessionId,
+      turnId,
       payload: { status: "running" },
     });
 
@@ -138,7 +145,7 @@ export class RunServiceController {
           runId,
           type: "tool.call",
           sessionId: finalSessionId,
-          turnId: result.turnId,
+          turnId,
           payload: call,
         });
       }
@@ -147,7 +154,7 @@ export class RunServiceController {
           runId,
           type: "tool.result",
           sessionId: finalSessionId,
-          turnId: result.turnId,
+          turnId,
           payload: toolResult,
         });
       }
@@ -156,7 +163,7 @@ export class RunServiceController {
           runId,
           type: "artifact.created",
           sessionId: finalSessionId,
-          turnId: result.turnId,
+          turnId,
           payload: artifact,
         });
       }
@@ -164,7 +171,7 @@ export class RunServiceController {
         runId,
         type: result.ok ? "run.completed" : "run.failed",
         sessionId: finalSessionId,
-        turnId: result.turnId,
+        turnId,
         payload: {
           finalAnswer: result.finalAnswer,
           ...(result.error ? { error: result.error } : {}),
@@ -178,6 +185,7 @@ export class RunServiceController {
         runId,
         type: "run.failed",
         sessionId,
+        turnId,
         payload: {
           error: String(error),
           category: "agent.runtime",
@@ -190,6 +198,10 @@ export class RunServiceController {
 
   private newRunId(): string {
     return `run-${this.clock().getTime()}`;
+  }
+
+  private newTurnId(runId: string): string {
+    return `${runId}:turn-1`;
   }
 }
 

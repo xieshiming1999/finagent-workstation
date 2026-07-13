@@ -6,6 +6,8 @@ describe("run service controller", () => {
     const controller = new RunServiceController(
       async (request) => {
         expect(request.uiRuntime).toBe("headless");
+        expect(request.serviceRunId).toBe("run-1");
+        expect(request.serviceTurnId).toBe("run-1:turn-1");
         return {
           ok: true,
           sessionId: "sess-1",
@@ -27,6 +29,10 @@ describe("run service controller", () => {
     expect(result.status).toBe("completed");
     expect(result.finalAnswer).toBe("done");
     expect(result.sessionId).toBe("sess-1");
+    expect(result.turnId).toBe("run-1:turn-1");
+    expect(new Set(result.events.map((event) => event.turnId))).toEqual(
+      new Set(["run-1:turn-1"]),
+    );
     expect(result.events[0].payload?.acceptedMessage).toBe("今天市场怎么样？");
     expect(result.events.map((event) => event.type)).toEqual([
       "run.created",
