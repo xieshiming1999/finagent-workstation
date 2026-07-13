@@ -1,4 +1,5 @@
 import { externalFinanceCapabilityDescriptor } from "./external-finance-contract";
+import { externalOrchestrationCapabilityDescriptor } from "./external-orchestration-contract";
 
 export type RunServiceSessionMode =
   | "new"
@@ -136,6 +137,7 @@ export function runServiceCapabilityDescriptor(input: {
     "GET /sessions/current",
     "GET /artifacts",
     "GET /artifacts/{artifactId}",
+    "POST /artifacts/revisions",
   ];
   return {
     ok: true,
@@ -165,6 +167,7 @@ export function runServiceCapabilityDescriptor(input: {
       hiddenAutoAnswer: false,
     },
     externalFinance: externalFinanceCapabilityDescriptor(input.runtime),
+    externalOrchestration: externalOrchestrationCapabilityDescriptor(),
     notes: input.notes ?? [],
   };
 }
@@ -199,6 +202,7 @@ export function runServiceAdapterDescriptor(input: {
     operationDescriptor("finagent.session.resume", "POST /runs", "Start a run by resuming an explicit durable session id."),
     operationDescriptor("finagent.artifact.list", "GET /artifacts", "List workflow artifacts available to external callers."),
     operationDescriptor("finagent.artifact.get", "GET /artifacts/{artifactId}", "Fetch a workflow artifact by id."),
+    operationDescriptor("finagent.artifact.revise", "POST /artifacts/revisions", "Create an immutable report revision linked to evidence and an optional parent artifact."),
     operationDescriptor("finagent.capability.help", "GET /runs/capabilities", "Inspect the run-service contract and supported routes."),
   ];
   return {

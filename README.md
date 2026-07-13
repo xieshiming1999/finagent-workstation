@@ -44,6 +44,13 @@ pnpm dev
 
 ## Run Service
 
+For code-agent orchestration, install `finagent-finance-service` and the product
+skills, then use the packaged `finagent_client.py`. The caller creates a typed
+task brief, streams events, mediates exact questions and permissions, builds an
+evidence ledger, requests bounded same-session corrections, and authors the
+final arbitration summary. FinAgent terminal prose is evidence, not the
+caller's final answer. Logs and session JSONL are diagnostics only.
+
 Build the service clients and start a detached loopback service process:
 
 ```bash

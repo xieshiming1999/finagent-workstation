@@ -14,6 +14,15 @@ import type { AgentEvent } from "../agent/agent-event";
 import type { Message } from "../agent/message";
 import { ArtifactRegistry } from "../agent/artifact-registry";
 import { promptForExternalFinanceOperation } from "../agent/external-finance-contract";
+import {
+  externalInterventionContract,
+  externalReportRevisionContract,
+  externalTaskBriefContract,
+  promptForExternalIntervention,
+  promptForExternalTaskBrief,
+  validateExternalIntervention,
+  validateExternalTaskBrief,
+} from "../agent/external-orchestration-contract";
 import { readPaperExecutionReceipt, readPaperExecutionState } from "../agent/paper-execution-readback";
 import {
   RunServiceController,
@@ -1174,6 +1183,37 @@ export class WorkflowAutomationControl {
     };
   }
 
+  createArtifactRevision(input: Record<string, unknown>): Record<string, unknown> {
+    if (!this.enabled()) throw new Error("WORKFLOW_AUTOMATION_DISABLED");
+    if (input.contract !== externalReportRevisionContract) {
+      throw new Error(`contract must be ${externalReportRevisionContract}`);
+    }
+    if (!("content" in input) || input.content == null) throw new Error("content is required");
+    if (JSON.stringify(input.content).length > 1_000_000) {
+      throw new Error("content exceeds the 1000000 character limit");
+    }
+    const record = new ArtifactRegistry(this.deps.getBasePath()).registerReportRevision({
+      logicalReportId: String(input.logicalReportId ?? ""),
+      title: String(input.title ?? "").trim() || "FinAgent report revision",
+      source: String(input.source ?? "code-agent-intervention"),
+      content: input.content,
+      changeSummary: String(input.changeSummary ?? ""),
+      evidenceEntryIds: Array.isArray(input.evidenceEntryIds)
+        ? input.evidenceEntryIds.map((value) => String(value))
+        : [],
+      sourceCoordinates: input.sourceCoordinates && typeof input.sourceCoordinates === "object" && !Array.isArray(input.sourceCoordinates)
+        ? input.sourceCoordinates as Record<string, unknown>
+        : {},
+      parentArtifactId: input.parentArtifactId == null ? null : String(input.parentArtifactId),
+    });
+    return {
+      ok: true,
+      kind: "artifact.revision",
+      contract: externalReportRevisionContract,
+      artifact: record,
+    };
+  }
+
   private currentSessionPath(): string {
     return join(this.deps.getBasePath(), "sessions", "current.jsonl");
   }
@@ -1505,6 +1545,14 @@ async function handleRequest(
     writeJson(res, 200, control.armRunServiceFailure(String(body.mode ?? "")));
     return;
   }
+  if (req.method === "POST" && req.url === "/artifacts/revisions") {
+    try {
+      writeJson(res, 201, control.createArtifactRevision(await readJsonBody(req)));
+    } catch (error) {
+      writeJson(res, 400, { error: error instanceof Error ? error.message : String(error) });
+    }
+    return;
+  }
   if (req.method === "GET" && req.url === "/workflow/panels") {
     writeJson(res, 200, await control.panelState());
     return;
@@ -1685,6 +1733,8 @@ async function handleRequest(
     const payload = body.payload && typeof body.payload === "object" && !Array.isArray(body.payload)
       ? body.payload as Record<string, unknown>
       : {};
+    let normalizedTaskBrief: ReturnType<typeof validateExternalTaskBrief> | undefined;
+    let normalizedIntervention: ReturnType<typeof validateExternalIntervention> | undefined;
     if (contract === "finagent.finance-operation.v1") {
       payload.commandPlan = {
         category: String(body.category ?? "").trim(),
@@ -1694,6 +1744,33 @@ async function handleRequest(
           : payload,
       };
       payload.externalOperationContract = contract;
+    }
+    if (contract === externalTaskBriefContract) {
+      try {
+        normalizedTaskBrief = validateExternalTaskBrief(body);
+        payload.taskBrief = normalizedTaskBrief;
+        payload.commandPlan = {
+          category: normalizedTaskBrief.category,
+          operation: normalizedTaskBrief.operation,
+          payload: normalizedTaskBrief.arguments,
+        };
+        payload.externalOperationContract = contract;
+        prompt = promptForExternalTaskBrief({ runtime: "workstation", brief: normalizedTaskBrief });
+      } catch (error) {
+        writeJson(res, 400, { error: error instanceof Error ? error.message : String(error) });
+        return;
+      }
+    }
+    if (contract === externalInterventionContract) {
+      try {
+        normalizedIntervention = validateExternalIntervention(body);
+        payload.intervention = normalizedIntervention;
+        payload.externalOperationContract = contract;
+        prompt = promptForExternalIntervention({ runtime: "workstation", intervention: normalizedIntervention });
+      } catch (error) {
+        writeJson(res, 400, { error: error instanceof Error ? error.message : String(error) });
+        return;
+      }
     }
     if (!prompt && contract === "finagent.finance-operation.v1") {
       try {
@@ -1721,13 +1798,26 @@ async function handleRequest(
           ? undefined
           : String(body.sessionMode) as RunServiceRunRequest["sessionMode"],
       uiRuntime:
-        body.uiRuntime == null
+        body.uiRuntime == null && normalizedTaskBrief == null
           ? undefined
-          : String(body.uiRuntime) as RunServiceRunRequest["uiRuntime"],
+          : String(body.uiRuntime ?? normalizedTaskBrief?.uiRuntime) as RunServiceRunRequest["uiRuntime"],
       sessionId: body.sessionId == null ? undefined : String(body.sessionId),
       timeoutMs: asOptionalNumber(body.timeoutMs),
       payload,
     };
+    if (normalizedTaskBrief && body.uiRuntime != null && String(body.uiRuntime) !== normalizedTaskBrief.uiRuntime) {
+      writeJson(res, 400, { error: "uiRuntime must match the task brief" });
+      return;
+    }
+    if (normalizedIntervention && (
+      runRequest.sessionMode !== "resume" ||
+      runRequest.sessionId !== normalizedIntervention.target.sessionId
+    )) {
+      writeJson(res, 400, {
+        error: "intervention requires sessionMode resume and the exact target sessionId",
+      });
+      return;
+    }
     if (req.url === "/runs/start") {
       writeJson(res, 202, control.startRunServicePrompt(runRequest));
       return;

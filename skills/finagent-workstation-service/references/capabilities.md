@@ -13,3 +13,7 @@ whose compile-time contract and current runtime readiness support the request.
 
 Use an explicit product for session resume and execution. Do not silently move a
 session or side-effect request to another product.
+
+`externalOrchestration` advertises the task brief, evidence ledger,
+intervention, report revision, and arbitration contracts. Treat its descriptor
+as authoritative; do not emulate a missing contract by parsing prose.

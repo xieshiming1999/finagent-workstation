@@ -1363,6 +1363,33 @@ describe("WorkflowAutomationControl", () => {
     const typedResult = await getJson(server!.port, `/runs/${typedAdmission.json.runId}/result`);
     expect(typedResult.status).toBe(200);
     expect(typedResult.json).toMatchObject({ status: "completed" });
+    const taskAdmission = await postJson(server!.port, "/runs/start", {
+      contract: "finagent.task-brief.v1", taskId: "task-e2e-1",
+      request: "Analyze 600519 with current evidence.", product: "workstation",
+      category: "analysis", operation: "run", arguments: { symbol: "600519" },
+      evidenceRequirements: [{ id: "quote", description: "Quote with source timestamp" }],
+      uiRuntime: "visible", allowedSideEffect: "read-only", interactionPolicy: "caller-mediated",
+      completionConditions: ["All required evidence has a status"], sessionMode: "new",
+    });
+    expect(taskAdmission.status).toBe(202);
+    const taskStream = await fetch(`http://127.0.0.1:${server!.port}/runs/${taskAdmission.json.runId}/stream`);
+    await taskStream.text();
+    const taskResult = await getJson(server!.port, `/runs/${taskAdmission.json.runId}/result`);
+    expect(taskResult.json.status).toBe("completed");
+    const interventionAdmission = await postJson(server!.port, "/runs/start", {
+      contract: "finagent.intervention.v1", taskId: "task-e2e-1", intent: "fill_evidence_gap",
+      target: { product: "workstation", runId: taskAdmission.json.runId, sessionId: taskResult.json.sessionId, turnId: taskResult.json.turnId },
+      rationale: "Quote timestamp is missing.", expectedContract: "analysis-evidence-v1",
+      changeRequest: { requirementId: "quote" }, sessionMode: "resume", sessionId: taskResult.json.sessionId, uiRuntime: "visible",
+    });
+    expect(interventionAdmission.status).toBe(202);
+    const revision = await postJson(server!.port, "/artifacts/revisions", {
+      contract: "finagent.report-revision.v1", logicalReportId: "task-e2e-1-report", title: "Task report",
+      source: "automation-test", content: { summary: "Evidence-backed summary" }, changeSummary: "Initial revision",
+      evidenceEntryIds: ["event:1"], sourceCoordinates: { runId: taskAdmission.json.runId },
+    });
+    expect(revision.status).toBe(201);
+    expect(revision.json.artifact.metadata.contract).toBe("finagent.report-revision.v1");
     const pending = await getJson(server!.port, `/runs/${runId}/pending`);
     expect(pending.status).toBe(200);
     expect(pending.json).toMatchObject({
@@ -1497,7 +1524,7 @@ describe("WorkflowAutomationControl", () => {
     expect(createdSession.json.sessionId).toBeTruthy();
     expect(createdSession.json.sessionId).not.toBe(serviceSession.json.sessionId);
 
-    const reports = await getJson(server!.port, "/workflow/reports?limit=5");
+    const reports = await getJson(server!.port, "/workflow/reports?limit=20");
     expect(reports.status).toBe(200);
     expect(reports.json.count).toBeGreaterThan(0);
     expect(

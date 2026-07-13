@@ -16,10 +16,18 @@ the service is not on the documented default loopback port.
 3. On `interaction.required` or `permission.required`, inspect `pending` and
    surface the exact request to the caller. Submit only caller-selected values
    with `answer` or `permission`, retaining every request coordinate.
-4. Retrieve terminal evidence with `result`. Fetch large outputs by artifact id.
-5. Never infer approval, auto-answer a question, or treat general code-agent
+4. For code-agent-owned work, validate a `finagent.task-brief.v1` with
+   `task-validate`, submit it with `orchestrate-start`, and keep its evidence
+   requirements as the caller-owned acceptance checklist.
+5. Retrieve terminal evidence with `result`, then build a coordinate-bearing
+   ledger with `ledger`. Use `intervene` only against the exact run/session/turn;
+   append corrected evidence or use `revise-report` for immutable report changes.
+6. Validate the caller's final judgment with `arbitrate`. FinAgent output is
+   evidence, not the code agent's final answer.
+7. Never infer approval, auto-answer a question, or treat general code-agent
    autonomy as consent to trade. Real execution is unavailable in v1.
 
 Read [capabilities.md](references/capabilities.md) before choosing an operation,
 [workflows.md](references/workflows.md) for lifecycle calls, and
+[orchestration.md](references/orchestration.md) for caller-owned judgment, and
 [execution-safety.md](references/execution-safety.md) for any trade-related task.

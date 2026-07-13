@@ -1,5 +1,7 @@
 import { existsSync, mkdirSync, readFileSync, writeFileSync } from 'fs'
+import { createHash } from 'crypto'
 import { dirname, join } from 'path'
+import { externalReportRevisionContract } from './external-orchestration-contract'
 
 export type ArtifactKind =
   | 'analysis'
@@ -95,6 +97,84 @@ export class ArtifactRegistry {
   list(kind?: ArtifactKind): ArtifactRecord[] {
     const records = this.readAll()
     return kind ? records.filter((record) => record.kind === kind) : records
+  }
+
+  registerReportRevision(input: {
+    logicalReportId: string
+    title: string
+    source: string
+    content: unknown
+    changeSummary: string
+    evidenceEntryIds: string[]
+    sourceCoordinates: Record<string, unknown>
+    parentArtifactId?: string | null
+    now?: Date
+  }): ArtifactRecord {
+    const logicalReportId = input.logicalReportId.trim()
+    if (!logicalReportId) throw new Error('logicalReportId is required')
+    const changeSummary = input.changeSummary.trim()
+    if (!changeSummary) throw new Error('changeSummary is required')
+    if (input.evidenceEntryIds.some((id) => !id.trim())) {
+      throw new Error('evidenceEntryIds must be non-empty')
+    }
+    const parent = input.parentArtifactId
+      ? this.readAll().find((record) => record.id === input.parentArtifactId || record.stableRef === input.parentArtifactId)
+      : undefined
+    if (input.parentArtifactId && !parent) {
+      throw new Error(`parent artifact not found: ${input.parentArtifactId}`)
+    }
+    const digestInput = JSON.stringify({
+      contract: externalReportRevisionContract,
+      logicalReportId,
+      parentArtifactId: parent?.id ?? null,
+      content: input.content,
+      changeSummary,
+      evidenceEntryIds: input.evidenceEntryIds,
+      sourceCoordinates: input.sourceCoordinates,
+    })
+    const revisionId = createHash('sha256').update(digestInput).digest('hex')
+    const safeLogicalId = logicalReportId.replace(/[^A-Za-z0-9_.-]+/g, '-')
+    const relativePath = join('memory', 'artifacts', 'revisions', safeLogicalId, `${revisionId}.json`)
+    const artifactId = `report-revision:${safeLogicalId}:${revisionId}`
+    const timestamp = input.now ?? new Date()
+    const revision = {
+      contract: externalReportRevisionContract,
+      logicalReportId,
+      revisionId,
+      artifactId,
+      parentArtifactId: parent?.id ?? null,
+      createdAt: timestamp.toISOString(),
+      changeSummary,
+      evidenceEntryIds: input.evidenceEntryIds,
+      sourceCoordinates: input.sourceCoordinates,
+      content: input.content,
+    }
+    const filePath = join(this.basePath, relativePath)
+    if (!existsSync(filePath)) {
+      mkdirSync(dirname(filePath), { recursive: true })
+      writeFileSync(filePath, `${JSON.stringify(revision, null, 2)}\n`, 'utf-8')
+    }
+    return this.register({
+      kind: 'report',
+      path: relativePath,
+      title: input.title,
+      source: input.source,
+      id: artifactId,
+      ownerTask: logicalReportId,
+      verificationStatus: 'verified',
+      provenance: { source: input.source, sourceCoordinates: input.sourceCoordinates },
+      links: parent ? [parent.stableRef] : [],
+      metadata: {
+        contract: externalReportRevisionContract,
+        logicalReportId,
+        revisionId,
+        parentArtifactId: parent?.id ?? null,
+        changeSummary,
+        evidenceEntryIds: input.evidenceEntryIds,
+        sourceCoordinates: input.sourceCoordinates,
+      },
+      now: timestamp,
+    })
   }
 
   private readAll(): ArtifactRecord[] {
