@@ -995,6 +995,48 @@ describe("WorkflowAutomationControl", () => {
     ).toMatchObject({ ok: false });
   });
 
+  it("applies durable run-service session modes instead of ignoring them", async () => {
+    process.env.FINAGENT_WORKSTATION_WORKFLOW_AUTOMATION = "1";
+    const { agent, control } = makeControl(
+      basePath,
+      new MockLLM([
+        { text: "first" },
+        { text: "second" },
+        { text: "resumed" },
+      ]),
+    );
+
+    const first = await control.runServicePrompt({
+      prompt: "first turn",
+      sessionMode: "attached",
+    });
+    const firstSessionId = first.sessionId!;
+
+    const second = await control.runServicePrompt({
+      prompt: "fresh turn",
+      sessionMode: "new",
+    });
+    expect(second.sessionId).not.toBe(firstSessionId);
+    expect(agent.messages.some((message) => message.content === "first turn")).toBe(false);
+
+    const resumed = await control.runServicePrompt({
+      prompt: "continue first",
+      sessionMode: "resume",
+      sessionId: firstSessionId,
+    });
+    expect(resumed.status, JSON.stringify(resumed)).toBe("completed");
+    expect(resumed.sessionId).toBe(firstSessionId);
+    expect(agent.messages.some((message) => message.content === "first turn")).toBe(true);
+
+    const unsupported = await control.runServicePrompt({
+      prompt: "temporary context",
+      sessionMode: "preload",
+      sessionId: firstSessionId,
+    });
+    expect(unsupported.status).toBe("failed");
+    expect(unsupported.error).toContain("RUN_SERVICE_SESSION_MODE_UNSUPPORTED");
+  });
+
   it("serves local HTTP control endpoints when explicitly enabled", async () => {
     process.env.FINAGENT_WORKSTATION_WORKFLOW_AUTOMATION = "1";
     const { control } = makeControl(

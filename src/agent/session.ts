@@ -35,6 +35,9 @@ export class Session {
     this.filePath = join(sessionsDir, 'current.jsonl')
     this.sharedHistoryDir = sharedHistoryDir ?? null
     this.id = generateSessionId()
+    if (!existsSync(this.filePath)) {
+      this.writeSessionMeta()
+    }
   }
 
   /** Append a single message to the session JSONL file (incremental). */
@@ -143,10 +146,22 @@ export class Session {
     const archiveName = `${date}_${idx}.jsonl`
     const archivePath = join(this.archiveDir, archiveName)
     copyFileSync(this.filePath, archivePath)
-    writeFileSync(this.filePath, '', 'utf-8')
     this.id = generateSessionId()
     this.title = null
+    this.writeSessionMeta()
     return archivePath
+  }
+
+  private writeSessionMeta(): void {
+    writeFileSync(
+      this.filePath,
+      JSON.stringify({
+        type: 'session_meta',
+        id: this.id,
+        createdAt: new Date().toISOString(),
+      }) + '\n',
+      'utf-8',
+    )
   }
 
   /** List archived resumable sessions with summaries. */
@@ -201,7 +216,9 @@ export class Session {
     if (existsSync(filePath)) {
       copyFileSync(filePath, this.filePath)
     }
-    return this.load()
+    const loaded = this.load()
+    if (loaded.meta?.id) this.id = loaded.meta.id
+    return loaded
   }
 
   /**

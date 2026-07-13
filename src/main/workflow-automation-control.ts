@@ -395,6 +395,16 @@ export class WorkflowAutomationControl {
   private async runServicePromptRunner(
     request: Required<Pick<RunServiceRunRequest, "prompt">> & RunServiceRunRequest,
   ) {
+    const sessionError = this.prepareRunServiceSession(request);
+    if (sessionError) {
+      return {
+        ok: false,
+        finalAnswer: "",
+        sessionId: this.deps.getAgent()?.session.id,
+        error: sessionError,
+        provenance: { uiRuntime: request.uiRuntime ?? "visible" },
+      };
+    }
     const run = await this.sendPrompt(request.prompt, {
       timeoutMs: request.timeoutMs,
       timeoutReason: "run-service",
@@ -427,6 +437,40 @@ export class WorkflowAutomationControl {
         uiRuntime: request.uiRuntime ?? "visible",
       },
     };
+  }
+
+  private prepareRunServiceSession(request: RunServiceRunRequest): string | undefined {
+    const agent = this.deps.getAgent();
+    if (!agent) return "RUN_SERVICE_AGENT_MISSING: start the FinAgent runtime before creating a run";
+    if (agent.isRunning) {
+      return "RUN_SERVICE_SESSION_BUSY: wait for the active run or interrupt it before starting another run";
+    }
+    const mode = request.sessionMode ?? "new";
+    if (mode === "new") {
+      agent.clearSession();
+      return undefined;
+    }
+    if (mode === "resume") {
+      const requestedId = String(request.sessionId ?? "").trim();
+      if (agent.session.id === requestedId) return undefined;
+      const match = agent.listSessions().find((session) => session.id === requestedId);
+      if (!match) {
+        return `RUN_SERVICE_SESSION_NOT_FOUND: no durable session exists for sessionId ${requestedId}; use GET /sessions to discover resumable ids`;
+      }
+      agent.resumeSession(match.path);
+      return undefined;
+    }
+    if (mode === "attached") {
+      const requestedId = String(request.sessionId ?? "").trim();
+      if (requestedId && requestedId !== agent.session.id) {
+        return `RUN_SERVICE_SESSION_MISMATCH: attached sessionId ${requestedId} is not the active visible session; use resume or omit sessionId`;
+      }
+      return undefined;
+    }
+    if (mode === "preload") {
+      return "RUN_SERVICE_SESSION_MODE_UNSUPPORTED: preload requires forked context with a new durable session and is not implemented yet";
+    }
+    return "RUN_SERVICE_SESSION_MODE_UNSUPPORTED: ephemeral requires isolated non-history persistence and is not implemented yet";
   }
 
   private async collectRunEventsWithTimeout(
