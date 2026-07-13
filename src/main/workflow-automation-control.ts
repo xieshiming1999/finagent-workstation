@@ -1200,6 +1200,23 @@ async function handleRequest(
     writeJson(res, 200, await control.cancel(String(body.reason ?? "")));
     return;
   }
+  {
+    const url = new URL(req.url ?? "/", "http://127.0.0.1");
+    const runInterruptMatch = url.pathname.match(/^\/runs\/([^/]+)\/interrupt$/);
+    if (req.method === "POST" && runInterruptMatch) {
+      const body = await readJsonBody(req);
+      writeJson(
+        res,
+        200,
+        {
+          runId: decodeURIComponent(runInterruptMatch[1]),
+          kind: "run.interrupt",
+          ...(await control.cancel(String(body.reason ?? "run-service-interrupt"))),
+        },
+      );
+      return;
+    }
+  }
   if (req.method === "POST" && req.url === "/workflow/answer_user_question") {
     const body = await readJsonBody(req);
     writeJson(

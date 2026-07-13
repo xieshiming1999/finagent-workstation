@@ -160,6 +160,15 @@ async function handleStdioLine(
       input.stdout.write(`${JSON.stringify({ id, ok: true, result })}\n`);
       return;
     }
+    if (method === "interrupt") {
+      const runId = String(params.runId ?? "");
+      if (!runId) throw new Error("interrupt requires params.runId");
+      const result = await input.postJson(`/runs/${encodeURIComponent(runId)}/interrupt`, {
+        reason: String(params.reason ?? "stdio-interrupt"),
+      });
+      input.stdout.write(`${JSON.stringify({ id, ok: true, result })}\n`);
+      return;
+    }
     throw new Error(`unsupported method: ${method || "-"}`);
   } catch (error) {
     input.stdout.write(`${JSON.stringify({ id, ok: false, error: String(error) })}\n`);

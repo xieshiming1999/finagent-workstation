@@ -1095,6 +1095,21 @@ describe("WorkflowAutomationControl", () => {
       answer: "2",
     });
 
+    const runInterrupt = await postJson(
+      server!.port,
+      `/runs/${runId}/interrupt`,
+      {
+        reason: "stop this run",
+      },
+    );
+    expect(runInterrupt.status).toBe(200);
+    expect(runInterrupt.json).toMatchObject({
+      ok: true,
+      runId,
+      kind: "run.interrupt",
+      reason: "stop this run",
+    });
+
     const session = await getJson(server!.port, "/workflow/session");
     expect(session.status).toBe(200);
     expect(session.json.rawSessionAvailable).toBe(true);
