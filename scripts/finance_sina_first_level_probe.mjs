@@ -24,7 +24,7 @@ const scope = args.scope ?? 'all'
 const output = args.output ?? resolve(repoRoot, 'reports/integrations/finance_sina_first_level_probe_results_2026_06_22.json')
 const mdOutput = args.md ?? resolve(repoRoot, 'reports/integrations/finance_sina_first_level_probe_results_2026_06_22.md')
 const rawDir = args['raw-dir'] ?? resolve(repoRoot, 'reports/integrations/sina-first-level-raw')
-const akshareRepo = args['akshare-repo'] ?? process.env.AKSHARE_REPO ?? '~/Documents/workspace/github/akshare/akshare'
+const akshareRepo = args['akshare-repo'] ?? process.env.AKSHARE_REPO ?? ''
 
 if (args.help === 'true') {
   printUsage()
@@ -485,6 +485,25 @@ function parseBody(item, body) {
 }
 
 function discoverAkshareSinaFunctions(explicitSurfaces) {
+  if (!akshareRepo) {
+    return [{
+      id: 'sina.reference.akshare_census_unavailable',
+      runtime: 'reference-only',
+      kind: 'akshare-reference-census',
+      provider: 'akshare',
+      upstreamOrigin: 'sina',
+      endpoint: '',
+      params: {},
+      currentCodePath: '',
+      purpose: 'AkShare local source tree was not configured for Sina reference census',
+      candidateInterfaceId: 'diagnostic.provider_reference',
+      currentGovernance: 'reference-census-unavailable',
+      expectedContract: 'pass --akshare-repo or set AKSHARE_REPO before claiming all wrapper-origin Sina functions are inventoried',
+      safeToCall: false,
+      exemptionClass: 'reference_unavailable',
+      exemptionReason: 'AKSHARE_REPO is not configured',
+    }]
+  }
   const root = resolve(akshareRepo)
   let files = []
   try {
@@ -1120,6 +1139,9 @@ function printUsage() {
   node scripts/finance_sina_first_level_probe.mjs --wait-ms 1500 --timeout-ms 20000
   node scripts/finance_sina_first_level_probe.mjs --scope direct --wait-ms 300 --timeout-ms 20000
   node scripts/finance_sina_first_level_probe.mjs --scope id:sina.direct.stock_transactions --wait-ms 300
+
+Optional reference census:
+  --akshare-repo <path> or AKSHARE_REPO=<path>
 
 Writes:
   reports/integrations/finance_sina_first_level_probe_results_2026_06_22.json

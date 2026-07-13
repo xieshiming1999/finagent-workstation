@@ -1,11 +1,17 @@
 #!/usr/bin/env bash
 set -euo pipefail
 
-SRC="${1:-~/.finagent/device_backup_20260528_111709/app_flutter/agents}"
+SRC="${1:-${FINAGENT_SOURCE_AGENTS_DIR:-}}"
 DEST="${2:-$HOME/.finagent-workstation}"
 FINAGENT_WORKSTATION_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)"
 REPO_ROOT="$(cd "$FINAGENT_WORKSTATION_DIR/.." && pwd)"
 DRY_RUN="${DRY_RUN:-0}"
+
+if [[ -z "$SRC" ]]; then
+  echo "Usage: $0 <source-agents-directory> [destination]" >&2
+  echo "Or set FINAGENT_SOURCE_AGENTS_DIR." >&2
+  exit 2
+fi
 
 if [[ ! -d "$SRC" ]]; then
   echo "Source agents directory not found: $SRC" >&2

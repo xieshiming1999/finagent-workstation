@@ -1,9 +1,23 @@
 import { describe, expect, it } from "vitest";
+import { homedir } from "node:os";
+import { join } from "node:path";
 import { detectDoomLoop } from "../../src/agent/agent-helpers";
 
 describe("agent doom-loop detection", () => {
   it("does not warn when repeated Read calls have distinct long paths", () => {
-    const longPrefix = "~/.finagent-workstation/projects/by-cwd~/Documents/workspace/standalone/finagent-workstation/bundle/assets/skills/tradingview/references/";
+    const longPrefix = `${join(
+      homedir(),
+      ".finagent-workstation",
+      "projects",
+      "by-cwd",
+      "workspace",
+      "finagent-workstation",
+      "bundle",
+      "assets",
+      "skills",
+      "tradingview",
+      "references",
+    )}/`;
     const calls = [
       `${longPrefix}advanced-chart.md`,
       `${longPrefix}dynamic-digits.md`,

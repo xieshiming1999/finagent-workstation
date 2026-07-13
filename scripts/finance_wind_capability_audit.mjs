@@ -14,11 +14,14 @@ const paths = {
   unificationAudit: 'reports/integrations/finance_data_unification_audit_2026_06_17.json',
 }
 
-const defaultWindReferenceRoot = '~/Documents/workspace/personal/aifinmarket-wind/wind-skills/skills/wind-mcp-skill'
-const windReferenceRoot = resolve(args.windRoot ?? defaultWindReferenceRoot)
+const configuredWindReferenceRoot = args.windRoot ?? process.env.WIND_SKILL_REFERENCE_ROOT
+const windReferenceRoot = resolve(configuredWindReferenceRoot ?? resolve(repoRoot, 'assets/skills/wind-aifinmarket'))
+const detailedContractsPath = resolve(windReferenceRoot, 'references/tool-contracts.md')
 const referencePaths = {
   manifest: resolve(windReferenceRoot, 'references/tool-manifest.json'),
-  contracts: resolve(windReferenceRoot, 'references/tool-contracts.md'),
+  contracts: existsSync(detailedContractsPath)
+    ? detailedContractsPath
+    : resolve(windReferenceRoot, 'references/tool-reference.md'),
   normalizationRules: resolve(windReferenceRoot, 'references/normalization-rules.json'),
 }
 
@@ -120,11 +123,13 @@ function buildReport() {
     generatedAt: new Date().toISOString(),
     objective: 'Wind-specific capability audit joining the app Data API interface contract, live evidence, unification evidence, and the local AIFinMarket reference manifest.',
     source: {
-      providerMatrix: resolve(repoRoot, paths.providerMatrix),
-      liveStatusReport: resolve(repoRoot, paths.liveStatusReport),
-      unificationAudit: resolve(repoRoot, paths.unificationAudit),
-      windReferenceRoot,
-      ...referencePaths,
+      providerMatrix: paths.providerMatrix,
+      liveStatusReport: paths.liveStatusReport,
+      unificationAudit: paths.unificationAudit,
+      windReferenceRoot: relativeRepoPath(windReferenceRoot),
+      manifest: relativeRepoPath(referencePaths.manifest),
+      contracts: relativeRepoPath(referencePaths.contracts),
+      normalizationRules: relativeRepoPath(referencePaths.normalizationRules),
     },
     summary: {
       windCapabilities: rows.length,
@@ -141,6 +146,11 @@ function buildReport() {
     unclaimedReferenceTools,
     problems,
   }
+}
+
+function relativeRepoPath(path) {
+  const prefix = `${repoRoot}/`
+  return path.startsWith(prefix) ? path.slice(prefix.length) : '<external-wind-reference>'
 }
 
 function readWindReference() {
@@ -179,7 +189,7 @@ function extractReferenceTools(text, toolNames) {
   for (const name of toolNames) {
     if (lower.includes(name.toLowerCase()) && !found.includes(name)) found.push(name)
   }
-  for (const match of source.matchAll(/\bget_[a-z0-9_]+\b/gi)) {
+  for (const match of source.matchAll(/\b(?:get|search)_[a-z0-9_]+\b/gi)) {
     const name = match[0]
     if (!found.includes(name)) found.push(name)
   }
