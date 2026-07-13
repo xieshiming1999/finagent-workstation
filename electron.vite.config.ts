@@ -9,6 +9,7 @@ export default defineConfig({
       rollupOptions: {
         input: {
           index: resolve(__dirname, 'src/main/index.ts'),
+          'run-service-cli': resolve(__dirname, 'src/main/run-service-cli.ts'),
         },
       },
     },

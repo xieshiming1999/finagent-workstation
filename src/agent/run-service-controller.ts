@@ -69,6 +69,9 @@ export class RunServiceController {
       payload: {
         sessionMode: normalizedRequest.sessionMode,
         uiRuntime: normalizedRequest.uiRuntime,
+        ...(normalizedRequest.payload
+          ? { requestPayload: normalizedRequest.payload }
+          : {}),
       },
     });
     this.eventStore.append({
@@ -134,4 +137,3 @@ export class RunServiceController {
     return `run-${this.clock().getTime()}`;
   }
 }
-

@@ -3,6 +3,9 @@
   "version": "0.1.0",
   "description": "FinAgent Desktop — AI-powered finance workstation",
   "main": "out/main/index.js",
+  "bin": {
+    "finagent-workstation": "out/main/run-service-cli.js"
+  },
   "type": "module",
   "scripts": {
     "dev": "electron-vite dev",
@@ -27,6 +30,7 @@
     "matrix:finance-datastore": "node scripts/finance_api_datastore_matrix.mjs",
     "report:finance-api": "node scripts/generate_finance_api_report.cjs",
     "workflow:scenario": "node scripts/run_workflow_scenario_sequence.mjs",
+    "run-service": "node out/main/run-service-cli.js",
     "test:watch": "vitest",
     "migrate:project-data": "node scripts/migrate_project_data_by_cwd.cjs",
     "test:e2e": "npx electron-vite build && playwright test"
