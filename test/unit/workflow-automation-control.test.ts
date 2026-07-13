@@ -1274,6 +1274,37 @@ describe("WorkflowAutomationControl", () => {
       runId,
       status: "completed",
     });
+    const state = await getJson(server!.port, `/runs/${runId}/state`);
+    expect(state.status).toBe(200);
+    expect(state.json).toMatchObject({
+      kind: "run.state",
+      runId,
+      status: "completed",
+      terminal: true,
+      uiRuntime: "visible",
+    });
+    const messages = await getJson(server!.port, `/runs/${runId}/messages?after=0`);
+    expect(messages.status).toBe(200);
+    expect(messages.json.messages).toEqual(
+      expect.arrayContaining([
+        expect.objectContaining({
+          role: "user",
+          kind: "user.message",
+          content: "use the run service path",
+        }),
+      ]),
+    );
+    const waited = await getJson(
+      server!.port,
+      `/runs/${runId}/wait?after=0&timeoutMs=25`,
+    );
+    expect(waited.status).toBe(200);
+    expect(waited.json).toMatchObject({
+      kind: "run.wait",
+      runId,
+      timedOut: false,
+      terminal: true,
+    });
     const pending = await getJson(server!.port, `/runs/${runId}/pending`);
     expect(pending.status).toBe(200);
     expect(pending.json).toMatchObject({
@@ -1460,6 +1491,7 @@ describe("WorkflowAutomationControl", () => {
     expect(capabilities.json.routes).toContain("GET /artifacts");
     expect(capabilities.json.routes).toContain("GET /artifacts/{artifactId}");
     expect(capabilities.json.routes).toContain("POST /runs/{runId}/permissions");
+    expect(capabilities.json.routes).toContain("GET /runs/{runId}/messages?after={sequence}");
     expect(capabilities.json.interaction).toMatchObject({
       permissionResponse: true,
     });
