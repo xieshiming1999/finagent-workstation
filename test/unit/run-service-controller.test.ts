@@ -27,6 +27,7 @@ describe("run service controller", () => {
     expect(result.status).toBe("completed");
     expect(result.finalAnswer).toBe("done");
     expect(result.sessionId).toBe("sess-1");
+    expect(result.events[0].payload?.acceptedMessage).toBe("今天市场怎么样？");
     expect(result.events.map((event) => event.type)).toEqual([
       "run.created",
       "run.status.changed",
@@ -49,6 +50,10 @@ describe("run service controller", () => {
 
     expect(result.status).toBe("failed");
     expect(result.error).toContain("provider unavailable");
+    expect(result.events.at(-1)?.payload).toMatchObject({
+      category: "agent.runtime",
+      recovery: expect.any(String),
+    });
   });
 
   it("rejects resume and preload without session id before running prompt", async () => {

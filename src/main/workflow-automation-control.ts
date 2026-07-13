@@ -403,6 +403,18 @@ export class WorkflowAutomationControl {
     return this.runService.eventStore.result(runId);
   }
 
+  runServiceState(runId: string): Record<string, unknown> {
+    return this.runService.eventStore.state(runId);
+  }
+
+  runServiceMessages(runId: string, after = 0): Record<string, unknown> {
+    return this.runService.eventStore.messages(runId, after);
+  }
+
+  waitForRunServiceEvents(input: { runId: string; after?: number; timeoutMs?: number }) {
+    return this.runService.eventStore.wait(input);
+  }
+
   runServiceRuns(limit = 20): Record<string, unknown> {
     const runs = this.runService.eventStore.results(limit).map(runServiceResultSummary);
     return { ok: true, kind: "runs.list", count: runs.length, runs };
@@ -1448,6 +1460,39 @@ async function handleRequest(
         res,
         200,
         control.runServicePending(decodeURIComponent(runPendingMatch[1])),
+      );
+      return;
+    }
+    const runStateMatch = url.pathname.match(/^\/runs\/([^/]+)\/state$/);
+    if (runStateMatch) {
+      writeJson(res, 200, control.runServiceState(decodeURIComponent(runStateMatch[1])));
+      return;
+    }
+    const runMessagesMatch = url.pathname.match(/^\/runs\/([^/]+)\/messages$/);
+    if (runMessagesMatch) {
+      const after = Number(url.searchParams.get("after") ?? 0);
+      writeJson(
+        res,
+        200,
+        control.runServiceMessages(
+          decodeURIComponent(runMessagesMatch[1]),
+          Number.isFinite(after) ? after : 0,
+        ),
+      );
+      return;
+    }
+    const runWaitMatch = url.pathname.match(/^\/runs\/([^/]+)\/wait$/);
+    if (runWaitMatch) {
+      const after = Number(url.searchParams.get("after") ?? 0);
+      const timeoutMs = Number(url.searchParams.get("timeoutMs") ?? 5000);
+      writeJson(
+        res,
+        200,
+        await control.waitForRunServiceEvents({
+          runId: decodeURIComponent(runWaitMatch[1]),
+          after: Number.isFinite(after) ? after : 0,
+          timeoutMs: Number.isFinite(timeoutMs) ? timeoutMs : 5000,
+        }),
       );
       return;
     }

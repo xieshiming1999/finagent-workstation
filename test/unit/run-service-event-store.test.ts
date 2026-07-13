@@ -59,6 +59,45 @@ describe("run service event store", () => {
     expect(store.result("run-2").status).toBe("running");
   });
 
+  it("projects state, messages, and bounded wait from run events", async () => {
+    const store = new RunServiceEventStore();
+    store.append({
+      runId: "run-inspect",
+      sessionId: "session-1",
+      type: "run.created",
+      payload: {
+        acceptedMessage: "Inspect the market",
+        sessionMode: "new",
+        uiRuntime: "headless",
+      },
+    });
+    store.append({
+      runId: "run-inspect",
+      type: "assistant.delta",
+      payload: { delta: "Working" },
+    });
+
+    expect(store.state("run-inspect")).toMatchObject({
+      status: "running",
+      uiRuntime: "headless",
+      sessionMode: "new",
+    });
+    expect(store.messages("run-inspect")).toMatchObject({
+      count: 2,
+      messages: [
+        { role: "user", content: "Inspect the market" },
+        { role: "assistant", content: "Working" },
+      ],
+    });
+    await expect(store.wait({ runId: "run-inspect", after: 1 })).resolves.toMatchObject({
+      timedOut: false,
+      count: 1,
+    });
+    await expect(
+      store.wait({ runId: "run-inspect", after: 2, timeoutMs: 5 }),
+    ).resolves.toMatchObject({ timedOut: true, status: "running" });
+  });
+
   it("projects typed final-result evidence from the event trace", () => {
     const store = new RunServiceEventStore();
     const add = (type: Parameters<typeof store.append>[0]["type"], payload = {}) =>

@@ -117,6 +117,9 @@ export function runServiceCapabilityDescriptor(input: {
     "GET /runs",
     "GET /runs/{runId}/events?after={sequence}",
     "GET /runs/{runId}/result",
+    "GET /runs/{runId}/state",
+    "GET /runs/{runId}/messages?after={sequence}",
+    "GET /runs/{runId}/wait?after={sequence}&timeoutMs={bounded}",
     "GET /runs/{runId}/pending",
     "POST /runs/{runId}/responses",
     ...(input.supportsPermissionResponse
@@ -174,6 +177,9 @@ export function runServiceAdapterDescriptor(input: {
     operationDescriptor("finagent.workflow.list", "GET /runs", "List recent run summaries, including frontend-created runs."),
     operationDescriptor("finagent.workflow.events", "GET /runs/{runId}/events?after={sequence}", "Replay typed run events after a sequence cursor."),
     operationDescriptor("finagent.workflow.result", "GET /runs/{runId}/result", "Fetch the final run snapshot with answer, trace, artifacts, and errors."),
+    operationDescriptor("finagent.workflow.state", "GET /runs/{runId}/state", "Inspect one typed run state snapshot without reading session files or logs."),
+    operationDescriptor("finagent.workflow.messages", "GET /runs/{runId}/messages?after={sequence}", "Read bounded run-scoped user, assistant, and tool message envelopes."),
+    operationDescriptor("finagent.workflow.wait", "GET /runs/{runId}/wait?after={sequence}&timeoutMs={bounded}", "Wait a bounded interval for typed events or terminal run state."),
     operationDescriptor("finagent.workflow.pending", "GET /runs/{runId}/pending", "Inspect pending AskUserQuestion and permission requests for a run."),
     operationDescriptor("finagent.workflow.answer", "POST /runs/{runId}/responses", "Answer a pending AskUserQuestion with an explicit caller-selected value."),
     ...(input.supportsPermissionResponse

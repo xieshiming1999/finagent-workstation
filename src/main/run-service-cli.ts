@@ -300,6 +300,26 @@ async function handleStdioLine(
       input.stdout.write(`${JSON.stringify({ id, ok: true, result })}\n`);
       return;
     }
+    if (method === "state") {
+      const runId = String(params.runId ?? "");
+      if (!runId) throw new Error("state requires params.runId");
+      const result = await input.getJson(`/runs/${encodeURIComponent(runId)}/state`);
+      input.stdout.write(`${JSON.stringify({ id, ok: true, result })}\n`);
+      return;
+    }
+    if (method === "messages" || method === "wait") {
+      const runId = String(params.runId ?? "");
+      if (!runId) throw new Error(`${method} requires params.runId`);
+      const after = Number(params.after ?? 0);
+      const timeout = method === "wait"
+        ? `&timeoutMs=${Number.isFinite(Number(params.timeoutMs)) ? Number(params.timeoutMs) : 5000}`
+        : "";
+      const result = await input.getJson(
+        `/runs/${encodeURIComponent(runId)}/${method}?after=${Number.isFinite(after) ? after : 0}${timeout}`,
+      );
+      input.stdout.write(`${JSON.stringify({ id, ok: true, result })}\n`);
+      return;
+    }
     if (method === "capability") {
       const result = await input.getJson("/runs/capabilities");
       input.stdout.write(`${JSON.stringify({ id, ok: true, result })}\n`);

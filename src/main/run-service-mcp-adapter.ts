@@ -107,6 +107,33 @@ const adapterTools: AdapterTool[] = [
       client.get(`/runs/${encodeURIComponent(runId)}/result`),
   ),
   runIdTool(
+    "finagent.workflow.state",
+    "Inspect one typed run state snapshot without reading session files or logs.",
+    (client, _input, runId) =>
+      client.get(`/runs/${encodeURIComponent(runId)}/state`),
+  ),
+  runIdTool(
+    "finagent.workflow.messages",
+    "Read bounded run-scoped user, assistant, and tool message envelopes.",
+    (client, input, runId) =>
+      client.get(
+        `/runs/${encodeURIComponent(runId)}/messages?after=${positiveInteger(input.after, 0)}`,
+      ),
+    { after: { type: "integer", minimum: 0 } },
+  ),
+  runIdTool(
+    "finagent.workflow.wait",
+    "Wait a bounded interval for typed events or terminal run state.",
+    (client, input, runId) =>
+      client.get(
+        `/runs/${encodeURIComponent(runId)}/wait?after=${positiveInteger(input.after, 0)}&timeoutMs=${positiveInteger(input.timeoutMs, 5000)}`,
+      ),
+    {
+      after: { type: "integer", minimum: 0 },
+      timeoutMs: { type: "integer", minimum: 1, maximum: 30000 },
+    },
+  ),
+  runIdTool(
     "finagent.workflow.pending",
     "Inspect pending questions and permission requests.",
     (client, _input, runId) =>

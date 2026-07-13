@@ -85,6 +85,7 @@ export class RunServiceController {
       type: "run.created",
       sessionId,
       payload: {
+        acceptedMessage: prompt,
         sessionMode: normalizedRequest.sessionMode,
         uiRuntime: normalizedRequest.uiRuntime,
         ...(normalizedRequest.payload
@@ -158,7 +159,11 @@ export class RunServiceController {
         runId,
         type: "run.failed",
         sessionId,
-        payload: { error: String(error) },
+        payload: {
+          error: String(error),
+          category: "agent.runtime",
+          recovery: "Inspect run state and retry after correcting the runtime failure.",
+        },
       });
     }
     return this.eventStore.result(runId);

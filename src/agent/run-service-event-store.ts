@@ -38,6 +38,19 @@ export interface RunServicePendingState {
   pendingCount: number;
 }
 
+export interface RunServiceWaitResult {
+  ok: boolean;
+  kind: "run.wait";
+  runId: string;
+  after: number;
+  timedOut: boolean;
+  status: RunServiceResultSnapshot["status"];
+  terminal: boolean;
+  count: number;
+  events: RunServiceEventRecord[];
+  lastSequence: number;
+}
+
 export class RunServiceEventStore {
   private nextSequence = 1;
   private readonly eventsByRun = new Map<string, RunServiceEventRecord[]>();
@@ -112,6 +125,56 @@ export class RunServiceEventStore {
     });
   }
 
+  state(runId: string): Record<string, unknown> {
+    const snapshot = this.result(runId);
+    const created = [...snapshot.events].reverse().find((event) => event.type === "run.created");
+    const pending = this.pending(runId);
+    return {
+      ok: snapshot.status !== "missing",
+      kind: "run.state",
+      runId,
+      status: snapshot.status,
+      terminal: isTerminalStatus(snapshot.status),
+      ...(snapshot.sessionId ? { sessionId: snapshot.sessionId } : {}),
+      ...(snapshot.turnId ? { turnId: snapshot.turnId } : {}),
+      ...(created?.payload?.sessionMode != null ? { sessionMode: created.payload.sessionMode } : {}),
+      ...(created?.payload?.uiRuntime != null ? { uiRuntime: created.payload.uiRuntime } : {}),
+      lastSequence: snapshot.events.at(-1)?.sequence ?? 0,
+      pendingInteractionCount: pending.pendingInteractions.length,
+      pendingPermissionCount: pending.pendingPermissions.length,
+      ...(snapshot.error ? { error: snapshot.error } : {}),
+    };
+  }
+
+  messages(runId: string, after = 0): Record<string, unknown> {
+    const messages = this.events({ runId, after })
+      .map(messageFromEvent)
+      .filter((message): message is Record<string, unknown> => message != null);
+    return {
+      ok: this.result(runId).status !== "missing",
+      kind: "run.messages",
+      runId,
+      after,
+      count: messages.length,
+      messages,
+    };
+  }
+
+  async wait(input: { runId: string; after?: number; timeoutMs?: number }): Promise<RunServiceWaitResult> {
+    const after = input.after ?? 0;
+    const timeoutMs = Math.max(1, Math.min(30000, Math.floor(input.timeoutMs ?? 5000)));
+    const deadline = Date.now() + timeoutMs;
+    while (true) {
+      const events = this.events({ runId: input.runId, after });
+      const snapshot = this.result(input.runId);
+      if (events.length > 0 || isTerminalStatus(snapshot.status) || snapshot.status === "missing") {
+        return waitResult(input.runId, after, events, snapshot, false);
+      }
+      if (Date.now() >= deadline) return waitResult(input.runId, after, events, snapshot, true);
+      await new Promise((resolve) => setTimeout(resolve, Math.min(20, deadline - Date.now())));
+    }
+  }
+
   pending(runId: string): RunServicePendingState {
     const events = this.events({ runId });
     const result = this.result(runId);
@@ -153,6 +216,63 @@ export class RunServiceEventStore {
       this.nextSequence = Math.max(this.nextSequence, parsed.sequence + 1);
     }
   }
+}
+
+function messageFromEvent(event: RunServiceEventRecord): Record<string, unknown> | null {
+  if (event.type === "run.created") {
+    const content = String(event.payload?.acceptedMessage ?? "").trim();
+    return content ? messageEnvelope(event, "user", "user.message", content) : null;
+  }
+  if (event.type === "assistant.delta") {
+    const content = event.payload?.delta ?? event.payload?.text ?? event.payload?.content ?? "";
+    return messageEnvelope(event, "assistant", "assistant.delta", content);
+  }
+  if (event.type === "tool.call") return messageEnvelope(event, "assistant", "tool.call", event.payload ?? {});
+  if (event.type === "tool.result") return messageEnvelope(event, "tool", "tool.result", event.payload ?? {});
+  return null;
+}
+
+function messageEnvelope(
+  event: RunServiceEventRecord,
+  role: "user" | "assistant" | "tool",
+  kind: string,
+  content: unknown,
+): Record<string, unknown> {
+  return {
+    sequence: event.sequence,
+    runId: event.runId,
+    role,
+    kind,
+    content,
+    createdAt: event.createdAt,
+    ...(event.sessionId ? { sessionId: event.sessionId } : {}),
+    ...(event.turnId ? { turnId: event.turnId } : {}),
+  };
+}
+
+function isTerminalStatus(status: RunServiceResultSnapshot["status"]): boolean {
+  return status === "completed" || status === "failed" || status === "cancelled";
+}
+
+function waitResult(
+  runId: string,
+  after: number,
+  events: RunServiceEventRecord[],
+  snapshot: RunServiceResultSnapshot,
+  timedOut: boolean,
+): RunServiceWaitResult {
+  return {
+    ok: snapshot.status !== "missing",
+    kind: "run.wait",
+    runId,
+    after,
+    timedOut,
+    status: snapshot.status,
+    terminal: isTerminalStatus(snapshot.status),
+    count: events.length,
+    events,
+    lastSequence: events.at(-1)?.sequence ?? after,
+  };
 }
 
 function resultSnapshot(
