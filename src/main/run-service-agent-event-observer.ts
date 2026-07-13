@@ -26,6 +26,11 @@ export class RunServiceAgentEventObserver {
       })
     }
     if (event.type === 'tool-use-start') {
+      this.emit('tool.call', {
+        toolUseId: event.id,
+        toolName: event.name,
+        input: event.input,
+      })
       const permissionTool = this.pendingPermissions.get(event.id)
       if (permissionTool) {
         this.emit('permission.resolved', {
@@ -44,15 +49,24 @@ export class RunServiceAgentEventObserver {
         })
       }
     }
-    if (event.type === 'tool-result' && event.id) {
-      if (this.pendingInteractions.delete(event.id)) {
+    if (event.type === 'tool-result') {
+      this.emit('tool.result', {
+        ...(event.id ? { toolUseId: event.id } : {}),
+        toolName: event.name,
+        isError: event.isError,
+        durationMs: event.durationMs,
+        result: boundedText(event.result),
+      })
+      const artifact = managedArtifactPayload(event.name, event.result)
+      if (artifact) this.emit('artifact.created', artifact)
+      if (event.id && this.pendingInteractions.delete(event.id)) {
         this.emit('interaction.resolved', {
           requestId: event.id,
           tool: event.name,
           isError: event.isError,
         })
       }
-      if (this.pendingPermissions.delete(event.id)) {
+      if (event.id && this.pendingPermissions.delete(event.id)) {
         this.emit('permission.resolved', {
           requestId: event.id,
           tool: event.name,
@@ -61,5 +75,33 @@ export class RunServiceAgentEventObserver {
         })
       }
     }
+  }
+}
+
+function boundedText(value: string, limit = 12_000): string {
+  if (value.length <= limit) return value
+  return `${value.slice(0, limit)}\n...<truncated ${value.length - limit} chars>`
+}
+
+function managedArtifactPayload(
+  toolName: string,
+  result: string,
+): Record<string, unknown> | undefined {
+  if (toolName !== 'ArtifactRegistry') return undefined
+  try {
+    const decoded = JSON.parse(result) as {
+      managedArtifact?: boolean
+      artifact?: Record<string, unknown>
+    }
+    if (decoded.managedArtifact !== true || !decoded.artifact) return undefined
+    return {
+      kind: String(decoded.artifact.kind ?? 'artifact'),
+      artifactId: String(decoded.artifact.id ?? ''),
+      stableRef: String(decoded.artifact.stableRef ?? ''),
+      title: String(decoded.artifact.title ?? ''),
+      managedArtifact: true,
+    }
+  } catch {
+    return undefined
   }
 }

@@ -62,6 +62,34 @@ describe("run service controller", () => {
     });
   });
 
+  it("keeps live tool events without terminal replay duplicates", async () => {
+    const controller = new RunServiceController(async (request) => {
+      request.emitServiceEvent?.("tool.call", {
+        toolName: "DataStore",
+        input: { action: "query_quote" },
+      });
+      request.emitServiceEvent?.("tool.result", {
+        toolName: "DataStore",
+        isError: false,
+        result: "ok",
+      });
+      return {
+        ok: true,
+        finalAnswer: "done",
+        toolCalls: [{ toolName: "DataStore" }],
+        toolResults: [{ toolName: "DataStore", isError: false }],
+      };
+    });
+
+    const result = await controller.runPrompt(
+      { prompt: "stream tools" },
+      { runId: "run-live-tools" },
+    );
+
+    expect(result.events.filter((event) => event.type === "tool.call")).toHaveLength(1);
+    expect(result.events.filter((event) => event.type === "tool.result")).toHaveLength(1);
+  });
+
   it("rejects resume and preload without session id before running prompt", async () => {
     let called = false;
     const controller = new RunServiceController(async () => {

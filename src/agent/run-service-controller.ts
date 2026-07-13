@@ -81,6 +81,8 @@ export class RunServiceController {
     const runId = options.runId ?? this.newRunId();
     const turnId = this.newTurnId(runId);
     const sessionId = request.sessionId;
+    let liveToolCallCount = 0;
+    let liveToolResultCount = 0;
     const normalizedRequest = {
       ...request,
       prompt,
@@ -92,6 +94,8 @@ export class RunServiceController {
         type: RunServiceEventType,
         payload: Record<string, unknown> = {},
       ) => {
+        if (type === "tool.call") liveToolCallCount += 1;
+        if (type === "tool.result") liveToolResultCount += 1;
         this.eventStore.append({
           runId,
           type,
@@ -140,7 +144,7 @@ export class RunServiceController {
     try {
       const result = await this.promptRunner(normalizedRequest);
       const finalSessionId = result.sessionId ?? sessionId;
-      for (const call of result.toolCalls ?? []) {
+      for (const call of (result.toolCalls ?? []).slice(liveToolCallCount)) {
         this.eventStore.append({
           runId,
           type: "tool.call",
@@ -149,7 +153,7 @@ export class RunServiceController {
           payload: call,
         });
       }
-      for (const toolResult of result.toolResults ?? []) {
+      for (const toolResult of (result.toolResults ?? []).slice(liveToolResultCount)) {
         this.eventStore.append({
           runId,
           type: "tool.result",
