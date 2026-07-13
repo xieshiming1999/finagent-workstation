@@ -111,6 +111,12 @@ def typed_request(args):
     arguments = parse_json(args.arguments)
     return {"contract": "finagent.finance-operation.v1", "category": args.category, "operation": args.operation, "arguments": arguments, "payload": arguments, "sessionMode": args.session_mode, "uiRuntime": args.ui_runtime, **({"sessionId": args.session_id} if args.session_id else {})}
 
+def compact_result(value):
+    events = value.get("events", []) if isinstance(value, dict) else []
+    terminal = next((event for event in reversed(events) if event.get("type") in TERMINAL_EVENTS), {})
+    payload = terminal.get("payload", {})
+    return {"ok": value.get("ok"), "kind": value.get("kind"), "runId": value.get("runId"), "status": value.get("status"), "sessionId": value.get("sessionId"), "turnId": value.get("turnId"), "finalAnswer": str(payload.get("finalAnswer") or "")[:12000], "error": payload.get("error"), "category": payload.get("category"), "recovery": payload.get("recovery"), "artifacts": [event.get("payload", {}) for event in events if event.get("type") == "artifact.created"][:20], "errors": [event.get("payload", {}) for event in events if event.get("type") in {"tool.error", "run.failed"}][:20], "eventCount": len(events)}
+
 
 def main(argv=None) -> int:
     parser = argparse.ArgumentParser(prog="finagent-client")
@@ -122,8 +128,9 @@ def main(argv=None) -> int:
     stream = commands.add_parser("stream"); stream.add_argument("run_id"); stream.add_argument("--after", type=int, default=0); stream.add_argument("--compact", action="store_true")
     sync = commands.add_parser("run-sync"); sync.add_argument("--request", required=True); sync.add_argument("--compact", action="store_true")
     operation = commands.add_parser("operation"); operation.add_argument("category", choices=("data", "analysis", "strategy", "execution")); operation.add_argument("operation"); operation.add_argument("--arguments", default="{}"); operation.add_argument("--session-mode", choices=("new", "resume", "preload", "ephemeral", "attached"), default="new"); operation.add_argument("--session-id"); operation.add_argument("--ui-runtime", choices=("visible", "headless", "mirror"), default="headless")
-    for name in ("state", "pending", "result"):
+    for name in ("state", "pending"):
         command = commands.add_parser(name); command.add_argument("run_id")
+    result = commands.add_parser("result"); result.add_argument("run_id"); result.add_argument("--compact", action="store_true")
     wait = commands.add_parser("wait"); wait.add_argument("run_id"); wait.add_argument("--after", type=int, default=0); wait.add_argument("--wait-ms", type=int, default=DEFAULT_WAIT_MS)
     messages = commands.add_parser("messages"); messages.add_argument("run_id"); messages.add_argument("--after", type=int, default=0)
     events = commands.add_parser("events"); events.add_argument("run_id"); events.add_argument("--after", type=int, default=0)
@@ -137,6 +144,7 @@ def main(argv=None) -> int:
     artifact = commands.add_parser("artifact"); artifact.add_argument("artifact_id")
     paper_state = commands.add_parser("paper-state"); paper_state.add_argument("--market", choices=("cn", "us", "hk"), default="cn")
     receipt = commands.add_parser("execution-receipt"); receipt.add_argument("idempotency_key"); receipt.add_argument("--market", choices=("cn", "us", "hk"), default="cn")
+    arm_failure = commands.add_parser("arm-failure"); arm_failure.add_argument("--mode", default="next-llm-call")
     args = parser.parse_args(argv); client = Client(args.endpoint, args.timeout)
     if args.command == "health": emit(client.request("GET", "/health"))
     elif args.command == "discover": emit(client.probe())
@@ -151,7 +159,9 @@ def main(argv=None) -> int:
         emit({"type": "run.admitted", "runId": run_id, "admission": admitted})
         emit_stream(until_terminal(client.stream(run_id, 0)), args.compact)
         emit(client.request("GET", run_path(run_id, "result")))
-    elif args.command in {"state", "pending", "result"}: emit(client.request("GET", run_path(args.run_id, args.command)))
+    elif args.command in {"state", "pending"}: emit(client.request("GET", run_path(args.run_id, args.command)))
+    elif args.command == "result":
+        value = client.request("GET", run_path(args.run_id, "result")); emit(compact_result(value) if args.compact else value)
     elif args.command == "events": emit(client.request("GET", run_path(args.run_id, f"events?after={args.after}")))
     elif args.command == "wait": emit(client.request("GET", run_path(args.run_id, f"wait?after={args.after}&timeoutMs={max(1, min(args.wait_ms, 30_000))}")))
     elif args.command == "messages": emit(client.request("GET", run_path(args.run_id, f"messages?after={args.after}")))
@@ -165,6 +175,7 @@ def main(argv=None) -> int:
     elif args.command == "artifact": emit(client.request("GET", f"/artifacts/{urllib.parse.quote(args.artifact_id, safe='')}"))
     elif args.command == "paper-state": emit(client.request("GET", f"/execution/paper/state?market={args.market}"))
     elif args.command == "execution-receipt": emit(client.request("GET", f"/execution/receipts/{urllib.parse.quote(args.idempotency_key, safe='')}?market={args.market}"))
+    elif args.command == "arm-failure": emit(client.request("POST", "/test/run-service/failure", {"mode": args.mode}))
     return 0
 
 
