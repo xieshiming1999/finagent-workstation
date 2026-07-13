@@ -10,6 +10,8 @@ export default defineConfig({
         input: {
           index: resolve(__dirname, 'src/main/index.ts'),
           'run-service-cli': resolve(__dirname, 'src/main/run-service-cli.ts'),
+          'run-service-mcp-adapter': resolve(__dirname, 'src/main/run-service-mcp-adapter.ts'),
+          'run-service-harness': resolve(__dirname, 'src/main/run-service-harness.ts'),
         },
       },
     },

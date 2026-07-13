@@ -4,7 +4,9 @@
   "description": "FinAgent Desktop — AI-powered finance workstation",
   "main": "out/main/index.js",
   "bin": {
-    "finagent-workstation": "out/main/run-service-cli.js"
+    "finagent-workstation": "out/main/run-service-cli.js",
+    "finagent-run-service-mcp": "out/main/run-service-mcp-adapter.js",
+    "finagent-run-service-harness": "out/main/run-service-harness.js"
   },
   "type": "module",
   "scripts": {
@@ -31,6 +33,8 @@
     "report:finance-api": "node scripts/generate_finance_api_report.cjs",
     "workflow:scenario": "node scripts/run_workflow_scenario_sequence.mjs",
     "run-service": "node out/main/run-service-cli.js",
+    "run-service:mcp": "node out/main/run-service-mcp-adapter.js",
+    "run-service:harness": "node out/main/run-service-harness.js",
     "test:watch": "vitest",
     "migrate:project-data": "node scripts/migrate_project_data_by_cwd.cjs",
     "test:e2e": "npx electron-vite build && playwright test"

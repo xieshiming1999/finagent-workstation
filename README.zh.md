@@ -42,6 +42,54 @@ pnpm install --frozen-lockfile
 pnpm dev
 ```
 
+## Run Service
+
+构建服务客户端并启动由应用持有的本地回环服务：
+
+```bash
+pnpm build
+node out/main/run-service-cli.js service start --port 39173
+```
+
+一次性命令和长驻 JSONL 客户端使用同一套 HTTP run contract：
+
+```bash
+node out/main/run-service-cli.js run "创建市场看板" \
+  --endpoint http://127.0.0.1:39173 --session new \
+  --ui-runtime headless --jsonl
+
+node out/main/run-service-cli.js serve --stdio \
+  --endpoint http://127.0.0.1:39173
+```
+
+MCP 风格的 stdio adapter 暴露 `finagent.workflow.*`、
+`finagent.session.*`、`finagent.artifact.*` 和
+`finagent.capability.help`。本地 MCP 客户端可配置为：
+
+```json
+{
+  "command": "node",
+  "args": ["/absolute/path/to/finagent-workstation/out/main/run-service-mcp-adapter.js"],
+  "env": {
+    "FINAGENT_RUN_SERVICE_ENDPOINT": "http://127.0.0.1:39173"
+  }
+}
+```
+
+外部 harness 可以启动新 run，也可以审计已有 run，并根据 typed events、
+tool trace、artifact 和 provenance 输出单条有界 JSON verdict：
+
+```bash
+node out/main/run-service-harness.js \
+  --endpoint http://127.0.0.1:39173 \
+  --prompt "创建并验证一个看板" \
+  --ui-runtime headless --require-tool Dashboard \
+  --require-tool WebView --require-artifact dashboard
+```
+
+除非一次性 CLI 使用 `--ensure-service`，否则服务必须先运行。Adapter 和
+harness 的 stdout 只输出结构化协议消息，诊断信息写入 stderr。
+
 ## 演示
 
 工作站把 chat-driven 金融 workflow、dashboard panel、本地数据读回、provider

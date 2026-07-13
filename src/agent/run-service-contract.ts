@@ -180,6 +180,7 @@ export function runServiceAdapterDescriptor(input: {
     operationDescriptor("finagent.session.current", "GET /sessions/current", "Inspect the active session evidence."),
     operationDescriptor("finagent.session.list", "GET /sessions", "List current and archived sessions without switching context."),
     operationDescriptor("finagent.session.create", "POST /sessions", "Archive the current session and create a fresh active session."),
+    operationDescriptor("finagent.session.resume", "POST /runs", "Start a run by resuming an explicit durable session id."),
     operationDescriptor("finagent.artifact.list", "GET /artifacts", "List workflow artifacts available to external callers."),
     operationDescriptor("finagent.artifact.get", "GET /artifacts/{artifactId}", "Fetch a workflow artifact by id."),
     operationDescriptor("finagent.capability.help", "GET /runs/capabilities", "Inspect the run-service contract and supported routes."),
@@ -193,7 +194,7 @@ export function runServiceAdapterDescriptor(input: {
     transports: capability.transports,
     operations,
     notes: [
-      "Adapter operations are a stable local bridge for code agents; they map to the run-service HTTP/stdio contract.",
+      "The packaged finagent-run-service-mcp stdio executable maps these operations to the run-service HTTP contract.",
       "Callers must handle AskUserQuestion and permission replies explicitly; no hidden answer selection is provided.",
     ],
   };

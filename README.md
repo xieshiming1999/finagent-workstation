@@ -42,6 +42,55 @@ Run the app:
 pnpm dev
 ```
 
+## Run Service
+
+Build the service clients and start the app-owned loopback service:
+
+```bash
+pnpm build
+node out/main/run-service-cli.js service start --port 39173
+```
+
+One-shot and long-lived JSONL clients use the same HTTP run contract:
+
+```bash
+node out/main/run-service-cli.js run "Create a market dashboard" \
+  --endpoint http://127.0.0.1:39173 --session new \
+  --ui-runtime headless --jsonl
+
+node out/main/run-service-cli.js serve --stdio \
+  --endpoint http://127.0.0.1:39173
+```
+
+The MCP-style stdio adapter exposes `finagent.workflow.*`,
+`finagent.session.*`, `finagent.artifact.*`, and
+`finagent.capability.help` operations. Configure a local MCP client with:
+
+```json
+{
+  "command": "node",
+  "args": ["/absolute/path/to/finagent-workstation/out/main/run-service-mcp-adapter.js"],
+  "env": {
+    "FINAGENT_RUN_SERVICE_ENDPOINT": "http://127.0.0.1:39173"
+  }
+}
+```
+
+The external harness starts a run or audits an existing run and emits one
+bounded JSON verdict from typed events, tool trace, artifacts, and provenance:
+
+```bash
+node out/main/run-service-harness.js \
+  --endpoint http://127.0.0.1:39173 \
+  --prompt "Create and verify a dashboard" \
+  --ui-runtime headless --require-tool Dashboard \
+  --require-tool WebView --require-artifact dashboard
+```
+
+The service must already be running unless the one-shot CLI is invoked with
+`--ensure-service`. Adapter and harness stdout is structured protocol output;
+diagnostics go to stderr.
+
 ## Demonstration
 
 The workstation combines chat-driven finance workflows, dashboard panels, local
