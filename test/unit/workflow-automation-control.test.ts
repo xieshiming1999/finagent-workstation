@@ -483,6 +483,12 @@ describe("WorkflowAutomationControl", () => {
         }),
       ],
     });
+    expect(() =>
+      control.pendingRequestId(runId, "interaction", "stale-question"),
+    ).toThrow("RUN_SERVICE_PENDING_REQUEST_MISMATCH");
+    expect(control.pendingRequestId(runId, "interaction", "ask-live")).toBe(
+      "ask-live",
+    );
     await control.answerUserQuestion("yes");
     const result = await runPromise;
     expect(result.status).toBe("completed");
@@ -545,6 +551,12 @@ describe("WorkflowAutomationControl", () => {
         }),
       ],
     });
+    expect(() =>
+      control.pendingRequestId(runId, "permission", "stale-permission"),
+    ).toThrow("RUN_SERVICE_PENDING_REQUEST_MISMATCH");
+    expect(
+      control.pendingRequestId(runId, "permission", "permission-live"),
+    ).toBe("permission-live");
     await control.resolvePermission({ approved: false, rejectReason: "test denial" });
     const result = await runPromise;
     expect(result.events.map((event) => event.type)).toEqual(
