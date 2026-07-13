@@ -250,6 +250,19 @@ async function handleStdioLine(
       input.stdout.write(`${JSON.stringify({ id, ok: true, result })}\n`);
       return;
     }
+    if (method === "artifact.list") {
+      const limit = Number(params.limit ?? 20);
+      const result = await input.getJson(`/artifacts?limit=${Number.isFinite(limit) ? limit : 20}`);
+      input.stdout.write(`${JSON.stringify({ id, ok: true, result })}\n`);
+      return;
+    }
+    if (method === "artifact.get") {
+      const artifactId = String(params.artifactId ?? params.id ?? "");
+      if (!artifactId) throw new Error("artifact.get requires params.artifactId");
+      const result = await input.getJson(`/artifacts/${encodeURIComponent(artifactId)}`);
+      input.stdout.write(`${JSON.stringify({ id, ok: true, result })}\n`);
+      return;
+    }
     if (method === "respond") {
       const runId = String(params.runId ?? "");
       const answer = String(params.answer ?? "");

@@ -133,6 +133,8 @@ export function runServiceCapabilityDescriptor(input: {
       "GET /sessions",
       "POST /sessions",
       "GET /sessions/current",
+      "GET /artifacts",
+      "GET /artifacts/{artifactId}",
     ],
     transports: {
       http: true,

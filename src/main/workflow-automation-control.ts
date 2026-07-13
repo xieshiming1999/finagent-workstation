@@ -904,6 +904,46 @@ export class WorkflowAutomationControl {
     return { ok: true, reportDir: dir, count: reports.length, reports };
   }
 
+  artifacts(limit = 20): Record<string, unknown> {
+    const reports = this.reports(limit) as {
+      ok: boolean;
+      reportDir?: string;
+      count?: number;
+      reports?: Array<Record<string, unknown>>;
+    };
+    return {
+      ok: reports.ok,
+      kind: "artifacts.list",
+      source: "workflow-reports",
+      artifactDir: reports.reportDir,
+      count: reports.count ?? 0,
+      artifacts: (reports.reports ?? []).map((report) => ({
+        ...report,
+        id: String(report.runId ?? report.name ?? "").replace(/\.json$/, ""),
+        artifactType: String(report.kind ?? "workflow-report"),
+      })),
+    };
+  }
+
+  artifact(id: string): Record<string, unknown> {
+    if (!this.enabled()) throw new Error("WORKFLOW_AUTOMATION_DISABLED");
+    const safeId = id.trim().replace(/[^A-Za-z0-9_.-]+/g, "");
+    if (!safeId) throw new Error("WORKFLOW_AUTOMATION_ARTIFACT_ID_REQUIRED");
+    const fileName = safeId.endsWith(".json") ? safeId : `${safeId}.json`;
+    const path = join(this.reportDir(), fileName);
+    if (!existsSync(path)) {
+      throw new Error(`WORKFLOW_AUTOMATION_ARTIFACT_NOT_FOUND: ${safeId}`);
+    }
+    const content = JSON.parse(readFileSync(path, "utf-8"));
+    return {
+      ok: true,
+      kind: "artifact",
+      id: fileName.replace(/\.json$/, ""),
+      path,
+      content,
+    };
+  }
+
   private currentSessionPath(): string {
     return join(this.deps.getBasePath(), "sessions", "current.jsonl");
   }
@@ -1255,6 +1295,16 @@ async function handleRequest(
     if (url.pathname === "/workflow/reports") {
       const limit = Number(url.searchParams.get("limit") ?? 20);
       writeJson(res, 200, control.reports(Number.isFinite(limit) ? limit : 20));
+      return;
+    }
+    if (url.pathname === "/artifacts") {
+      const limit = Number(url.searchParams.get("limit") ?? 20);
+      writeJson(res, 200, control.artifacts(Number.isFinite(limit) ? limit : 20));
+      return;
+    }
+    const artifactMatch = url.pathname.match(/^\/artifacts\/([^/]+)$/);
+    if (artifactMatch) {
+      writeJson(res, 200, control.artifact(decodeURIComponent(artifactMatch[1])));
       return;
     }
   }

@@ -1201,6 +1201,26 @@ describe("WorkflowAutomationControl", () => {
       ),
     ).toBe(true);
 
+    const artifacts = await getJson(server!.port, "/artifacts?limit=5");
+    expect(artifacts.status).toBe(200);
+    expect(artifacts.json).toMatchObject({
+      ok: true,
+      kind: "artifacts.list",
+      source: "workflow-reports",
+    });
+    expect(artifacts.json.artifacts.length).toBeGreaterThan(0);
+    const artifactId = artifacts.json.artifacts[0].id;
+    expect(artifactId).toBeTruthy();
+
+    const artifact = await getJson(server!.port, `/artifacts/${artifactId}`);
+    expect(artifact.status).toBe(200);
+    expect(artifact.json).toMatchObject({
+      ok: true,
+      kind: "artifact",
+      id: artifactId,
+    });
+    expect(artifact.json.content.runId).toBeTruthy();
+
     const capabilities = await getJson(server!.port, "/runs/capabilities");
     expect(capabilities.status).toBe(200);
     expect(capabilities.json).toMatchObject({
@@ -1216,6 +1236,8 @@ describe("WorkflowAutomationControl", () => {
     expect(capabilities.json.routes).toContain("POST /runs");
     expect(capabilities.json.routes).toContain("GET /sessions");
     expect(capabilities.json.routes).toContain("POST /sessions");
+    expect(capabilities.json.routes).toContain("GET /artifacts");
+    expect(capabilities.json.routes).toContain("GET /artifacts/{artifactId}");
     expect(capabilities.json.routes).toContain("POST /runs/{runId}/permissions");
     expect(capabilities.json.interaction).toMatchObject({
       permissionResponse: true,
