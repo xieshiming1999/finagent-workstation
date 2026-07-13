@@ -991,7 +991,7 @@ describe("WorkflowAutomationControl", () => {
     process.env.FINAGENT_WORKSTATION_WORKFLOW_AUTOMATION = "1";
     const { control } = makeControl(
       basePath,
-      new MockLLM([{ text: "served" }]),
+      new MockLLM([{ text: "served" }, { text: "served from run service" }]),
     );
     server = await startWorkflowAutomationServer(control);
 
@@ -1019,6 +1019,32 @@ describe("WorkflowAutomationControl", () => {
           message.role === "user" && message.content === "use the app path",
       ),
     ).toBe(true);
+
+    const run = await postJson(server!.port, "/runs", {
+      prompt: "use the run service path",
+      uiRuntime: "headless",
+      sessionMode: "new",
+    });
+    expect(run.status).toBe(200);
+    expect(run.json.status).toBe("completed");
+    expect(run.json.finalAnswer).toContain("served from run service");
+    expect(run.json.events.map((event: any) => event.type)).toContain(
+      "run.created",
+    );
+    const runId = run.json.runId;
+    const events = await getJson(server!.port, `/runs/${runId}/events?after=0`);
+    expect(events.status).toBe(200);
+    expect(events.json.count).toBeGreaterThan(0);
+    expect(events.json.events[0]).toMatchObject({
+      runId,
+      type: "run.created",
+    });
+    const result = await getJson(server!.port, `/runs/${runId}/result`);
+    expect(result.status).toBe(200);
+    expect(result.json).toMatchObject({
+      runId,
+      status: "completed",
+    });
 
     const idle = await getJson(server!.port, "/workflow/idle?timeoutMs=25");
     expect(idle.status).toBe(200);

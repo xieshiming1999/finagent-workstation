@@ -11,6 +11,11 @@ import { join } from "path";
 import type { Agent } from "../agent/agent";
 import type { AgentEvent } from "../agent/agent-event";
 import type { Message } from "../agent/message";
+import {
+  RunServiceController,
+  type RunServiceRunRequest,
+} from "../agent/run-service-controller";
+import type { RunServiceResultSnapshot } from "../agent/run-service-event-store";
 import { queueStatusEvent } from "../agent/agent-background";
 import {
   buildStrategyLibraryActionPrompt,
@@ -205,6 +210,10 @@ export interface WorkflowAutomationStrategyLibraryActionResult
 }
 
 export class WorkflowAutomationControl {
+  private readonly runService = new RunServiceController((request) =>
+    this.runServicePromptRunner(request),
+  );
+
   constructor(private readonly deps: WorkflowAutomationControlDeps) {}
 
   enabled(): boolean {
@@ -325,6 +334,68 @@ export class WorkflowAutomationControl {
     );
     result.reportPath = this.writeReport(result);
     return result;
+  }
+
+  async runServicePrompt(
+    request: RunServiceRunRequest,
+  ): Promise<RunServiceResultSnapshot> {
+    const result = await this.runService.runPrompt(request);
+    return result;
+  }
+
+  runServiceEvents(input: {
+    runId: string;
+    after?: number;
+  }): Record<string, unknown> {
+    const events = this.runService.eventStore.events(input);
+    return {
+      ok: true,
+      runId: input.runId,
+      after: input.after ?? 0,
+      count: events.length,
+      events,
+    };
+  }
+
+  runServiceResult(runId: string): RunServiceResultSnapshot {
+    return this.runService.eventStore.result(runId);
+  }
+
+  private async runServicePromptRunner(
+    request: Required<Pick<RunServiceRunRequest, "prompt">> & RunServiceRunRequest,
+  ) {
+    const run = await this.sendPrompt(request.prompt, {
+      timeoutMs: request.timeoutMs,
+      timeoutReason: "run-service",
+    });
+    return {
+      ok: run.ok,
+      finalAnswer: assistantReviewText(run),
+      sessionId: run.sessionId,
+      error: run.error,
+      toolCalls: run.messages.flatMap((message) =>
+        message.toolUses?.map((tool) => ({
+          id: tool.id,
+          tool: tool.name,
+          input: tool.input,
+        })) ?? [],
+      ),
+      toolResults: run.messages
+        .map((message) => message.toolResult)
+        .filter((result): result is NonNullable<typeof result> => Boolean(result))
+        .map((result) => ({
+          toolUseId: result.toolUseId,
+          isError: result.isError,
+          contentPreview: previewText(result.content),
+          imagePaths: result.imagePaths,
+        })),
+      uiArtifacts: run.uiArtifacts ?? [],
+      provenance: {
+        reportPath: run.reportPath,
+        sessionPath: run.sessionPath,
+        uiRuntime: request.uiRuntime ?? "visible",
+      },
+    };
   }
 
   private async collectRunEventsWithTimeout(
@@ -1030,6 +1101,28 @@ async function handleRequest(
   }
   if (req.method === "GET") {
     const url = new URL(req.url ?? "/", "http://127.0.0.1");
+    const runEventsMatch = url.pathname.match(/^\/runs\/([^/]+)\/events$/);
+    if (runEventsMatch) {
+      const after = Number(url.searchParams.get("after") ?? 0);
+      writeJson(
+        res,
+        200,
+        control.runServiceEvents({
+          runId: decodeURIComponent(runEventsMatch[1]),
+          after: Number.isFinite(after) ? after : 0,
+        }),
+      );
+      return;
+    }
+    const runResultMatch = url.pathname.match(/^\/runs\/([^/]+)\/result$/);
+    if (runResultMatch) {
+      writeJson(
+        res,
+        200,
+        control.runServiceResult(decodeURIComponent(runResultMatch[1])),
+      );
+      return;
+    }
     if (url.pathname === "/workflow/idle") {
       const timeoutMs = Number(url.searchParams.get("timeoutMs") ?? 5000);
       writeJson(
@@ -1060,6 +1153,44 @@ async function handleRequest(
             timeoutReason: "workflow-send",
           }),
         "workflow-send-client-disconnected",
+      ),
+    );
+    return;
+  }
+  if (req.method === "POST" && req.url === "/runs") {
+    const body = await readJsonBody(req);
+    const prompt = String(body.prompt ?? "").trim();
+    if (!prompt) {
+      writeJson(res, 400, { error: "prompt is required" });
+      return;
+    }
+    writeJson(
+      res,
+      200,
+      await runCancellableWorkflow(
+        control,
+        req,
+        res,
+        () =>
+          control.runServicePrompt({
+            prompt,
+            sessionMode:
+              body.sessionMode == null
+                ? undefined
+                : String(body.sessionMode) as RunServiceRunRequest["sessionMode"],
+            uiRuntime:
+              body.uiRuntime == null
+                ? undefined
+                : String(body.uiRuntime) as RunServiceRunRequest["uiRuntime"],
+            sessionId:
+              body.sessionId == null ? undefined : String(body.sessionId),
+            timeoutMs: asOptionalNumber(body.timeoutMs),
+            payload:
+              body.payload && typeof body.payload === "object" && !Array.isArray(body.payload)
+                ? body.payload as Record<string, unknown>
+                : undefined,
+          }),
+        "run-service-client-disconnected",
       ),
     );
     return;
@@ -1342,6 +1473,11 @@ function parseJsonObject(content: string): Record<string, unknown> | null {
   } catch {
     return null;
   }
+}
+
+function previewText(value: string, maxLength = 1000): string {
+  if (value.length <= maxLength) return value;
+  return `${value.slice(0, maxLength)}...`;
 }
 
 function evaluateScenario(
