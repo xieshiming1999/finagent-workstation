@@ -22,6 +22,7 @@ import {
 import type { RunServiceResultSnapshot } from "../agent/run-service-event-store";
 import { RunServiceEventStore } from "../agent/run-service-event-store";
 import { queueStatusEvent } from "../agent/agent-background";
+import { RunServiceAgentEventObserver } from "./run-service-agent-event-observer";
 import {
   buildStrategyLibraryActionPrompt,
   findStrategyLibraryItem,
@@ -280,6 +281,7 @@ export class WorkflowAutomationControl {
       autoAnswerUserQuestions?: string[];
       requireEnabled?: boolean;
       emitUserInput?: boolean;
+      emitServiceEvent?: RunServiceRunRequest["emitServiceEvent"];
     } = {},
   ): Promise<WorkflowAutomationRunResult> {
     if (options.requireEnabled !== false && !this.enabled()) {
@@ -320,6 +322,7 @@ export class WorkflowAutomationControl {
             disallowTools: options.disallowTools,
             allowPendingUserQuestion: options.allowPendingUserQuestion,
             autoAnswerUserQuestions: options.autoAnswerUserQuestions,
+            emitServiceEvent: options.emitServiceEvent,
           },
         );
       }
@@ -408,6 +411,30 @@ export class WorkflowAutomationControl {
     };
   }
 
+  pendingRequestId(
+    runId: string,
+    kind: "interaction" | "permission",
+    requestedId?: string,
+  ): string | undefined {
+    const pending = this.runService.eventStore.pending(runId);
+    const events = kind === "interaction"
+      ? pending.pendingInteractions
+      : pending.pendingPermissions;
+    const ids = events
+      .map((event) => String(event.payload?.requestId ?? event.payload?.id ?? "").trim())
+      .filter(Boolean);
+    const requested = String(requestedId ?? "").trim();
+    if (requested && !ids.includes(requested)) {
+      throw new Error(`RUN_SERVICE_PENDING_REQUEST_MISMATCH: ${requested} is not pending for run ${runId}`);
+    }
+    if (requested) return requested;
+    if (ids.length === 0) return undefined;
+    if (ids.length !== 1) {
+      throw new Error(`RUN_SERVICE_PENDING_REQUEST_REQUIRED: run ${runId} has ${ids.length} pending ${kind} requests`);
+    }
+    return ids[0];
+  }
+
   supportsUiRuntime(mode: "visible" | "headless" | "mirror"): boolean {
     return this.uiRuntimeCoordinator.supports(mode);
   }
@@ -441,6 +468,7 @@ export class WorkflowAutomationControl {
         timeoutReason: "run-service",
         requireEnabled: request.payload?.entryMode !== "frontend",
         emitUserInput: request.payload?.entryMode !== "frontend",
+        emitServiceEvent: request.emitServiceEvent,
       });
       return {
         ok: run.ok,
@@ -519,6 +547,7 @@ export class WorkflowAutomationControl {
       disallowTools?: string[];
       allowPendingUserQuestion?: boolean;
       autoAnswerUserQuestions?: string[];
+      emitServiceEvent?: RunServiceRunRequest["emitServiceEvent"];
     } = {},
   ): Promise<void> {
     const boundedTimeout = normalizeWorkflowTimeoutMs(timeoutMs);
@@ -533,6 +562,9 @@ export class WorkflowAutomationControl {
     let timedOut = false;
     let limitError: string | null = null;
     let timer: NodeJS.Timeout | undefined;
+    const serviceEvents = new RunServiceAgentEventObserver(
+      limits.emitServiceEvent,
+    );
     if (boundedTimeout > 0) {
       timer = setTimeout(() => {
         timedOut = true;
@@ -545,6 +577,7 @@ export class WorkflowAutomationControl {
       })) {
         events.push(event);
         this.deps.emitAgentEvent?.(event);
+        serviceEvents.observe(event);
         if (event.type === "tool-use-start") {
           const toolName = toolNameFromEvent(event);
           toolCalls += 1;
@@ -1523,11 +1556,18 @@ async function handleRequest(
     const runResponseMatch = url.pathname.match(/^\/runs\/([^/]+)\/responses$/);
     if (req.method === "POST" && runResponseMatch) {
       const body = await readJsonBody(req);
+      const runId = decodeURIComponent(runResponseMatch[1]);
+      const requestId = control.pendingRequestId(
+        runId,
+        "interaction",
+        body.requestId == null ? undefined : String(body.requestId),
+      );
       writeJson(
         res,
         200,
         {
-          runId: decodeURIComponent(runResponseMatch[1]),
+          runId,
+          ...(requestId ? { requestId } : {}),
           kind: "interaction.response",
           ...(await control.answerUserQuestion(String(body.answer ?? ""), {
             timeoutMs: asOptionalNumber(body.timeoutMs),
@@ -1542,11 +1582,18 @@ async function handleRequest(
     const runPermissionMatch = url.pathname.match(/^\/runs\/([^/]+)\/permissions$/);
     if (req.method === "POST" && runPermissionMatch) {
       const body = await readJsonBody(req);
+      const runId = decodeURIComponent(runPermissionMatch[1]);
+      const requestId = control.pendingRequestId(
+        runId,
+        "permission",
+        body.requestId == null ? undefined : String(body.requestId),
+      );
       writeJson(
         res,
         200,
         {
-          runId: decodeURIComponent(runPermissionMatch[1]),
+          runId,
+          ...(requestId ? { requestId } : {}),
           kind: "permission.response",
           ...(await control.resolvePermission({
             approved: body.approved === true,

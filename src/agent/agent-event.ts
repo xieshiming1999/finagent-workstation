@@ -5,9 +5,9 @@ export type AgentEvent =
   | { type: 'thinking'; text: string }
   | { type: 'tool-call-streaming'; name: string }
   | { type: 'tool-call-delta'; name?: string; chars: number }
-  | { type: 'tool-use-start'; name: string; input: Record<string, unknown> }
+  | { type: 'tool-use-start'; id: string; name: string; input: Record<string, unknown> }
   | { type: 'tool-progress'; name: string; output: string; elapsedMs: number }
-  | { type: 'tool-result'; name: string; result: string; isError: boolean; durationMs: number }
+  | { type: 'tool-result'; id?: string; name: string; result: string; isError: boolean; durationMs: number }
   | { type: 'usage'; promptTokens: number; completionTokens: number; contextWindow?: number }
   | { type: 'turn-complete'; durationMs: number; toolCallCount: number }
   | { type: 'compacted'; preCount: number; postCount: number }

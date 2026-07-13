@@ -116,6 +116,10 @@ class NamedTool implements Tool {
   }
 }
 
+class PermissionTool extends NamedTool {
+  override isReadOnly = false;
+}
+
 class DelayedNamedTool extends NamedTool {
   async call(
     _id: string,
@@ -430,6 +434,124 @@ describe("WorkflowAutomationControl", () => {
 
     expect(result.ok, JSON.stringify(result, null, 2)).toBe(true);
     expect(observedAnswer).toBe(structuredAnswer);
+  });
+
+  it("exposes live AskUserQuestion state through the run service", async () => {
+    const askUserQuestionTool = new AskUserQuestionTool();
+    const { control } = makeControl(
+      basePath,
+      new MockLLM([
+        {
+          toolCalls: [{
+            id: "ask-live",
+            name: "AskUserQuestion",
+            arguments: { question: "Continue?", options: ["yes", "no"] },
+          }],
+        },
+        { text: "continued" },
+      ]),
+      [askUserQuestionTool],
+      async () => [],
+      undefined,
+      undefined,
+      (answer) => askUserQuestionTool.respondToQuestion(answer),
+    );
+
+    const runPromise = control.runServicePrompt({
+      prompt: "ask live",
+      sessionMode: "attached",
+      uiRuntime: "visible",
+      payload: { entryMode: "frontend" },
+    });
+    let runId = "";
+    for (let attempt = 0; attempt < 100; attempt++) {
+      const runs = control.runServiceRuns(1) as { runs: Array<{ runId: string }> };
+      runId = runs.runs[0]?.runId ?? "";
+      if (runId && control.runServicePending(runId).pendingCount === 1) break;
+      await new Promise((resolve) => setTimeout(resolve, 5));
+    }
+
+    expect(runId).not.toBe("");
+    expect(control.runServicePending(runId)).toMatchObject({
+      status: "waiting",
+      pendingCount: 1,
+      pendingInteractions: [
+        expect.objectContaining({
+          type: "interaction.required",
+          payload: expect.objectContaining({ requestId: "ask-live" }),
+        }),
+      ],
+    });
+    await control.answerUserQuestion("yes");
+    const result = await runPromise;
+    expect(result.status).toBe("completed");
+    expect(result.events.map((event) => event.type)).toEqual(
+      expect.arrayContaining(["interaction.required", "interaction.resolved"]),
+    );
+    expect(control.runServicePending(runId).pendingCount).toBe(0);
+  });
+
+  it("exposes and resolves live permission state through the run service", async () => {
+    process.env.FINAGENT_WORKSTATION_WORKFLOW_AUTOMATION = "1";
+    const registry = new ToolRegistry();
+    registry.register(new PermissionTool("RiskyWrite"));
+    const agent = new Agent({
+      llm: new MockLLM([
+        {
+          toolCalls: [{
+            id: "permission-live",
+            name: "RiskyWrite",
+            arguments: { value: "test" },
+          }],
+        },
+        { text: "permission handled" },
+      ]),
+      tools: registry,
+      basePath,
+      skipPermissions: false,
+    });
+    const control = new WorkflowAutomationControl({
+      getAgent: () => agent,
+      getBasePath: () => basePath,
+      resolvePermission: (decision) => {
+        agent.resolvePermission(decision);
+      },
+    });
+
+    const runPromise = control.runServicePrompt({
+      prompt: "permission live",
+      sessionMode: "attached",
+      uiRuntime: "visible",
+    });
+    let runId = "";
+    for (let attempt = 0; attempt < 100; attempt++) {
+      const runs = control.runServiceRuns(1) as { runs: Array<{ runId: string }> };
+      runId = runs.runs[0]?.runId ?? "";
+      if (runId && control.runServicePending(runId).pendingCount === 1) break;
+      await new Promise((resolve) => setTimeout(resolve, 5));
+    }
+
+    expect(control.runServicePending(runId)).toMatchObject({
+      status: "waiting",
+      pendingCount: 1,
+      pendingPermissions: [
+        expect.objectContaining({
+          type: "permission.required",
+          payload: expect.objectContaining({ requestId: "permission-live" }),
+        }),
+      ],
+    });
+    await control.resolvePermission({ approved: false, rejectReason: "test denial" });
+    const result = await runPromise;
+    expect(result.events.map((event) => event.type)).toEqual(
+      expect.arrayContaining(["permission.required", "permission.resolved"]),
+    );
+    expect(control.runServicePending(runId).pendingCount).toBe(0);
+    const resolved = result.events.find((event) => event.type === "permission.resolved");
+    expect(resolved?.payload).toMatchObject({
+      requestId: "permission-live",
+      approved: false,
+    });
   });
 
   it("selects AskUserQuestion answers only by structured answer, exact label, or index", () => {

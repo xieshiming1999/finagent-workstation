@@ -51,15 +51,16 @@ export async function* executeToolCalls(args: ExecuteToolCallsArgs): AsyncGenera
     if (i > batchStart) {
       const batch = toolCalls.slice(batchStart, i)
       for (const tc of batch) {
-        yield { type: 'tool-use-start', name: tc.name, input: tc.input }
+        yield { type: 'tool-use-start', id: tc.id, name: tc.name, input: tc.input }
       }
       const start = Date.now()
       const results = await Promise.all(batch.map(async (tc) => executeToolCall(tc, tools.get(tc.name)!, ctx)))
       const durationMs = Date.now() - start
 
-      for (const result of results) {
+      for (const [index, result] of results.entries()) {
         yield {
           type: 'tool-result',
+          id: batch[index]?.id,
           name: result.name,
           result: result.result,
           isError: result.isError,
@@ -76,7 +77,7 @@ export async function* executeToolCalls(args: ExecuteToolCallsArgs): AsyncGenera
     if (!tool) {
       const available = tools.list().map((t) => t.name).join(', ')
       pushAndPersist(toolMessage(tc.id, `Unknown tool "${tc.name}". Available tools: ${available}`, true))
-      yield { type: 'tool-result', name: tc.name, result: `Unknown tool. Available: ${available}`, isError: true, durationMs: 0 }
+      yield { type: 'tool-result', id: tc.id, name: tc.name, result: `Unknown tool. Available: ${available}`, isError: true, durationMs: 0 }
       continue
     }
 
@@ -84,7 +85,7 @@ export async function* executeToolCalls(args: ExecuteToolCallsArgs): AsyncGenera
     if (permission === 'deny') {
       const content = `Tool use was rejected by permission rule: ${tc.name}`
       pushAndPersist(toolMessage(tc.id, content, true))
-      yield { type: 'tool-result', name: tc.name, result: content, isError: true, durationMs: 0 }
+      yield { type: 'tool-result', id: tc.id, name: tc.name, result: content, isError: true, durationMs: 0 }
       break
     }
 
@@ -110,7 +111,7 @@ export async function* executeToolCalls(args: ExecuteToolCallsArgs): AsyncGenera
         const reason = confirmResult.rejectReason
         const content = reason ? `Tool use was rejected by the user. Feedback: ${reason}` : 'Tool use was rejected by the user.'
         pushAndPersist(toolMessage(tc.id, content, true))
-        yield { type: 'tool-result', name: tc.name, result: content, isError: true, durationMs: 0 }
+        yield { type: 'tool-result', id: tc.id, name: tc.name, result: content, isError: true, durationMs: 0 }
         break
       }
       if (confirmResult.alwaysAllow) {
@@ -118,8 +119,8 @@ export async function* executeToolCalls(args: ExecuteToolCallsArgs): AsyncGenera
       }
     }
 
-    yield { type: 'tool-use-start', name: tc.name, input: tc.input }
+    yield { type: 'tool-use-start', id: tc.id, name: tc.name, input: tc.input }
     const result = await executeToolCall(tc, tool, ctx)
-    yield { type: 'tool-result', name: result.name, result: result.result, isError: result.isError, durationMs: result.durationMs }
+    yield { type: 'tool-result', id: tc.id, name: result.name, result: result.result, isError: result.isError, durationMs: result.durationMs }
   }
 }

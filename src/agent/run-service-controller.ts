@@ -1,4 +1,5 @@
 import {
+  type RunServiceEventType,
   type RunServiceSessionMode,
   type RunServiceUiRuntimeMode,
 } from "./run-service-contract";
@@ -14,6 +15,11 @@ export interface RunServiceRunRequest {
   sessionId?: string;
   timeoutMs?: number;
   payload?: Record<string, unknown>;
+  serviceRunId?: string;
+  emitServiceEvent?: (
+    type: RunServiceEventType,
+    payload?: Record<string, unknown>,
+  ) => void;
 }
 
 export interface RunServicePromptRunResult {
@@ -61,6 +67,18 @@ export class RunServiceController {
       prompt,
       sessionMode: request.sessionMode ?? "new",
       uiRuntime: request.uiRuntime ?? "visible",
+      serviceRunId: runId,
+      emitServiceEvent: (
+        type: RunServiceEventType,
+        payload: Record<string, unknown> = {},
+      ) => {
+        this.eventStore.append({
+          runId,
+          type,
+          sessionId: request.sessionId,
+          payload,
+        });
+      },
     };
     this.eventStore.append({
       runId,

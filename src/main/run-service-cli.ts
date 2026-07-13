@@ -340,6 +340,7 @@ async function handleStdioLine(
       if (!answer.trim()) throw new Error("respond requires params.answer");
       const result = await input.postJson(`/runs/${encodeURIComponent(runId)}/responses`, {
         answer,
+        ...(params.requestId != null ? { requestId: String(params.requestId) } : {}),
         ...(Number.isFinite(Number(params.timeoutMs))
           ? { timeoutMs: Number(params.timeoutMs) }
           : {}),
@@ -352,6 +353,7 @@ async function handleStdioLine(
       if (!runId) throw new Error("permission requires params.runId");
       const result = await input.postJson(`/runs/${encodeURIComponent(runId)}/permissions`, {
         approved: params.approved === true,
+        ...(params.requestId != null ? { requestId: String(params.requestId) } : {}),
         alwaysAllow: params.alwaysAllow === true,
         ...(params.rejectReason != null
           ? { rejectReason: String(params.rejectReason) }
