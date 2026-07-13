@@ -44,6 +44,13 @@ export async function runServiceCli(
     stderr.write(`${String(error)}\n`);
     return 2;
   }
+  if (plan.category === "capability") {
+    const result = await getJson("/runs/capabilities");
+    stdout.write(plan.jsonl
+      ? `${JSON.stringify({ type: "result", result })}\n`
+      : `${JSON.stringify(result, null, 2)}\n`);
+    return 0;
+  }
   const request = requestFromPlan(plan);
   const result = await postJson("/runs", request as unknown as Record<string, unknown>);
   if (plan.jsonl) {
@@ -143,6 +150,11 @@ async function handleStdioLine(
       const runId = String(params.runId ?? "");
       if (!runId) throw new Error("result requires params.runId");
       const result = await input.getJson(`/runs/${encodeURIComponent(runId)}/result`);
+      input.stdout.write(`${JSON.stringify({ id, ok: true, result })}\n`);
+      return;
+    }
+    if (method === "capability") {
+      const result = await input.getJson("/runs/capabilities");
       input.stdout.write(`${JSON.stringify({ id, ok: true, result })}\n`);
       return;
     }

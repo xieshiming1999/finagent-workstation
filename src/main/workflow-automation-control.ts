@@ -15,6 +15,7 @@ import {
   RunServiceController,
   type RunServiceRunRequest,
 } from "../agent/run-service-controller";
+import { runServiceCapabilityDescriptor } from "../agent/run-service-contract";
 import type { RunServiceResultSnapshot } from "../agent/run-service-event-store";
 import { queueStatusEvent } from "../agent/agent-background";
 import {
@@ -1085,6 +1086,22 @@ async function handleRequest(
 ): Promise<void> {
   if (req.method === "GET" && req.url === "/health") {
     writeJson(res, 200, control.health());
+    return;
+  }
+  if (req.method === "GET" && req.url === "/runs/capabilities") {
+    writeJson(
+      res,
+      200,
+      runServiceCapabilityDescriptor({
+        runtime: "workstation",
+        supportsCli: true,
+        supportsStdio: true,
+        notes: [
+          "CLI and stdio currently connect to an existing loopback HTTP host.",
+          "Permission-specific replies are not yet exposed through run-service routes.",
+        ],
+      }),
+    );
     return;
   }
   if (req.method === "GET" && req.url === "/workflow/session") {

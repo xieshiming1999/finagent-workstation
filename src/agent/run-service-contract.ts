@@ -37,7 +37,7 @@ export type RunServiceEventType =
   | "run.failed"
   | "run.cancelled";
 
-const commandCategories: RunServiceCommandCategory[] = [
+export const runServiceCommandCategories: RunServiceCommandCategory[] = [
   "run",
   "data",
   "analysis",
@@ -50,7 +50,7 @@ const commandCategories: RunServiceCommandCategory[] = [
   "capability",
 ];
 
-const sessionModes: RunServiceSessionMode[] = [
+export const runServiceSessionModes: RunServiceSessionMode[] = [
   "new",
   "resume",
   "preload",
@@ -58,7 +58,7 @@ const sessionModes: RunServiceSessionMode[] = [
   "attached",
 ];
 
-const uiRuntimeModes: RunServiceUiRuntimeMode[] = [
+export const runServiceUiRuntimeModes: RunServiceUiRuntimeMode[] = [
   "visible",
   "headless",
   "mirror",
@@ -98,6 +98,54 @@ export const runServiceCommandHelp =
   "Usage: finagent <run|data|analysis|strategy|execution|workflow|artifact|session|service|capability> [operation] [options]\n" +
   "Common options: --session <new|resume|preload|ephemeral|attached>, " +
   "--session-id <id>, --ui-runtime <visible|headless|mirror>, --jsonl";
+
+export function runServiceCapabilityDescriptor(input: {
+  runtime: "mobile" | "workstation";
+  transport?: string;
+  routes?: string[];
+  supportsCli?: boolean;
+  supportsStdio?: boolean;
+  supportsFrontendBridge?: boolean;
+  supportsHeadlessUi?: boolean;
+  notes?: string[];
+}): Record<string, unknown> {
+  return {
+    ok: true,
+    contract: "finagent.run-service.v1",
+    runtime: input.runtime,
+    transport: input.transport ?? "loopback-http",
+    commandHelp: runServiceCommandHelp,
+    categories: runServiceCommandCategories,
+    sessionModes: runServiceSessionModes,
+    uiRuntimeModes: runServiceUiRuntimeModes,
+    eventTypes: runServiceEventTypes,
+    routes: input.routes ?? [
+      "POST /runs",
+      "GET /runs/{runId}/events?after={sequence}",
+      "GET /runs/{runId}/result",
+      "POST /runs/{runId}/responses",
+      "POST /runs/{runId}/interrupt",
+      "GET /runs/capabilities",
+    ],
+    transports: {
+      http: true,
+      cli: input.supportsCli ?? false,
+      stdio: input.supportsStdio ?? false,
+      frontendBridge: input.supportsFrontendBridge ?? false,
+    },
+    uiRuntime: {
+      visible: true,
+      headless: input.supportsHeadlessUi ?? false,
+      mirror: false,
+    },
+    interaction: {
+      userQuestionResponse: true,
+      permissionResponse: false,
+      hiddenAutoAnswer: false,
+    },
+    notes: input.notes ?? [],
+  };
+}
 
 export function parseRunServiceCommand(args: string[]): RunServiceCommandPlan {
   if (args.length === 0 || args[0] === "help" || args[0] === "--help") {
@@ -171,26 +219,26 @@ export function parseRunServiceCommand(args: string[]): RunServiceCommandPlan {
 
 function parseCommandCategory(value: string): RunServiceCommandCategory {
   const normalized = value.trim().toLowerCase();
-  if (commandCategories.includes(normalized as RunServiceCommandCategory)) {
+  if (runServiceCommandCategories.includes(normalized as RunServiceCommandCategory)) {
     return normalized as RunServiceCommandCategory;
   }
-  throw new Error(`unsupported category ${value}; supported values: ${commandCategories.join(", ")}`);
+  throw new Error(`unsupported category ${value}; supported values: ${runServiceCommandCategories.join(", ")}`);
 }
 
 function parseSessionMode(value: string): RunServiceSessionMode {
   const normalized = value.trim().toLowerCase();
-  if (sessionModes.includes(normalized as RunServiceSessionMode)) {
+  if (runServiceSessionModes.includes(normalized as RunServiceSessionMode)) {
     return normalized as RunServiceSessionMode;
   }
-  throw new Error(`unsupported session mode ${value}; supported values: ${sessionModes.join(", ")}`);
+  throw new Error(`unsupported session mode ${value}; supported values: ${runServiceSessionModes.join(", ")}`);
 }
 
 function parseUiRuntimeMode(value: string): RunServiceUiRuntimeMode {
   const normalized = value.trim().toLowerCase();
-  if (uiRuntimeModes.includes(normalized as RunServiceUiRuntimeMode)) {
+  if (runServiceUiRuntimeModes.includes(normalized as RunServiceUiRuntimeMode)) {
     return normalized as RunServiceUiRuntimeMode;
   }
-  throw new Error(`unsupported UI runtime ${value}; supported values: ${uiRuntimeModes.join(", ")}`);
+  throw new Error(`unsupported UI runtime ${value}; supported values: ${runServiceUiRuntimeModes.join(", ")}`);
 }
 
 function takeValue(args: string[], index: number, flag: string): string {
@@ -199,4 +247,3 @@ function takeValue(args: string[], index: number, flag: string): string {
   }
   return args[index];
 }
-

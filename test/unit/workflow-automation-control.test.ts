@@ -1129,6 +1129,20 @@ describe("WorkflowAutomationControl", () => {
       ),
     ).toBe(true);
 
+    const capabilities = await getJson(server!.port, "/runs/capabilities");
+    expect(capabilities.status).toBe(200);
+    expect(capabilities.json).toMatchObject({
+      ok: true,
+      contract: "finagent.run-service.v1",
+      runtime: "workstation",
+      transports: {
+        http: true,
+        cli: true,
+        stdio: true,
+      },
+    });
+    expect(capabilities.json.routes).toContain("POST /runs");
+
     const cleared = await postJson(server!.port, "/workflow/clear_session", {});
     expect(cleared.status).toBe(200);
     expect(cleared.json).toMatchObject({

@@ -1,6 +1,7 @@
 import { describe, expect, it } from "vitest";
 import {
   parseRunServiceCommand,
+  runServiceCapabilityDescriptor,
   runServiceEventTypes,
 } from "../../src/agent/run-service-contract";
 
@@ -67,5 +68,29 @@ describe("run service contract", () => {
     expect(runServiceEventTypes).toContain("interaction.required");
     expect(runServiceEventTypes).toContain("ui.operation.completed");
   });
-});
 
+  it("describes service capabilities for discovery clients", () => {
+    const descriptor = runServiceCapabilityDescriptor({
+      runtime: "workstation",
+      supportsCli: true,
+      supportsStdio: true,
+    });
+    expect(descriptor).toMatchObject({
+      ok: true,
+      contract: "finagent.run-service.v1",
+      runtime: "workstation",
+      transports: {
+        http: true,
+        cli: true,
+        stdio: true,
+      },
+      interaction: {
+        userQuestionResponse: true,
+        permissionResponse: false,
+        hiddenAutoAnswer: false,
+      },
+    });
+    expect(descriptor.categories).toContain("strategy");
+    expect(descriptor.routes).toContain("GET /runs/capabilities");
+  });
+});
