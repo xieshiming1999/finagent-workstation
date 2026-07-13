@@ -10,8 +10,8 @@ the service is not on the documented default loopback port.
 
 1. Run `python3 scripts/finagent_client.py capabilities` before selecting an
    operation. Check `externalFinance.operations[].availability` and readiness.
-2. Prefer `start`, then `stream`. Store the last `sequence`; reconnect with
-   `stream RUN_ID --after SEQUENCE` or inspect `events` without transcript
+2. Prefer `start`, then `stream --compact`. Store the last `sequence`; reconnect with
+   `stream RUN_ID --after SEQUENCE --compact` or inspect `events` without transcript
    scraping. Use `run-sync` only for compatibility.
 3. On `interaction.required` or `permission.required`, inspect `pending` and
    surface the exact request to the caller. Submit only caller-selected values

@@ -6,6 +6,8 @@ from __future__ import annotations
 import argparse
 import json
 import os
+import pathlib
+import re
 import sys
 import urllib.error
 import urllib.parse
@@ -60,7 +62,39 @@ class Client:
             raise ClientError(f"stream transport error for run {run_id}: {error}") from error
 
 
-def emit(value): print(json.dumps(value, ensure_ascii=False, separators=(",", ":")))
+def sanitize(value):
+    if isinstance(value, dict): return {key: sanitize(item) for key, item in value.items()}
+    if isinstance(value, list): return [sanitize(item) for item in value]
+    if isinstance(value, str):
+        if pathlib.PurePath(value).is_absolute(): return "<runtime-path>"
+        value = re.sub(r"/(?:Users|home|workspace)/[^\s\"']+", "<runtime-path>", value)
+    return value
+
+
+def emit(value): print(json.dumps(sanitize(value), ensure_ascii=False, separators=(",", ":")), flush=True)
+
+
+def emit_stream(events, compact=False):
+    assistant = []; first_sequence = None; last_sequence = None; run_id = None; turn_id = None
+    def flush_assistant():
+        nonlocal assistant, first_sequence, last_sequence
+        if assistant:
+            emit({"type": "assistant.message", "runId": run_id, "turnId": turn_id, "firstSequence": first_sequence, "lastSequence": last_sequence, "text": "".join(assistant)})
+            assistant = []; first_sequence = None; last_sequence = None
+    for envelope in events:
+        event = envelope.get("event", envelope)
+        if compact and event.get("type") == "assistant.delta":
+            run_id = event.get("runId", run_id); turn_id = event.get("turnId", turn_id)
+            first_sequence = event.get("sequence") if first_sequence is None else first_sequence; last_sequence = event.get("sequence", last_sequence)
+            assistant.append(str(event.get("payload", {}).get("text", ""))); continue
+        flush_assistant(); emit(envelope)
+    flush_assistant()
+
+
+def until_terminal(events):
+    for event in events:
+        yield event
+        if event.get("type") in TERMINAL_EVENTS or event.get("type") == "terminal": return
 
 
 def parse_json(value: str):
@@ -85,8 +119,8 @@ def main(argv=None) -> int:
     commands = parser.add_subparsers(dest="command", required=True)
     commands.add_parser("health"); commands.add_parser("discover"); commands.add_parser("capabilities")
     start = commands.add_parser("start"); start.add_argument("--request", required=True)
-    stream = commands.add_parser("stream"); stream.add_argument("run_id"); stream.add_argument("--after", type=int, default=0)
-    sync = commands.add_parser("run-sync"); sync.add_argument("--request", required=True)
+    stream = commands.add_parser("stream"); stream.add_argument("run_id"); stream.add_argument("--after", type=int, default=0); stream.add_argument("--compact", action="store_true")
+    sync = commands.add_parser("run-sync"); sync.add_argument("--request", required=True); sync.add_argument("--compact", action="store_true")
     operation = commands.add_parser("operation"); operation.add_argument("category", choices=("data", "analysis", "strategy", "execution")); operation.add_argument("operation"); operation.add_argument("--arguments", default="{}"); operation.add_argument("--session-mode", choices=("new", "resume", "preload", "ephemeral", "attached"), default="ephemeral"); operation.add_argument("--session-id"); operation.add_argument("--ui-runtime", choices=("visible", "headless", "mirror"), default="headless")
     for name in ("state", "pending", "result"):
         command = commands.add_parser(name); command.add_argument("run_id")
@@ -108,14 +142,12 @@ def main(argv=None) -> int:
     elif args.command == "start": emit(client.request("POST", "/runs/start", parse_json(args.request)))
     elif args.command == "operation": emit(client.request("POST", "/runs/start", typed_request(args)))
     elif args.command == "stream":
-        for event in client.stream(args.run_id, args.after): emit(event)
+        emit_stream(client.stream(args.run_id, args.after), args.compact)
     elif args.command == "run-sync":
         admitted = client.request("POST", "/runs/start", parse_json(args.request)); run_id = str(admitted.get("runId") or admitted.get("run", {}).get("runId") or "")
         if not run_id: raise ClientError("start response did not include runId")
-        emit({"type": "run.admitted", "runId": run_id, "admission": admitted}); after = 0
-        for event in client.stream(run_id, after):
-            emit(event); after = max(after, int(event.get("sequence", after)))
-            if event.get("type") in TERMINAL_EVENTS: break
+        emit({"type": "run.admitted", "runId": run_id, "admission": admitted})
+        emit_stream(until_terminal(client.stream(run_id, 0)), args.compact)
         emit(client.request("GET", run_path(run_id, "result")))
     elif args.command in {"state", "pending", "result"}: emit(client.request("GET", run_path(args.run_id, args.command)))
     elif args.command == "events": emit(client.request("GET", run_path(args.run_id, f"events?after={args.after}")))

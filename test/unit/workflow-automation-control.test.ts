@@ -28,6 +28,7 @@ import { WatchlistTool } from "../../src/agent/tools/watchlist";
 import { PortfolioTool } from "../../src/agent/tools/portfolio";
 import { AskUserQuestionTool } from "../../src/agent/tools/ask-user";
 import { ArtifactRegistryTool } from "../../src/agent/tools/artifact-registry";
+import { ArtifactRegistry } from "../../src/agent/artifact-registry";
 import { FinanceWorkflowStateTool } from "../../src/agent/tools/finance-workflow-state";
 import { RunbookTool } from "../../src/agent/tools/runbook";
 import { ToolCatalogTool } from "../../src/agent/tools/tool-catalog";
@@ -1498,15 +1499,26 @@ describe("WorkflowAutomationControl", () => {
       ),
     ).toBe(true);
 
-    const artifacts = await getJson(server!.port, "/artifacts?limit=5");
+    const registryPath = join(basePath, "memory", "artifacts", "analysis-test.json");
+    mkdirSync(join(basePath, "memory", "artifacts"), { recursive: true });
+    writeFileSync(registryPath, JSON.stringify({ contract: "analysis-evidence-v1", subject: "600519" }));
+    const registered = new ArtifactRegistry(basePath).register({
+      kind: "analysis",
+      path: "memory/artifacts/analysis-test.json",
+      title: "Analysis test",
+      source: "test",
+      verificationStatus: "verified",
+    });
+    const artifacts = await getJson(server!.port, "/artifacts?limit=20");
     expect(artifacts.status).toBe(200);
     expect(artifacts.json).toMatchObject({
       ok: true,
       kind: "artifacts.list",
-      source: "workflow-reports",
+      source: "artifact-registry+workflow-reports",
     });
     expect(artifacts.json.artifacts.length).toBeGreaterThan(0);
-    const artifactId = artifacts.json.artifacts[0].id;
+    const workflowArtifact = artifacts.json.artifacts.find((item: any) => item.sourceType === "workflow-report");
+    const artifactId = workflowArtifact.id;
     expect(artifactId).toBeTruthy();
 
     const artifact = await getJson(server!.port, `/artifacts/${artifactId}`);
@@ -1517,6 +1529,16 @@ describe("WorkflowAutomationControl", () => {
       id: artifactId,
     });
     expect(artifact.json.content.runId).toBeTruthy();
+    const registryArtifact = await getJson(
+      server!.port,
+      `/artifacts/${encodeURIComponent(registered.id)}`,
+    );
+    expect(registryArtifact.status).toBe(200);
+    expect(registryArtifact.json).toMatchObject({
+      ok: true,
+      id: registered.id,
+      content: { contract: "analysis-evidence-v1", subject: "600519" },
+    });
 
     const capabilities = await getJson(server!.port, "/runs/capabilities");
     expect(capabilities.status).toBe(200);

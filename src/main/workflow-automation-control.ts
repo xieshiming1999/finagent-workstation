@@ -8,10 +8,11 @@ import {
   statSync,
   writeFileSync,
 } from "fs";
-import { join } from "path";
+import { join, relative, resolve } from "path";
 import type { Agent } from "../agent/agent";
 import type { AgentEvent } from "../agent/agent-event";
 import type { Message } from "../agent/message";
+import { ArtifactRegistry } from "../agent/artifact-registry";
 import { promptForExternalFinanceOperation } from "../agent/external-finance-contract";
 import {
   RunServiceController,
@@ -1096,22 +1097,48 @@ export class WorkflowAutomationControl {
       count?: number;
       reports?: Array<Record<string, unknown>>;
     };
+    const registry = new ArtifactRegistry(this.deps.getBasePath())
+      .list()
+      .slice(0, Math.max(1, Math.min(100, Math.floor(limit) || 20)))
+      .map((record) => ({
+        ...record,
+        artifactType: record.kind,
+        sourceType: "artifact-registry",
+      }));
+    const workflow = (reports.reports ?? []).map((report) => ({
+      ...report,
+      id: String(report.runId ?? report.name ?? "").replace(/\.json$/, ""),
+      artifactType: String(report.kind ?? "workflow-report"),
+      sourceType: "workflow-report",
+    }));
+    const artifacts = [...registry, ...workflow].slice(0, Math.max(1, Math.min(100, Math.floor(limit) || 20)));
     return {
       ok: reports.ok,
       kind: "artifacts.list",
-      source: "workflow-reports",
+      source: "artifact-registry+workflow-reports",
       artifactDir: reports.reportDir,
-      count: reports.count ?? 0,
-      artifacts: (reports.reports ?? []).map((report) => ({
-        ...report,
-        id: String(report.runId ?? report.name ?? "").replace(/\.json$/, ""),
-        artifactType: String(report.kind ?? "workflow-report"),
-      })),
+      count: artifacts.length,
+      artifacts,
     };
   }
 
   artifact(id: string): Record<string, unknown> {
     if (!this.enabled()) throw new Error("WORKFLOW_AUTOMATION_DISABLED");
+    const registryRecord = new ArtifactRegistry(this.deps.getBasePath())
+      .list()
+      .find((record) => record.id === id || record.stableRef === id);
+    if (registryRecord) {
+      const root = resolve(this.deps.getBasePath());
+      const path = resolve(root, registryRecord.path);
+      const relation = relative(root, path);
+      if (relation.startsWith("..") || resolve(path) === root || !existsSync(path)) {
+        throw new Error(`WORKFLOW_AUTOMATION_ARTIFACT_NOT_FOUND: ${id}`);
+      }
+      const raw = readFileSync(path, "utf-8");
+      let content: unknown = raw;
+      try { content = JSON.parse(raw); } catch { /* Text artifacts remain text. */ }
+      return { ok: true, kind: "artifact", id: registryRecord.id, record: registryRecord, content };
+    }
     const safeId = id.trim().replace(/[^A-Za-z0-9_.-]+/g, "");
     if (!safeId) throw new Error("WORKFLOW_AUTOMATION_ARTIFACT_ID_REQUIRED");
     const fileName = safeId.endsWith(".json") ? safeId : `${safeId}.json`;
