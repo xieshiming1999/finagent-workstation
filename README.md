@@ -44,14 +44,18 @@ pnpm dev
 
 ## Run Service
 
-Build the service clients and start the app-owned loopback service:
+Build the service clients and start a detached loopback service process:
 
 ```bash
 pnpm build
-node out/main/run-service-cli.js service start --port 39173
+node out/main/run-service-cli.js service start --port 39173 \
+  --ui-runtime headless
 ```
 
-One-shot and long-lived JSONL clients use the same HTTP run contract:
+Headless service mode initializes the production agent/tool graph without a
+bootstrap renderer window. `visible` and `mirror` modes retain a visible app
+surface. One-shot, frontend, HTTP, and long-lived JSONL clients use the same run
+contract:
 
 ```bash
 node out/main/run-service-cli.js run "Create a market dashboard" \
@@ -61,6 +65,17 @@ node out/main/run-service-cli.js run "Create a market dashboard" \
 node out/main/run-service-cli.js serve --stdio \
   --endpoint http://127.0.0.1:39173
 ```
+
+Stdio requests are correlated by `id` and may complete out of order. Keep the
+same stdin stream open when a run pauses: inspect `pending`, then send
+`respond` or `permission` with the exact `runId` and `requestId`. Typed
+`execution` commands always enforce tool permissions for that turn, even when
+normal chat is configured to skip permission prompts.
+
+Session modes `new`, `resume`, `preload`, and `attached` are implemented.
+`preload` forks context into a new durable session without appending to the
+source. `ephemeral` is rejected because isolated non-history persistence is not
+implemented; capability/help output reports this boundary.
 
 The MCP-style stdio adapter exposes `finagent.workflow.*`,
 `finagent.session.*`, `finagent.artifact.*`, and

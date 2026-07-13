@@ -61,6 +61,16 @@ Exit position -> Portfolio(sell) + Watchlist(exit) + MonitorDelete + post-trade 
 6. On confirm: execute via Portfolio/XueqiuTrade + set monitoring
 7. Learn: ai_record → ai_validate → strategy evolution
 
+## Service-Controlled Runs
+
+- `AskUserQuestion` and permission requests may be answered by the visible UI,
+  HTTP, stdio, or the external adapter. Wait for the matching structured reply;
+  never choose an option or approval implicitly.
+- For typed `execution` runs, permission enforcement is turn-scoped and remains
+  active even when ordinary chat is configured to skip permission prompts.
+- UI tools still execute in the selected visible, headless, or mirror runtime;
+  do not delegate WebView or screenshot work back to the service caller.
+
 ## Data Budget
 
 - Prefer WindMcp for Wind-covered financial data unless the system prompt includes an active Wind quota limitation for the current quota date.

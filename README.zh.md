@@ -44,14 +44,17 @@ pnpm dev
 
 ## Run Service
 
-构建服务客户端并启动由应用持有的本地回环服务：
+构建服务客户端并启动 detached 本地回环服务进程：
 
 ```bash
 pnpm build
-node out/main/run-service-cli.js service start --port 39173
+node out/main/run-service-cli.js service start --port 39173 \
+  --ui-runtime headless
 ```
 
-一次性命令和长驻 JSONL 客户端使用同一套 HTTP run contract：
+headless service mode 会初始化 production agent/tool graph，但不会创建
+bootstrap renderer window。`visible` 和 `mirror` mode 会保留可见应用界面。
+一次性命令、frontend、HTTP 和长驻 JSONL client 使用同一套 run contract：
 
 ```bash
 node out/main/run-service-cli.js run "创建市场看板" \
@@ -61,6 +64,16 @@ node out/main/run-service-cli.js run "创建市场看板" \
 node out/main/run-service-cli.js serve --stdio \
   --endpoint http://127.0.0.1:39173
 ```
+
+stdio request 通过 `id` 关联，允许乱序完成。run 暂停时应保持同一个 stdin
+stream，先检查 `pending`，再使用准确的 `runId` 和 `requestId` 发送
+`respond` 或 `permission`。typed `execution` command 在当前 turn 内始终要求
+tool permission，即使普通 chat 配置为跳过 permission prompt。
+
+已实现 `new`、`resume`、`preload` 和 `attached` session mode。`preload`
+会把上下文 fork 到新的 durable session，不会追加到 source session。
+`ephemeral` 会明确拒绝，因为 isolated non-history persistence 尚未实现；
+capability/help output 会说明此边界。
 
 MCP 风格的 stdio adapter 暴露 `finagent.workflow.*`、
 `finagent.session.*`、`finagent.artifact.*` 和
