@@ -1160,6 +1160,33 @@ describe("WorkflowAutomationControl", () => {
       rawSessionAvailable: true,
     });
 
+    const sessions = await getJson(server!.port, "/sessions");
+    expect(sessions.status).toBe(200);
+    expect(sessions.json).toMatchObject({
+      ok: true,
+      kind: "sessions.list",
+      currentSessionId: serviceSession.json.sessionId,
+    });
+    expect(sessions.json.count).toBeGreaterThan(0);
+    expect(sessions.json.sessions[0]).toMatchObject({
+      id: serviceSession.json.sessionId,
+      isCurrent: true,
+    });
+
+    const createdSession = await postJson(server!.port, "/sessions", {
+      reason: "contract-test",
+    });
+    expect(createdSession.status).toBe(200);
+    expect(createdSession.json).toMatchObject({
+      ok: true,
+      kind: "session.created",
+      agentReady: true,
+      reason: "contract-test",
+      messageCount: 0,
+    });
+    expect(createdSession.json.sessionId).toBeTruthy();
+    expect(createdSession.json.sessionId).not.toBe(serviceSession.json.sessionId);
+
     const reports = await getJson(server!.port, "/workflow/reports?limit=5");
     expect(reports.status).toBe(200);
     expect(reports.json.count).toBeGreaterThan(0);
@@ -1187,6 +1214,8 @@ describe("WorkflowAutomationControl", () => {
       },
     });
     expect(capabilities.json.routes).toContain("POST /runs");
+    expect(capabilities.json.routes).toContain("GET /sessions");
+    expect(capabilities.json.routes).toContain("POST /sessions");
     expect(capabilities.json.routes).toContain("POST /runs/{runId}/permissions");
     expect(capabilities.json.interaction).toMatchObject({
       permissionResponse: true,

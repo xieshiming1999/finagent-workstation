@@ -200,6 +200,7 @@ export interface WorkflowAutomationCancelResult {
 export interface WorkflowAutomationClearSessionResult {
   ok: boolean;
   agentReady: boolean;
+  reason?: string;
   sessionId?: string;
   sessionPath?: string;
   rawSessionAvailable?: boolean;
@@ -657,6 +658,39 @@ export class WorkflowAutomationControl {
     };
   }
 
+  async listSessions(): Promise<Record<string, unknown>> {
+    if (!this.enabled()) throw new Error("WORKFLOW_AUTOMATION_DISABLED");
+    const agent = this.deps.getAgent();
+    if (!agent) throw new Error("WORKFLOW_AUTOMATION_AGENT_MISSING");
+    const sessions = agent.listSessions().map((session) => ({
+      id: session.isCurrent === true ? agent.session.id : session.id,
+      name: session.name,
+      path: session.path,
+      ...(session.title ? { title: session.title } : {}),
+      ...(session.firstPrompt ? { firstPrompt: session.firstPrompt } : {}),
+      ...(session.createdAt ? { createdAt: session.createdAt } : {}),
+      isCurrent: session.isCurrent === true || session.id === agent.session.id,
+    }));
+    return {
+      ok: true,
+      kind: "sessions.list",
+      currentSessionId: agent.session.id,
+      count: sessions.length,
+      sessions,
+    };
+  }
+
+  async createSession(input: {
+    reason?: string;
+  } = {}): Promise<Record<string, unknown>> {
+    if (!this.enabled()) throw new Error("WORKFLOW_AUTOMATION_DISABLED");
+    const reason = input.reason?.trim() || "run-service";
+    return {
+      kind: "session.created",
+      ...(await this.clearSession({ reason })),
+    };
+  }
+
   async panelState(): Promise<Record<string, unknown>> {
     if (!this.enabled()) throw new Error("WORKFLOW_AUTOMATION_DISABLED");
     const panelState = await this.safePanelState();
@@ -747,7 +781,9 @@ export class WorkflowAutomationControl {
     };
   }
 
-  async clearSession(): Promise<WorkflowAutomationClearSessionResult> {
+  async clearSession(input: {
+    reason?: string;
+  } = {}): Promise<WorkflowAutomationClearSessionResult> {
     if (!this.enabled()) throw new Error("WORKFLOW_AUTOMATION_DISABLED");
     const agent = this.deps.getAgent();
     if (!agent) {
@@ -760,6 +796,7 @@ export class WorkflowAutomationControl {
     return {
       ok: true,
       agentReady: true,
+      reason: input.reason?.trim() || "workflow-automation",
       sessionId: agent.session.id,
       sessionPath: this.currentSessionPath(),
       rawSessionAvailable: existsSync(this.currentSessionPath()),
@@ -1156,6 +1193,21 @@ async function handleRequest(
         kind: "session.current",
         ...(await control.sessionEvidence()),
       },
+    );
+    return;
+  }
+  if (req.method === "GET" && req.url === "/sessions") {
+    writeJson(res, 200, await control.listSessions());
+    return;
+  }
+  if (req.method === "POST" && req.url === "/sessions") {
+    const body = await readJsonBody(req);
+    writeJson(
+      res,
+      200,
+      await control.createSession({
+        reason: body.reason == null ? undefined : String(body.reason),
+      }),
     );
     return;
   }

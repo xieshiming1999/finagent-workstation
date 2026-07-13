@@ -130,6 +130,8 @@ export function runServiceCapabilityDescriptor(input: {
         : []),
       "POST /runs/{runId}/interrupt",
       "GET /runs/capabilities",
+      "GET /sessions",
+      "POST /sessions",
       "GET /sessions/current",
     ],
     transports: {

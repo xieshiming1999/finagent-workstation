@@ -93,6 +93,8 @@ describe("run service contract", () => {
     });
     expect(descriptor.categories).toContain("strategy");
     expect(descriptor.routes).toContain("GET /runs/capabilities");
+    expect(descriptor.routes).toContain("GET /sessions");
+    expect(descriptor.routes).toContain("POST /sessions");
     expect(descriptor.routes).toContain("GET /sessions/current");
     expect(descriptor.routes).toContain("POST /runs/{runId}/permissions");
   });

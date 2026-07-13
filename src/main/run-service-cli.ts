@@ -163,6 +163,18 @@ async function handleStdioLine(
       input.stdout.write(`${JSON.stringify({ id, ok: true, result })}\n`);
       return;
     }
+    if (method === "session.list") {
+      const result = await input.getJson("/sessions");
+      input.stdout.write(`${JSON.stringify({ id, ok: true, result })}\n`);
+      return;
+    }
+    if (method === "session.create") {
+      const result = await input.postJson("/sessions", {
+        ...(params.reason != null ? { reason: String(params.reason) } : {}),
+      });
+      input.stdout.write(`${JSON.stringify({ id, ok: true, result })}\n`);
+      return;
+    }
     if (method === "respond") {
       const runId = String(params.runId ?? "");
       const answer = String(params.answer ?? "");
