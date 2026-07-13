@@ -175,6 +175,7 @@ function startServiceHost(input: {
       ...process.env,
       FINAGENT_WORKSTATION_WORKFLOW_AUTOMATION: "1",
       FINAGENT_WORKSTATION_WORKFLOW_AUTOMATION_PORT: String(input.port),
+      FINAGENT_WORKSTATION_SERVICE_MODE: "1",
       ...(input.plan.uiRuntime ? { FINAGENT_WORKSTATION_UI_RUNTIME: input.plan.uiRuntime } : {}),
     },
   });
@@ -187,7 +188,7 @@ function startServiceHost(input: {
     pid: child.pid ?? null,
     endpoint: `http://127.0.0.1:${input.port}`,
     uiRuntime: input.plan.uiRuntime,
-    note: "service start launches the workstation app with the run-service HTTP host enabled; poll service status before posting runs",
+    note: "service start launches a detached workstation service process; headless mode keeps the bootstrap renderer hidden while service-owned UI backends execute tools",
   };
 }
 

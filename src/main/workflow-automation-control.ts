@@ -1,4 +1,5 @@
 import { createServer, type IncomingMessage, type ServerResponse } from "http";
+import { BrowserWindow } from "electron";
 import {
   existsSync,
   readFileSync,
@@ -261,6 +262,8 @@ export class WorkflowAutomationControl {
       rawSocketProtocol: false,
       webSocketCommandProtocol: false,
       providerEndpointBypass: false,
+      serviceProcessMode: process.env.FINAGENT_WORKSTATION_SERVICE_MODE === "1",
+      bootstrapWindowVisible: (BrowserWindow?.getAllWindows?.() ?? []).some((window) => window.isVisible()),
       basePath: this.deps.getBasePath(),
     };
   }

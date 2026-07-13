@@ -143,6 +143,7 @@ describe("run service CLI", () => {
     });
     expect(spawned[0].env.FINAGENT_WORKSTATION_WORKFLOW_AUTOMATION).toBe("1");
     expect(spawned[0].env.FINAGENT_WORKSTATION_WORKFLOW_AUTOMATION_PORT).toBe("39222");
+    expect(spawned[0].env.FINAGENT_WORKSTATION_SERVICE_MODE).toBe("1");
     expect(JSON.parse(writes[0])).toMatchObject({
       type: "result",
       result: {

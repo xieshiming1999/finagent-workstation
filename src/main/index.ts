@@ -95,6 +95,8 @@ import { isActionableFeedTaskFailure } from '../agent/data/data-feed-failure-pol
 import { WorkflowAutomationControl, startWorkflowAutomationServer, type WorkflowAutomationServer } from './workflow-automation-control'
 
 let mainWindow: BrowserWindow | null = null
+const serviceProcessMode = process.env.FINAGENT_WORKSTATION_SERVICE_MODE === '1'
+const serviceUiRuntime = process.env.FINAGENT_WORKSTATION_UI_RUNTIME ?? 'visible'
 let agent: Agent | null = null
 let eventAgent: Agent | null = null
 let bridge: AgentBridge | null = null
@@ -889,15 +891,22 @@ app.whenReady().then(async () => {
     getGoalAutomation: () => goalAutomationService,
     getWorkflowControl: () => workflowControl,
   })
-  mainWindow = createWindow()
+  const showBootstrapWindow = !serviceProcessMode || serviceUiRuntime !== 'headless'
+  mainWindow = showBootstrapWindow ? createWindow() : null
+  if (!showBootstrapWindow && process.platform === 'darwin') {
+    app.dock?.hide()
+  }
 
   // Register this session for multi-instance detection
   registerSession(basePath)
   startAppServices(basePath, () => dataStoreInstance)
-  reOpenWindowIfNeeded(() => (mainWindow = createWindow()))
+  if (!serviceProcessMode) {
+    reOpenWindowIfNeeded(() => (mainWindow = createWindow()))
+  }
 })
 
 app.on('window-all-closed', () => {
+  if (serviceProcessMode) return
   if (goalAutomationTimer) {
     clearInterval(goalAutomationTimer)
     goalAutomationTimer = null
