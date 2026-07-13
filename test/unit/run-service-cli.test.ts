@@ -253,7 +253,7 @@ describe("run service CLI", () => {
       stderr: { write: () => true },
       postJson: async (path) => {
         postPaths.push(path);
-        if (path === "/runs") return waitingRun;
+        if (path === "/runs/start") return waitingRun;
         expect(path).toBe("/runs/run-fund/responses");
         finishRun({ runId: "run-fund", status: "completed" });
         return { runId: "run-fund", answered: true };
@@ -267,6 +267,6 @@ describe("run service CLI", () => {
       expect.objectContaining({ id: "answer", ok: true }),
       expect.objectContaining({ id: "run", ok: true, result: { runId: "run-fund", status: "completed" } }),
     ]));
-    expect(postPaths).toEqual(["/runs", "/runs/run-fund/responses"]);
+    expect(postPaths).toEqual(["/runs/start", "/runs/run-fund/responses"]);
   });
 });

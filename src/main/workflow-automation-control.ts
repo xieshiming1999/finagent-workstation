@@ -393,6 +393,17 @@ export class WorkflowAutomationControl {
     return result;
   }
 
+  startRunServicePrompt(request: RunServiceRunRequest): Record<string, unknown> {
+    const started = this.runService.startPrompt(request);
+    void started.completion;
+    return {
+      ok: true,
+      kind: "run.accepted",
+      runId: started.runId,
+      status: "running",
+    };
+  }
+
   runServiceEvents(input: {
     runId: string;
     after?: number;
@@ -1471,6 +1482,40 @@ async function handleRequest(
       );
       return;
     }
+    const runStreamMatch = url.pathname.match(/^\/runs\/([^/]+)\/stream$/);
+    if (runStreamMatch) {
+      const runId = decodeURIComponent(runStreamMatch[1]);
+      let after = Number(url.searchParams.get("after") ?? 0);
+      if (!Number.isFinite(after)) after = 0;
+      res.writeHead(200, {
+        "content-type": "application/x-ndjson; charset=utf-8",
+        "cache-control": "no-cache",
+        "x-accel-buffering": "no",
+      });
+      while (!res.destroyed) {
+        const waited = await control.waitForRunServiceEvents({
+          runId,
+          after,
+          timeoutMs: 30_000,
+        });
+        const events = Array.isArray(waited.events) ? waited.events : [];
+        for (const event of events) {
+          const sequence = Number(event.sequence);
+          if (Number.isFinite(sequence)) after = sequence;
+          res.write(`${JSON.stringify({ type: "event", event })}\n`);
+        }
+        if (waited.terminal === true) {
+          res.write(`${JSON.stringify({
+            type: "terminal",
+            runId,
+            state: control.runServiceState(runId),
+          })}\n`);
+          res.end();
+          return;
+        }
+      }
+      return;
+    }
     const runResultMatch = url.pathname.match(/^\/runs\/([^/]+)\/result$/);
     if (runResultMatch) {
       writeJson(
@@ -1571,11 +1616,32 @@ async function handleRequest(
     );
     return;
   }
-  if (req.method === "POST" && req.url === "/runs") {
+  if (req.method === "POST" && (req.url === "/runs" || req.url === "/runs/start")) {
     const body = await readJsonBody(req);
     const prompt = String(body.prompt ?? "").trim();
     if (!prompt) {
       writeJson(res, 400, { error: "prompt is required" });
+      return;
+    }
+    const runRequest: RunServiceRunRequest = {
+      prompt,
+      sessionMode:
+        body.sessionMode == null
+          ? undefined
+          : String(body.sessionMode) as RunServiceRunRequest["sessionMode"],
+      uiRuntime:
+        body.uiRuntime == null
+          ? undefined
+          : String(body.uiRuntime) as RunServiceRunRequest["uiRuntime"],
+      sessionId: body.sessionId == null ? undefined : String(body.sessionId),
+      timeoutMs: asOptionalNumber(body.timeoutMs),
+      payload:
+        body.payload && typeof body.payload === "object" && !Array.isArray(body.payload)
+          ? body.payload as Record<string, unknown>
+          : undefined,
+    };
+    if (req.url === "/runs/start") {
+      writeJson(res, 202, control.startRunServicePrompt(runRequest));
       return;
     }
     writeJson(
@@ -1585,25 +1651,7 @@ async function handleRequest(
         control,
         req,
         res,
-        () =>
-          control.runServicePrompt({
-            prompt,
-            sessionMode:
-              body.sessionMode == null
-                ? undefined
-                : String(body.sessionMode) as RunServiceRunRequest["sessionMode"],
-            uiRuntime:
-              body.uiRuntime == null
-                ? undefined
-                : String(body.uiRuntime) as RunServiceRunRequest["uiRuntime"],
-            sessionId:
-              body.sessionId == null ? undefined : String(body.sessionId),
-            timeoutMs: asOptionalNumber(body.timeoutMs),
-            payload:
-              body.payload && typeof body.payload === "object" && !Array.isArray(body.payload)
-                ? body.payload as Record<string, unknown>
-                : undefined,
-          }),
+        () => control.runServicePrompt(runRequest),
         "run-service-client-disconnected",
       ),
     );

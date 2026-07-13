@@ -40,6 +40,11 @@ export type RunServicePromptRunner = (
   request: Required<Pick<RunServiceRunRequest, "prompt">> & RunServiceRunRequest,
 ) => Promise<RunServicePromptRunResult>;
 
+export interface RunServiceStartedRun {
+  runId: string;
+  completion: Promise<RunServiceResultSnapshot>;
+}
+
 export class RunServiceController {
   readonly eventStore: RunServiceEventStore;
 
@@ -55,6 +60,16 @@ export class RunServiceController {
   }
 
   private readonly clock: () => Date;
+
+  startPrompt(request: RunServiceRunRequest): RunServiceStartedRun {
+    const prompt = String(request.prompt ?? "").trim();
+    if (!prompt) throw new Error("run service prompt is required");
+    const runId = this.newRunId();
+    return {
+      runId,
+      completion: this.runPrompt(request, { runId }),
+    };
+  }
 
   async runPrompt(
     request: RunServiceRunRequest,

@@ -1212,7 +1212,11 @@ describe("WorkflowAutomationControl", () => {
     process.env.FINAGENT_WORKSTATION_WORKFLOW_AUTOMATION = "1";
     const { control } = makeControl(
       basePath,
-      new MockLLM([{ text: "served" }, { text: "served from run service" }]),
+      new MockLLM([
+        { text: "served" },
+        { text: "served from run service" },
+        { text: "served from streaming run service" },
+      ]),
       [],
       async () => [
         { id: "api-health", type: "api-health", isActive: true },
@@ -1304,6 +1308,29 @@ describe("WorkflowAutomationControl", () => {
       runId,
       timedOut: false,
       terminal: true,
+    });
+    const admitted = await postJson(server!.port, "/runs/start", {
+      prompt: "use the streaming run service path",
+      uiRuntime: "visible",
+      sessionMode: "new",
+    });
+    expect(admitted.status).toBe(202);
+    expect(admitted.json).toMatchObject({ kind: "run.accepted", status: "running" });
+    const streamedRunId = admitted.json.runId;
+    const streamed = await fetch(
+      `http://127.0.0.1:${server!.port}/runs/${streamedRunId}/stream`,
+    );
+    expect(streamed.status).toBe(200);
+    expect(streamed.headers.get("content-type")).toContain("x-ndjson");
+    const streamMessages = (await streamed.text())
+      .trim()
+      .split("\n")
+      .map((line) => JSON.parse(line));
+    expect(streamMessages.some((message) => message.type === "event")).toBe(true);
+    expect(streamMessages.at(-1)).toMatchObject({
+      type: "terminal",
+      runId: streamedRunId,
+      state: { terminal: true },
     });
     const pending = await getJson(server!.port, `/runs/${runId}/pending`);
     expect(pending.status).toBe(200);
@@ -1486,6 +1513,8 @@ describe("WorkflowAutomationControl", () => {
       },
     });
     expect(capabilities.json.routes).toContain("POST /runs");
+    expect(capabilities.json.routes).toContain("POST /runs/start");
+    expect(capabilities.json.routes).toContain("GET /runs/{runId}/stream?after={sequence}");
     expect(capabilities.json.routes).toContain("GET /sessions");
     expect(capabilities.json.routes).toContain("POST /sessions");
     expect(capabilities.json.routes).toContain("GET /artifacts");

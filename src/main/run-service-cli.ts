@@ -268,7 +268,7 @@ async function handleStdioLine(
   const params = isRecord(message.params) ? message.params : {};
   try {
     if (method === "run") {
-      const result = await input.postJson("/runs", params);
+      const result = await input.postJson("/runs/start", params);
       input.stdout.write(`${JSON.stringify({ id, ok: true, result })}\n`);
       return;
     }

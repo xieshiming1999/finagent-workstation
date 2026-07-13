@@ -66,11 +66,18 @@ node out/main/run-service-cli.js serve --stdio \
   --endpoint http://127.0.0.1:39173
 ```
 
-Stdio requests are correlated by `id` and may complete out of order. Keep the
-same stdin stream open when a run pauses: inspect `pending`, then send
-`respond` or `permission` with the exact `runId` and `requestId`. Typed
-`execution` commands always enforce tool permissions for that turn, even when
-normal chat is configured to skip permission prompts.
+`POST /runs` remains the synchronous compatibility method. Interactive clients
+should use `POST /runs/start` for immediate admission and consume
+`GET /runs/{runId}/stream?after=0`, which flushes NDJSON question, permission,
+assistant, tool, and terminal events as they occur. Typed response endpoints
+remain available while the stream is open.
+
+Stdio requests are correlated by `id` and may complete out of order. Its `run`
+method returns the admitted `runId` immediately; consume the matching HTTP
+NDJSON stream for push events, then send `respond` or `permission` over the same
+stdin channel with the exact `runId` and `requestId`. Typed `execution` commands
+always enforce tool permissions for that turn, even when normal chat is
+configured to skip permission prompts.
 
 Session modes `new`, `resume`, `preload`, and `attached` are implemented.
 `preload` forks context into a new durable session without appending to the
