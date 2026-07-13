@@ -82,7 +82,7 @@ describe('finance and trading workflows', () => {
 
     const llm = new MockLLM([
       { toolCalls: [{ id: 'pf-clear', name: 'Portfolio', arguments: { action: 'clear', market: 'cn' } }] },
-      { toolCalls: [{ id: 'pf-buy', name: 'Portfolio', arguments: { action: 'trade', market: 'cn', symbol: '600519', side: 'buy', shares: 100, price: 100 } }] },
+      { toolCalls: [{ id: 'pf-buy', name: 'Portfolio', arguments: { action: 'trade', market: 'cn', symbol: '600519', side: 'buy', shares: 100, price: 100, idempotencyKey: 'test-paper-buy-600519' } }] },
       { toolCalls: [{ id: 'pf-risk', name: 'Portfolio', arguments: { action: 'risk', market: 'cn' } }] },
       { toolCalls: [{ id: 'xq-buy', name: 'XueqiuTrade', arguments: { action: 'buy', symbol: 'SH600519', amount: 10000, portfolio: 'ZH_TEST' } }] },
       { text: 'Paper trade recorded; real Xueqiu trade was blocked because credentials are missing.' },
@@ -92,7 +92,7 @@ describe('finance and trading workflows', () => {
     const events = await collectEvents(agent.run('record a paper trade then test real-trade safety'))
 
     const portfolioTrade = events.find((e) => e.type === 'tool-result' && e.name === 'Portfolio' && e.result.includes('"action": "trade"'))
-    expect(portfolioTrade).toBeTruthy()
+    expect(portfolioTrade, JSON.stringify(events, null, 2)).toBeTruthy()
     const tradePayload = JSON.parse(portfolioTrade?.type === 'tool-result' ? portfolioTrade.result : '{}')
     expect(tradePayload).toMatchObject({
       action: 'trade',

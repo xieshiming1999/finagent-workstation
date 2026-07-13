@@ -10,6 +10,7 @@ interface PortfolioData {
   positions: Record<string, { shares: number; costPrice: number; buyDate: string }>
   trades: Array<Record<string, unknown>>
   totalCommission: number
+  executionReceipts: Record<string, Record<string, unknown>>
 }
 
 const MARKET_DEFAULTS: Record<string, { cash: number; currency: string; commission: number; minCommission: number }> = {
@@ -27,7 +28,7 @@ function filePath(basePath: string, market: string): string {
 function load(basePath: string, market: string): PortfolioData {
   const fp = filePath(basePath, market)
   const defaults = MARKET_DEFAULTS[market] ?? MARKET_DEFAULTS.cn
-  const empty: PortfolioData = { cash: defaults.cash, initialCash: defaults.cash, positions: {}, trades: [], totalCommission: 0 }
+  const empty: PortfolioData = { cash: defaults.cash, initialCash: defaults.cash, positions: {}, trades: [], totalCommission: 0, executionReceipts: {} }
   if (!existsSync(fp)) return empty
   try { return { ...empty, ...JSON.parse(readFileSync(fp, 'utf-8')) } } catch { return empty }
 }
@@ -51,6 +52,7 @@ export class PortfolioTool implements Tool {
       costPrice: { type: 'number', description: 'Cost price per share (for add action)' },
       side: { type: 'string', description: 'Trade side: buy or sell' },
       price: { type: 'number', description: 'Trade price per share' },
+      idempotencyKey: { type: 'string', description: 'Required stable key for trade retries' },
       market: { type: 'string', description: 'Market: cn(A-share)/us(US)/hk(HK). Default: cn' },
     },
     required: ['action'],
@@ -85,7 +87,7 @@ export class PortfolioTool implements Tool {
         case 'history': return this.history(data)
         case 'clear': {
           const defaults = MARKET_DEFAULTS[market] ?? MARKET_DEFAULTS.cn
-          save(ctx.basePath, market, { cash: defaults.cash, initialCash: defaults.cash, positions: {}, trades: [], totalCommission: 0 })
+          save(ctx.basePath, market, { cash: defaults.cash, initialCash: defaults.cash, positions: {}, trades: [], totalCommission: 0, executionReceipts: {} })
           return portfolioToolCopy.cleared()
         }
         default:
@@ -122,8 +124,9 @@ export class PortfolioTool implements Tool {
     const side = String(input.side ?? '').toLowerCase()
     const shares = Number(input.shares)
     const price = Number(input.price)
-    if (!symbol || !side || !shares || !price) {
-      return toolError(portfolioToolCopy.missingTradeFields())
+    const idempotencyKey = String(input.idempotencyKey ?? '').trim()
+    if (!symbol || !side || !shares || !price || !idempotencyKey) {
+      return toolError('symbol, side(buy/sell), shares, price, idempotencyKey required')
     }
     if (side !== 'buy' && side !== 'sell') {
       return toolError(portfolioToolCopy.invalidSide())
@@ -131,6 +134,14 @@ export class PortfolioTool implements Tool {
 
     const mkt = MARKET_DEFAULTS[market] ?? MARKET_DEFAULTS.cn
     const isAShare = /^\d{6}$/.test(symbol)
+    const order = { symbol, side, shares, price }
+    const prior = data.executionReceipts[idempotencyKey]
+    if (prior) {
+      if (JSON.stringify(prior.order) !== JSON.stringify(order)) {
+        return toolError('idempotencyKey already belongs to a different order')
+      }
+      return JSON.stringify({ ...prior, idempotentReplay: true }, null, 2)
+    }
 
     // A-share lot size check
     if (isAShare && shares % 100 !== 0) {
@@ -188,25 +199,25 @@ export class PortfolioTool implements Tool {
       totalCost: +totalCost.toFixed(2),
     })
     data.totalCommission += totalCost
-    save(basePath, market, data)
-    const readback = this.postTradeReadback(load(basePath, market), market, symbol)
-    return JSON.stringify({
+    const receipt = {
+      contract: 'finagent.execution-receipt.v1',
       action: 'trade',
       sideEffect: true,
       executionStatus: 'executed',
       executionVenue: 'local_paper_portfolio',
       externalBrokerStatus: 'not_external_broker',
+      idempotencyKey,
+      idempotentReplay: false,
       market,
       currency: mkt.currency,
-      order: {
-        symbol,
-        side,
-        shares,
-        price,
-      },
-      postTradeReadback: readback,
+      order,
+      postTradeReadback: this.postTradeReadback(data, market, symbol),
+      executedAt: new Date().toISOString(),
       tradeBoundary: 'Local Portfolio(action:"trade") mutates only the local paper portfolio. It does not execute or sync a Xueqiu/broker order.',
-    }, null, 2)
+    }
+    data.executionReceipts[idempotencyKey] = receipt
+    save(basePath, market, data)
+    return JSON.stringify(receipt, null, 2)
   }
 
   private previewTrade(input: Record<string, unknown>, data: PortfolioData, market: string): string {

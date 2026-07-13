@@ -14,6 +14,7 @@ import type { AgentEvent } from "../agent/agent-event";
 import type { Message } from "../agent/message";
 import { ArtifactRegistry } from "../agent/artifact-registry";
 import { promptForExternalFinanceOperation } from "../agent/external-finance-contract";
+import { readPaperExecutionReceipt, readPaperExecutionState } from "../agent/paper-execution-readback";
 import {
   RunServiceController,
   type RunServiceRunRequest,
@@ -276,6 +277,14 @@ export class WorkflowAutomationControl {
       bootstrapWindowVisible: (BrowserWindow?.getAllWindows?.() ?? []).some((window) => window.isVisible()),
       basePath: this.deps.getBasePath(),
     };
+  }
+
+  paperExecutionState(market = "cn"): Record<string, unknown> {
+    return readPaperExecutionState(this.deps.getBasePath(), market);
+  }
+
+  paperExecutionReceipt(idempotencyKey: string, market = "cn"): Record<string, unknown> {
+    return readPaperExecutionReceipt(this.deps.getBasePath(), idempotencyKey, market);
   }
 
   async sendPrompt(
@@ -1612,6 +1621,22 @@ async function handleRequest(
     if (url.pathname === "/artifacts") {
       const limit = Number(url.searchParams.get("limit") ?? 20);
       writeJson(res, 200, control.artifacts(Number.isFinite(limit) ? limit : 20));
+      return;
+    }
+    if (url.pathname === "/execution/paper/state") {
+      writeJson(res, 200, control.paperExecutionState(url.searchParams.get("market") ?? "cn"));
+      return;
+    }
+    const receiptMatch = url.pathname.match(/^\/execution\/receipts\/([^/]+)$/);
+    if (receiptMatch) {
+      writeJson(
+        res,
+        200,
+        control.paperExecutionReceipt(
+          decodeURIComponent(receiptMatch[1]),
+          url.searchParams.get("market") ?? "cn",
+        ),
+      );
       return;
     }
     if (url.pathname === "/runs") {

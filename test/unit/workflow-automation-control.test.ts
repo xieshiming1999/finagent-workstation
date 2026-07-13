@@ -4809,6 +4809,7 @@ describe("WorkflowAutomationControl", () => {
                 side: "buy",
                 shares: 100,
                 price: 1200,
+                idempotencyKey: "workstation-workflow-paper-buy-1",
               },
             },
           ],

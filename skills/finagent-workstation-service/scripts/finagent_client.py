@@ -135,6 +135,8 @@ def main(argv=None) -> int:
     session_create = commands.add_parser("session-create"); session_create.add_argument("--title")
     artifacts = commands.add_parser("artifacts"); artifacts.add_argument("--limit", type=int, default=20)
     artifact = commands.add_parser("artifact"); artifact.add_argument("artifact_id")
+    paper_state = commands.add_parser("paper-state"); paper_state.add_argument("--market", choices=("cn", "us", "hk"), default="cn")
+    receipt = commands.add_parser("execution-receipt"); receipt.add_argument("idempotency_key"); receipt.add_argument("--market", choices=("cn", "us", "hk"), default="cn")
     args = parser.parse_args(argv); client = Client(args.endpoint, args.timeout)
     if args.command == "health": emit(client.request("GET", "/health"))
     elif args.command == "discover": emit(client.probe())
@@ -161,6 +163,8 @@ def main(argv=None) -> int:
     elif args.command == "session-create": emit(client.request("POST", "/sessions", {"title": args.title} if args.title else {}))
     elif args.command == "artifacts": emit(client.request("GET", f"/artifacts?limit={max(1, min(args.limit, 200))}"))
     elif args.command == "artifact": emit(client.request("GET", f"/artifacts/{urllib.parse.quote(args.artifact_id, safe='')}"))
+    elif args.command == "paper-state": emit(client.request("GET", f"/execution/paper/state?market={args.market}"))
+    elif args.command == "execution-receipt": emit(client.request("GET", f"/execution/receipts/{urllib.parse.quote(args.idempotency_key, safe='')}?market={args.market}"))
     return 0
 
 

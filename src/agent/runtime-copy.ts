@@ -276,7 +276,7 @@ POSITIONS:
   snapshot — Current portfolio with P&L
 
 TRADES:
-  trade    — Record trade. symbol: "600519", side: "buy"/"sell", shares: 100, price: 1650
+  trade    — Record trade once. symbol: "600519", side: "buy"/"sell", shares: 100, price: 1650, idempotencyKey: "order-unique-key"
   preview_trade — Validate and estimate trade without writing state. symbol, side, shares, price
   history  — Trade history
 

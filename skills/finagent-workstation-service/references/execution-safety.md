@@ -9,3 +9,8 @@ operation before presenting or resolving permission.
 Denial must leave portfolio/order state unchanged. Approval must produce one
 receipt and retrying the idempotency key must not duplicate the action. Never
 use always-allow. The external v1 contract does not support real execution.
+
+Snapshot the local paper account with `paper-state` before and after a
+simulation. Fetch the durable receipt with
+`execution-receipt IDEMPOTENCY_KEY`. Retrying the exact order with that key must
+return `idempotentReplay:true` while `tradeCount` remains unchanged.
