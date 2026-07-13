@@ -230,4 +230,43 @@ describe("run service CLI", () => {
     expect(messages[12]).toMatchObject({ id: "13", ok: true, result: { path: "/artifacts/run-1" } });
     expect(messages[13]).toMatchObject({ id: "14", ok: true, result: { path: "/adapter/capabilities" } });
   });
+
+  it("keeps reading stdio replies while a run request is waiting", async () => {
+    const writes: string[] = [];
+    const postPaths: string[] = [];
+    let finishRun!: (value: Record<string, unknown>) => void;
+    const waitingRun = new Promise<Record<string, unknown>>((resolve) => {
+      finishRun = resolve;
+    });
+    const stdin = Readable.from([
+      JSON.stringify({ id: "run", method: "run", params: { prompt: "fund selection" } }) + "\n",
+      JSON.stringify({
+        id: "answer",
+        method: "respond",
+        params: { runId: "run-fund", requestId: "ask-fund", answer: "long term" },
+      }) + "\n",
+    ]);
+
+    const code = await runServiceCli(["serve", "--stdio"], {
+      stdin,
+      stdout: { write: (chunk: string) => { writes.push(chunk); return true; } },
+      stderr: { write: () => true },
+      postJson: async (path) => {
+        postPaths.push(path);
+        if (path === "/runs") return waitingRun;
+        expect(path).toBe("/runs/run-fund/responses");
+        finishRun({ runId: "run-fund", status: "completed" });
+        return { runId: "run-fund", answered: true };
+      },
+      getJson: async () => ({}),
+    });
+
+    expect(code).toBe(0);
+    const messages = writes.map((line) => JSON.parse(line));
+    expect(messages).toEqual(expect.arrayContaining([
+      expect.objectContaining({ id: "answer", ok: true }),
+      expect.objectContaining({ id: "run", ok: true, result: { runId: "run-fund", status: "completed" } }),
+    ]));
+    expect(postPaths).toEqual(["/runs", "/runs/run-fund/responses"]);
+  });
 });

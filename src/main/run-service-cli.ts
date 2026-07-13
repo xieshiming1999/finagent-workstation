@@ -227,18 +227,24 @@ async function runStdioLoop(input: {
 }): Promise<void> {
   input.stdin.setEncoding("utf-8");
   let buffer = "";
+  const pending = new Set<Promise<void>>();
+  const dispatch = (line: string) => {
+    const task = handleStdioLine(line, input).finally(() => pending.delete(task));
+    pending.add(task);
+  };
   for await (const chunk of input.stdin) {
     buffer += String(chunk);
     let newline = buffer.indexOf("\n");
     while (newline >= 0) {
       const line = buffer.slice(0, newline).trim();
       buffer = buffer.slice(newline + 1);
-      if (line) await handleStdioLine(line, input);
+      if (line) dispatch(line);
       newline = buffer.indexOf("\n");
     }
   }
   const tail = buffer.trim();
-  if (tail) await handleStdioLine(tail, input);
+  if (tail) dispatch(tail);
+  await Promise.all([...pending]);
 }
 
 async function handleStdioLine(
