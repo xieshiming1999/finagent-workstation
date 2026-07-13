@@ -83,6 +83,14 @@ const adapterTools: AdapterTool[] = [
     ["prompt"],
     (client, input) => client.post("/runs", input),
   ),
+  tool(
+    "finagent.workflow.list",
+    "List recent run summaries, including frontend-created runs.",
+    { limit: { type: "integer", minimum: 1, maximum: 100 } },
+    [],
+    (client, input) =>
+      client.get(`/runs?limit=${positiveInteger(input.limit, 20)}`),
+  ),
   runIdTool(
     "finagent.workflow.events",
     "Replay typed run events after a durable sequence cursor.",

@@ -23,6 +23,7 @@ import { cachePolicyFor } from '../agent/data/cache-policy'
 import { buildFundPulseRefreshRequests, queryFundSuggestions } from './fund-panel-data'
 import type { GoalAutomationService } from '../agent/goal-automation-service'
 import type { GoalTemplateId } from '../agent/goal-automation-types'
+import type { WorkflowAutomationControl } from './workflow-automation-control'
 import { buildFinanceDoctorReport } from './finance-doctor'
 import {
   readFundWatchlistCodes,
@@ -54,6 +55,42 @@ export interface IPCContext {
   getDataStore: () => DataStore | null
   getFetchQueue?: () => FetchQueue | null
   getGoalAutomation?: () => GoalAutomationService | null
+  getWorkflowControl?: () => WorkflowAutomationControl | null
+}
+
+export async function sendPromptToChatAgent(
+  ctx: IPCContext,
+  event: Pick<IpcMainInvokeEvent, 'sender'>,
+  prompt: string,
+): Promise<void> {
+  const agent = ctx.getAgent()
+  if (!agent) { console.error('[agent:send] agent not initialized'); return }
+  console.log(`[agent:send] prompt="${prompt.slice(0, 80)}" model=${agent.llm.model}`)
+  try {
+    if (agent.isRunning) {
+      agent.enqueueUserInput(prompt)
+      event.sender.send('agent:event', queueStatusEvent(agent.notifications, 'Queued'))
+      return
+    }
+    const control = ctx.getWorkflowControl?.() ?? null
+    if (control) {
+      await control.runServicePrompt({
+        prompt,
+        sessionMode: 'attached',
+        sessionId: agent.session.id,
+        uiRuntime: 'visible',
+        payload: { entryMode: 'frontend' },
+      })
+    } else {
+      const stream = agent.run(prompt)
+      for await (const ev of stream) {
+        event.sender.send('agent:event', ev)
+      }
+    }
+  } catch (err) {
+    console.error('[agent:send] error:', err)
+    event.sender.send('agent:event', { type: 'error', message: String(err) })
+  }
 }
 
 function normalizeStrategyLibraryAction(action: unknown): 'rerun' | 'watch' | 'monitor' | 'read' {
@@ -74,32 +111,8 @@ export function wireIPC(ctx: IPCContext): void {
     ),
   )
 
-  async function sendPromptToChatAgent(
-    event: IpcMainInvokeEvent,
-    prompt: string,
-  ): Promise<void> {
-    const agent = ctx.getAgent()
-    if (!agent) { console.error('[agent:send] agent not initialized'); return }
-    console.log(`[agent:send] prompt="${prompt.slice(0, 80)}" model=${agent.llm.model}`)
-    try {
-      if (agent.isRunning) {
-        agent.enqueueUserInput(prompt)
-        event.sender.send('agent:event', queueStatusEvent(agent.notifications, 'Queued'))
-        return
-      }
-
-      const stream = agent.run(prompt)
-      for await (const ev of stream) {
-        event.sender.send('agent:event', ev)
-      }
-    } catch (err) {
-      console.error('[agent:send] error:', err)
-      event.sender.send('agent:event', { type: 'error', message: String(err) })
-    }
-  }
-
   ipcMain.handle('agent:send', async (event, prompt: string) => {
-    await sendPromptToChatAgent(event, prompt)
+    await sendPromptToChatAgent(ctx, event, prompt)
   })
 
   ipcMain.handle('eventAgent:send', async (event, prompt: string) => {
@@ -371,6 +384,7 @@ export function wireIPC(ctx: IPCContext): void {
     }
     const normalizedAction = action === 'rerun' && !strategy.runnable ? 'read' : action
     await sendPromptToChatAgent(
+      ctx,
       event,
       buildStrategyLibraryActionPrompt(normalizedAction, strategy),
     )

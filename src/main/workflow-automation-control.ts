@@ -278,9 +278,13 @@ export class WorkflowAutomationControl {
       disallowTools?: string[];
       allowPendingUserQuestion?: boolean;
       autoAnswerUserQuestions?: string[];
+      requireEnabled?: boolean;
+      emitUserInput?: boolean;
     } = {},
   ): Promise<WorkflowAutomationRunResult> {
-    if (!this.enabled()) throw new Error("WORKFLOW_AUTOMATION_DISABLED");
+    if (options.requireEnabled !== false && !this.enabled()) {
+      throw new Error("WORKFLOW_AUTOMATION_DISABLED");
+    }
     const agent = this.deps.getAgent();
     if (!agent) throw new Error("WORKFLOW_AUTOMATION_AGENT_MISSING");
     const trimmed = String(prompt ?? "").trim();
@@ -294,7 +298,9 @@ export class WorkflowAutomationControl {
 
     try {
       const executablePrompt = buildWorkflowPrompt(trimmed, options);
-      this.deps.emitAgentEvent?.({ type: "user-input", text: trimmed });
+      if (options.emitUserInput !== false) {
+        this.deps.emitAgentEvent?.({ type: "user-input", text: trimmed });
+      }
       if (agent.isRunning) {
         agent.enqueueUserInput(executablePrompt);
         const event = queueStatusEvent(agent.notifications, "Queued");
@@ -389,6 +395,11 @@ export class WorkflowAutomationControl {
     return this.runService.eventStore.result(runId);
   }
 
+  runServiceRuns(limit = 20): Record<string, unknown> {
+    const runs = this.runService.eventStore.results(limit).map(runServiceResultSummary);
+    return { ok: true, kind: "runs.list", count: runs.length, runs };
+  }
+
   runServicePending(runId: string): Record<string, unknown> {
     return {
       ok: true,
@@ -428,6 +439,8 @@ export class WorkflowAutomationControl {
       const run = await this.sendPrompt(request.prompt, {
         timeoutMs: request.timeoutMs,
         timeoutReason: "run-service",
+        requireEnabled: request.payload?.entryMode !== "frontend",
+        emitUserInput: request.payload?.entryMode !== "frontend",
       });
       return {
         ok: run.ok,
@@ -1402,6 +1415,11 @@ async function handleRequest(
     if (url.pathname === "/artifacts") {
       const limit = Number(url.searchParams.get("limit") ?? 20);
       writeJson(res, 200, control.artifacts(Number.isFinite(limit) ? limit : 20));
+      return;
+    }
+    if (url.pathname === "/runs") {
+      const limit = Number(url.searchParams.get("limit") ?? 20);
+      writeJson(res, 200, control.runServiceRuns(Number.isFinite(limit) ? limit : 20));
       return;
     }
     const artifactMatch = url.pathname.match(/^\/artifacts\/([^/]+)$/);
@@ -2600,4 +2618,23 @@ function writeJson(
     "content-length": Buffer.byteLength(payload),
   });
   res.end(payload);
+}
+
+function runServiceResultSummary(
+  result: RunServiceResultSnapshot,
+): Record<string, unknown> {
+  const created = result.events[0];
+  const requestPayload = created?.payload?.requestPayload;
+  const entryMode = requestPayload && typeof requestPayload === "object"
+    ? (requestPayload as Record<string, unknown>).entryMode
+    : undefined;
+  return {
+    runId: result.runId,
+    status: result.status,
+    ...(result.sessionId ? { sessionId: result.sessionId } : {}),
+    ...(created?.createdAt ? { createdAt: created.createdAt } : {}),
+    ...(entryMode != null ? { entryMode: String(entryMode) } : {}),
+    ...(result.finalAnswer != null ? { finalAnswer: result.finalAnswer } : {}),
+    ...(result.error != null ? { error: result.error } : {}),
+  };
 }

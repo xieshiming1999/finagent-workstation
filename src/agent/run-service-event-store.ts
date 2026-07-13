@@ -75,6 +75,15 @@ export class RunServiceEventStore {
     );
   }
 
+  results(limit = 20): RunServiceResultSnapshot[] {
+    const boundedLimit = Math.max(1, Math.min(100, Math.floor(limit)));
+    return [...this.eventsByRun.entries()]
+      .sort((left, right) =>
+        (right[1].at(-1)?.sequence ?? 0) - (left[1].at(-1)?.sequence ?? 0))
+      .slice(0, boundedLimit)
+      .map(([runId]) => this.result(runId));
+  }
+
   result(runId: string): RunServiceResultSnapshot {
     const events = this.events({ runId });
     if (events.length === 0) return { runId, status: "missing", events: [] };

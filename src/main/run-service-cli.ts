@@ -273,6 +273,12 @@ async function handleStdioLine(
       input.stdout.write(`${JSON.stringify({ id, ok: true, result })}\n`);
       return;
     }
+    if (method === "runs") {
+      const limit = Number(params.limit ?? 20);
+      const result = await input.getJson(`/runs?limit=${Number.isFinite(limit) ? limit : 20}`);
+      input.stdout.write(`${JSON.stringify({ id, ok: true, result })}\n`);
+      return;
+    }
     if (method === "result") {
       const runId = String(params.runId ?? "");
       if (!runId) throw new Error("result requires params.runId");

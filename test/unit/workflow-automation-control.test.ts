@@ -347,6 +347,38 @@ describe("WorkflowAutomationControl", () => {
     await expect(startWorkflowAutomationServer(control)).resolves.toBeNull();
   });
 
+  it("records frontend runs while the external automation host is disabled", async () => {
+    const emitted: Array<Record<string, unknown>> = [];
+    const registry = new ToolRegistry();
+    const agent = new Agent({
+      llm: new MockLLM([{ text: "frontend completed" }]),
+      tools: registry,
+      basePath,
+      skipPermissions: true,
+    });
+    const control = new WorkflowAutomationControl({
+      getAgent: () => agent,
+      getBasePath: () => basePath,
+      emitAgentEvent: (event) => emitted.push(event as Record<string, unknown>),
+    });
+
+    const result = await control.runServicePrompt({
+      prompt: "frontend request",
+      sessionMode: "attached",
+      sessionId: agent.session.id,
+      uiRuntime: "visible",
+      payload: { entryMode: "frontend" },
+    });
+
+    expect(result.status).toBe("completed");
+    expect(result.finalAnswer).toBe("frontend completed");
+    expect(result.events.map((event) => event.type)).toEqual(
+      expect.arrayContaining(["run.created", "run.status.changed", "run.completed"]),
+    );
+    expect(emitted.some((event) => event.type === "user-input")).toBe(false);
+    expect(emitted.some((event) => event.type === "text-delta")).toBe(true);
+  });
+
   it("preserves structured AskUserQuestion auto answers", async () => {
     process.env.FINAGENT_WORKSTATION_WORKFLOW_AUTOMATION = "1";
     const structuredAnswer =

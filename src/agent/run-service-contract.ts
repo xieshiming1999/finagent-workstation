@@ -114,6 +114,7 @@ export function runServiceCapabilityDescriptor(input: {
 }): Record<string, unknown> {
   const routes = input.routes ?? [
     "POST /runs",
+    "GET /runs",
     "GET /runs/{runId}/events?after={sequence}",
     "GET /runs/{runId}/result",
     "GET /runs/{runId}/pending",
@@ -169,6 +170,7 @@ export function runServiceAdapterDescriptor(input: {
   const capability = runServiceCapabilityDescriptor(input);
   const operations = [
     operationDescriptor("finagent.workflow.run", "POST /runs", "Start a run with prompt, session mode, UI runtime, and optional structured payload."),
+    operationDescriptor("finagent.workflow.list", "GET /runs", "List recent run summaries, including frontend-created runs."),
     operationDescriptor("finagent.workflow.events", "GET /runs/{runId}/events?after={sequence}", "Replay typed run events after a sequence cursor."),
     operationDescriptor("finagent.workflow.result", "GET /runs/{runId}/result", "Fetch the final run snapshot with answer, trace, artifacts, and errors."),
     operationDescriptor("finagent.workflow.pending", "GET /runs/{runId}/pending", "Inspect pending AskUserQuestion and permission requests for a run."),

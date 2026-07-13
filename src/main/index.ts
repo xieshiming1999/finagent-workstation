@@ -106,6 +106,7 @@ let fetchQueueInstance: FetchQueue | null = null
 let goalAutomationService: GoalAutomationService | null = null
 let goalAutomationTimer: ReturnType<typeof setInterval> | null = null
 let workflowAutomationServer: WorkflowAutomationServer | null = null
+let workflowControl: WorkflowAutomationControl | null = null
 let workflowPanelStateQuery: (() => Promise<unknown>) | null = null
 
 type MainResolvedLanguage = 'en' | 'zh-CN'
@@ -699,7 +700,7 @@ function initAgent() {
     return { ok: true, queued: true, notificationId: id }
   })
 
-  const workflowControl = new WorkflowAutomationControl({
+  workflowControl = new WorkflowAutomationControl({
     getAgent: () => agent,
     getBasePath: () => basePath,
     uiRuntimeCoordinator: runServiceUiCoordinator,
@@ -886,6 +887,7 @@ app.whenReady().then(async () => {
     getDataStore: () => dataStoreInstance,
     getFetchQueue: () => fetchQueueInstance,
     getGoalAutomation: () => goalAutomationService,
+    getWorkflowControl: () => workflowControl,
   })
   mainWindow = createWindow()
 
