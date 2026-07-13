@@ -220,8 +220,10 @@ export class Agent {
 
   private turnMessageStartIndex = 0
 
-  async *run(prompt: string, opts?: { images?: Array<{ data: string; mediaType?: string }>; disabledTools?: string[] }): AsyncGenerator<AgentEvent> {
+  async *run(prompt: string, opts?: { images?: Array<{ data: string; mediaType?: string }>; disabledTools?: string[]; requirePermissions?: boolean }): AsyncGenerator<AgentEvent> {
     const previousTurnScopedTools = this.turnScopedTools
+    const previousSkipPermissions = this.skipPermissions
+    if (opts?.requirePermissions === true) this.skipPermissions = false
     this.turnScopedTools = opts?.disabledTools?.length
       ? this.tools.filtered({ disabledTools: opts.disabledTools })
       : null
@@ -266,6 +268,7 @@ export class Agent {
       }, prompt, opts)
     } finally {
       this.turnScopedTools = previousTurnScopedTools
+      this.skipPermissions = previousSkipPermissions
     }
   }
 

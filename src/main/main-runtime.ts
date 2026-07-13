@@ -153,9 +153,12 @@ class TestScriptedLLMProvider implements LLMProvider {
 }
 
 function createTestScriptedLLMProvider(): LLMProvider | null {
-  if (process.env.NODE_ENV !== 'test') return null
   const raw = process.env.FINAGENT_WORKSTATION_TEST_LLM_SCRIPT
   if (!raw) return null
+  const explicitlyAllowedForAutomation =
+    process.env.FINAGENT_WORKSTATION_WORKFLOW_AUTOMATION === '1' &&
+    process.env.FINAGENT_WORKSTATION_ALLOW_SCRIPTED_LLM === '1'
+  if (process.env.NODE_ENV !== 'test' && !explicitlyAllowedForAutomation) return null
   try {
     const parsed = JSON.parse(raw)
     if (!Array.isArray(parsed)) {

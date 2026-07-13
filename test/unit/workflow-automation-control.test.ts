@@ -508,7 +508,7 @@ describe("WorkflowAutomationControl", () => {
       ]),
       tools: registry,
       basePath,
-      skipPermissions: false,
+      skipPermissions: true,
     });
     const control = new WorkflowAutomationControl({
       getAgent: () => agent,
@@ -522,6 +522,9 @@ describe("WorkflowAutomationControl", () => {
       prompt: "permission live",
       sessionMode: "attached",
       uiRuntime: "visible",
+      payload: {
+        commandPlan: { category: "execution", operation: "prepare", payload: {} },
+      },
     });
     let runId = "";
     for (let attempt = 0; attempt < 100; attempt++) {

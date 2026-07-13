@@ -285,6 +285,7 @@ export class WorkflowAutomationControl {
       requireEnabled?: boolean;
       emitUserInput?: boolean;
       emitServiceEvent?: RunServiceRunRequest["emitServiceEvent"];
+      requirePermissions?: boolean;
     } = {},
   ): Promise<WorkflowAutomationRunResult> {
     if (options.requireEnabled !== false && !this.enabled()) {
@@ -326,6 +327,7 @@ export class WorkflowAutomationControl {
             allowPendingUserQuestion: options.allowPendingUserQuestion,
             autoAnswerUserQuestions: options.autoAnswerUserQuestions,
             emitServiceEvent: options.emitServiceEvent,
+            requirePermissions: options.requirePermissions,
           },
         );
       }
@@ -472,6 +474,7 @@ export class WorkflowAutomationControl {
         requireEnabled: request.payload?.entryMode !== "frontend",
         emitUserInput: request.payload?.entryMode !== "frontend",
         emitServiceEvent: request.emitServiceEvent,
+        requirePermissions: serviceRunRequiresPermissions(request),
       });
       return {
         ok: run.ok,
@@ -561,6 +564,7 @@ export class WorkflowAutomationControl {
       allowPendingUserQuestion?: boolean;
       autoAnswerUserQuestions?: string[];
       emitServiceEvent?: RunServiceRunRequest["emitServiceEvent"];
+      requirePermissions?: boolean;
     } = {},
   ): Promise<void> {
     const boundedTimeout = normalizeWorkflowTimeoutMs(timeoutMs);
@@ -587,6 +591,7 @@ export class WorkflowAutomationControl {
     try {
       for await (const event of agent.run(prompt, {
         disabledTools: limits.disallowTools,
+        requirePermissions: limits.requirePermissions,
       })) {
         events.push(event);
         this.deps.emitAgentEvent?.(event);
@@ -2636,6 +2641,13 @@ function toolNameFromEvent(event: AgentEvent): string | null {
     if (typeof name === "string" && name.trim()) return name.trim();
   }
   return null;
+}
+
+function serviceRunRequiresPermissions(request: RunServiceRunRequest): boolean {
+  if (request.payload?.permissionMode === "require") return true;
+  const commandPlan = request.payload?.commandPlan;
+  if (!commandPlan || typeof commandPlan !== "object") return false;
+  return (commandPlan as Record<string, unknown>).category === "execution";
 }
 
 function delay(ms: number): Promise<void> {
