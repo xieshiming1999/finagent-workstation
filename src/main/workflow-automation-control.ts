@@ -35,6 +35,7 @@ import {
 } from "./strategy-library";
 import { strategyArtifactPaths } from "../domain/market/strategy-spec/strategy-artifact-contract";
 import { RunServiceUiRuntimeCoordinator } from "./run-service-ui-runtime/ui-runtime-coordinator";
+import { buildExternalStrategyServiceResult } from "../domain/finance/workflows/external-strategy-service-result";
 
 export interface WorkflowAutomationControlDeps {
   getAgent: () => Agent | null;
@@ -531,9 +532,14 @@ export class WorkflowAutomationControl {
         emitServiceEvent: request.emitServiceEvent,
         requirePermissions: serviceRunRequiresPermissions(request),
       });
+      const externalStrategyResult = buildExternalStrategyServiceResult({
+        basePath: this.deps.getBasePath(),
+        payload: request.payload,
+        messages: this.deps.getAgent()?.messages ?? [],
+      });
       return {
         ok: run.ok,
-        finalAnswer: assistantReviewText(run),
+        finalAnswer: externalStrategyResult?.finalAnswer ?? assistantReviewText(run),
         sessionId: run.sessionId,
         error: run.error,
         toolCalls: run.messages.flatMap((message) =>
@@ -552,7 +558,10 @@ export class WorkflowAutomationControl {
             contentPreview: previewText(result.content),
             imagePaths: result.imagePaths,
           })),
-        uiArtifacts: run.uiArtifacts ?? [],
+        uiArtifacts: [
+          ...(externalStrategyResult ? [externalStrategyResult.artifact] : []),
+          ...(run.uiArtifacts ?? []),
+        ],
         provenance: {
           reportPath: run.reportPath,
           sessionPath: run.sessionPath,
