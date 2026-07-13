@@ -28,13 +28,19 @@ export async function runServiceCli(
 ): Promise<number> {
   const normalizedArgv = normalizeAliases(argv);
   const endpoint = String(readFlag(normalizedArgv, "--endpoint") ?? deps.endpoint ?? process.env.FINAGENT_RUN_SERVICE_ENDPOINT ?? "http://127.0.0.1:39173");
-  const args = stripFlag(normalizedArgv, "--endpoint");
+  const ensureService = normalizedArgv.includes("--ensure-service");
+  const serviceTimeoutMs = Number(readFlag(normalizedArgv, "--service-timeout-ms") ?? 10000);
+  const args = stripBooleanFlag(
+    stripFlag(stripFlag(normalizedArgv, "--endpoint"), "--service-timeout-ms"),
+    "--ensure-service",
+  );
   const stdio = args.includes("--stdio");
   const commandArgs = args.filter((arg) => arg !== "--stdio");
   const stdout = deps.stdout ?? defaultStdout;
   const stderr = deps.stderr ?? defaultStderr;
   const postJson = deps.postJson ?? ((path, body) => httpJson(endpoint, "POST", path, body));
   const getJson = deps.getJson ?? ((path) => httpJson(endpoint, "GET", path));
+  const spawnProcess = deps.spawnProcess ?? defaultSpawn;
 
   if (stdio) {
     await runStdioLoop({
@@ -66,7 +72,16 @@ export async function runServiceCli(
       stdout,
       stderr,
       getJson,
-      spawnProcess: deps.spawnProcess ?? defaultSpawn,
+      spawnProcess,
+    });
+  }
+  if (ensureService) {
+    await ensureServiceAvailable({
+      plan,
+      endpoint,
+      getJson,
+      spawnProcess,
+      timeoutMs: Number.isFinite(serviceTimeoutMs) ? serviceTimeoutMs : 10000,
     });
   }
   const request = requestFromPlan(plan);
@@ -108,35 +123,72 @@ async function runServiceManagementCommand(
     deps.stderr.write("service start requires a positive --port value\n");
     return 2;
   }
+  const result = startServiceHost({ plan, port, spawnProcess: deps.spawnProcess });
+  deps.stdout.write(plan.jsonl
+    ? `${JSON.stringify({ type: "result", result })}\n`
+    : `${JSON.stringify(result, null, 2)}\n`);
+  return 0;
+}
+
+async function ensureServiceAvailable(input: {
+  plan: RunServiceCommandPlan;
+  endpoint: string;
+  getJson: (path: string) => Promise<Record<string, unknown>>;
+  spawnProcess: NonNullable<RunServiceCliDeps["spawnProcess"]>;
+  timeoutMs: number;
+}): Promise<void> {
+  if (await serviceHealthy(input.getJson)) return;
+  const port = Number(new URL(input.endpoint).port || 39173);
+  startServiceHost({ plan: input.plan, port, spawnProcess: input.spawnProcess });
+  const started = Date.now();
+  while (Date.now() - started <= input.timeoutMs) {
+    if (await serviceHealthy(input.getJson)) return;
+    await new Promise((resolve) => setTimeout(resolve, 250));
+  }
+  throw new Error(`run service did not become healthy within ${input.timeoutMs}ms`);
+}
+
+async function serviceHealthy(
+  getJson: (path: string) => Promise<Record<string, unknown>>,
+): Promise<boolean> {
+  try {
+    const health = await getJson("/health");
+    return health.ok === true || health.enabled === true || health.agentReady === true;
+  } catch {
+    return false;
+  }
+}
+
+function startServiceHost(input: {
+  plan: RunServiceCommandPlan;
+  port: number;
+  spawnProcess: NonNullable<RunServiceCliDeps["spawnProcess"]>;
+}): Record<string, unknown> {
   const command = String(process.env.FINAGENT_WORKSTATION_SERVICE_START_COMMAND ?? "pnpm");
   const args = process.env.FINAGENT_WORKSTATION_SERVICE_START_ARGS
     ? splitCommandArgs(process.env.FINAGENT_WORKSTATION_SERVICE_START_ARGS)
     : ["exec", "electron-vite", "dev"];
-  const child = deps.spawnProcess(command, args, {
+  const child = input.spawnProcess(command, args, {
     detached: true,
     stdio: "ignore",
     env: {
       ...process.env,
       FINAGENT_WORKSTATION_WORKFLOW_AUTOMATION: "1",
-      FINAGENT_WORKSTATION_WORKFLOW_AUTOMATION_PORT: String(port),
-      ...(plan.uiRuntime ? { FINAGENT_WORKSTATION_UI_RUNTIME: plan.uiRuntime } : {}),
+      FINAGENT_WORKSTATION_WORKFLOW_AUTOMATION_PORT: String(input.port),
+      ...(input.plan.uiRuntime ? { FINAGENT_WORKSTATION_UI_RUNTIME: input.plan.uiRuntime } : {}),
     },
   });
   child.unref?.();
-  const result = {
+  return {
     ok: true,
     kind: "service.started",
     command,
     args,
     pid: child.pid ?? null,
-    endpoint: `http://127.0.0.1:${port}`,
-    uiRuntime: plan.uiRuntime,
+    endpoint: `http://127.0.0.1:${input.port}`,
+    uiRuntime: input.plan.uiRuntime,
     note: "service start launches the workstation app with the run-service HTTP host enabled; poll service status before posting runs",
   };
-  deps.stdout.write(plan.jsonl
-    ? `${JSON.stringify({ type: "result", result })}\n`
-    : `${JSON.stringify(result, null, 2)}\n`);
-  return 0;
 }
 
 export function requestFromPlan(plan: RunServiceCommandPlan): RunServiceRunRequest {
@@ -352,6 +404,10 @@ function stripFlag(argv: string[], flag: string): string[] {
   const index = argv.indexOf(flag);
   if (index < 0) return argv;
   return argv.filter((_, itemIndex) => itemIndex !== index && itemIndex !== index + 1);
+}
+
+function stripBooleanFlag(argv: string[], flag: string): string[] {
+  return argv.filter((item) => item !== flag);
 }
 
 function splitCommandArgs(value: string): string[] {

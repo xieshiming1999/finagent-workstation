@@ -97,7 +97,8 @@ export interface RunServiceCommandPlan {
 export const runServiceCommandHelp =
   "Usage: finagent <run|data|analysis|strategy|execution|workflow|artifact|session|service|capability> [operation] [options]\n" +
   "Common options: --session <new|resume|preload|ephemeral|attached>, " +
-  "--session-id <id>, --ui-runtime <visible|headless|mirror>, --jsonl";
+  "--session-id <id>, --ui-runtime <visible|headless|mirror>, --jsonl, " +
+  "--ensure-service, --service-timeout-ms <ms>";
 
 export function runServiceCapabilityDescriptor(input: {
   runtime: "mobile" | "workstation";

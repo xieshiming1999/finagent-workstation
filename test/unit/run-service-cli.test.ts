@@ -30,6 +30,53 @@ describe("run service CLI", () => {
     expect(writes.join("")).toContain('"type":"result"');
   });
 
+  it("can ensure the service host before a one-shot run", async () => {
+    const writes: string[] = [];
+    const spawned: Array<{ command: string; args: string[]; env: NodeJS.ProcessEnv }> = [];
+    let healthChecks = 0;
+    const code = await runServiceCli(
+      [
+        "run",
+        "今天市场怎么样？",
+        "--jsonl",
+        "--ensure-service",
+        "--service-timeout-ms",
+        "1000",
+        "--endpoint",
+        "http://127.0.0.1:39233",
+      ],
+      {
+        stdout: { write: (chunk: string) => { writes.push(chunk); return true; } },
+        stderr: { write: () => true },
+        spawnProcess: (command, args, options) => {
+          spawned.push({ command, args, env: options.env });
+          return { pid: 23456, unref: () => undefined };
+        },
+        getJson: async (path) => {
+          expect(path).toBe("/health");
+          healthChecks++;
+          if (healthChecks === 1) throw new Error("not running");
+          return { ok: true, enabled: true };
+        },
+        postJson: async (path, body) => {
+          expect(path).toBe("/runs");
+          expect(body.prompt).toBe("今天市场怎么样？");
+          return {
+            runId: "run-ensure",
+            status: "completed",
+            events: [{ type: "run.completed" }],
+          };
+        },
+      },
+    );
+
+    expect(code).toBe(0);
+    expect(spawned).toHaveLength(1);
+    expect(spawned[0].env.FINAGENT_WORKSTATION_WORKFLOW_AUTOMATION_PORT).toBe("39233");
+    expect(healthChecks).toBeGreaterThanOrEqual(2);
+    expect(writes.join("")).toContain('"run-ensure"');
+  });
+
   it("preserves structured category commands as request payload", () => {
     const plan = parseRunServiceCommand([
       "analysis",
