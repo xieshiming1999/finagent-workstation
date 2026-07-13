@@ -157,12 +157,14 @@ def build_evidence_ledger(brief_value, product, events_value, result_value, assi
         payload = event.get("payload") if isinstance(event.get("payload"), dict) else {}
         sequence = event.get("sequence")
         artifact = payload.get("artifact") if isinstance(payload.get("artifact"), dict) else {}
-        artifact_id = payload.get("id") or artifact.get("id")
-        tool_call_id = payload.get("toolCallId") or payload.get("requestId")
+        artifact_id = payload.get("artifactId") or payload.get("id") or artifact.get("id")
+        tool_call_id = payload.get("toolCallId") or payload.get("toolUseId") or payload.get("requestId")
         requirement_id = _assigned_requirement(assignments, sequence, event_type, tool_call_id, artifact_id)
         status = "success"
         if event_type in {"tool.error", "run.failed"} or payload.get("isError") is True:
             status = "error"
+        if requirement_id == "_unmapped" and status == "success" and event_type in {"tool.call", "tool.result"}:
+            continue
         entries.append({
             "id": f"event:{sequence}",
             "requirementId": requirement_id,
@@ -176,8 +178,18 @@ def build_evidence_ledger(brief_value, product, events_value, result_value, assi
                 **({"toolCallId": tool_call_id} if tool_call_id else {}),
                 **({"artifactId": artifact_id} if artifact_id else {}),
             },
-            "preview": _bounded(payload),
+            "preview": _bounded(payload, 4000),
         })
+        if len(entries) == 200:
+            entries.append({
+                "id": "ledger:truncated",
+                "requirementId": "_ledger",
+                "status": "unsupported",
+                "kind": "ledger-limit",
+                "coordinates": {"runId": result.get("runId"), "sessionId": result.get("sessionId")},
+                "preview": "Evidence ledger reached its 200-entry bound; narrow selectors or retrieve artifact detail.",
+            })
+            break
     covered = {entry["requirementId"] for entry in entries if entry["status"] == "success"}
     for requirement in brief["evidenceRequirements"]:
         if requirement["required"] and requirement["id"] not in covered:
