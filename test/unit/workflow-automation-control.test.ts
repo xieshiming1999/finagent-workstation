@@ -1061,6 +1061,14 @@ describe("WorkflowAutomationControl", () => {
       runId,
       status: "completed",
     });
+    const pending = await getJson(server!.port, `/runs/${runId}/pending`);
+    expect(pending.status).toBe(200);
+    expect(pending.json).toMatchObject({
+      ok: true,
+      kind: "run.pending",
+      runId,
+      pendingCount: 0,
+    });
 
     const idle = await getJson(server!.port, "/workflow/idle?timeoutMs=25");
     expect(idle.status).toBe(200);

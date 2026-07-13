@@ -22,6 +22,14 @@ export interface RunServiceResultSnapshot {
   events: RunServiceEventRecord[];
 }
 
+export interface RunServicePendingState {
+  runId: string;
+  status: RunServiceResultSnapshot["status"];
+  pendingInteractions: RunServiceEventRecord[];
+  pendingPermissions: RunServiceEventRecord[];
+  pendingCount: number;
+}
+
 export class RunServiceEventStore {
   private nextSequence = 1;
   private readonly eventsByRun = new Map<string, RunServiceEventRecord[]>();
@@ -90,6 +98,28 @@ export class RunServiceEventStore {
     };
   }
 
+  pending(runId: string): RunServicePendingState {
+    const events = this.events({ runId });
+    const result = this.result(runId);
+    const pendingInteractions = unresolvedEvents(
+      events,
+      "interaction.required",
+      "interaction.resolved",
+    );
+    const pendingPermissions = unresolvedEvents(
+      events,
+      "permission.required",
+      "permission.resolved",
+    );
+    return {
+      runId,
+      status: result.status,
+      pendingInteractions,
+      pendingPermissions,
+      pendingCount: pendingInteractions.length + pendingPermissions.length,
+    };
+  }
+
   private persistEvent(event: RunServiceEventRecord): void {
     if (!this.persistencePath) return;
     mkdirSync(dirname(this.persistencePath), { recursive: true });
@@ -109,6 +139,41 @@ export class RunServiceEventStore {
       this.nextSequence = Math.max(this.nextSequence, parsed.sequence + 1);
     }
   }
+}
+
+function unresolvedEvents(
+  events: RunServiceEventRecord[],
+  requiredType: RunServiceEventType,
+  resolvedType: RunServiceEventType,
+): RunServiceEventRecord[] {
+  const resolvedIds = new Set<string>();
+  let resolvedWithoutId = 0;
+  for (const event of events) {
+    if (event.type !== resolvedType) continue;
+    const id = requestId(event);
+    if (id) resolvedIds.add(id);
+    else resolvedWithoutId++;
+  }
+  const pending: RunServiceEventRecord[] = [];
+  for (const event of events) {
+    if (event.type !== requiredType) continue;
+    const id = requestId(event);
+    if (id) {
+      if (!resolvedIds.has(id)) pending.push(event);
+      continue;
+    }
+    if (resolvedWithoutId > 0) {
+      resolvedWithoutId--;
+      continue;
+    }
+    pending.push(event);
+  }
+  return pending;
+}
+
+function requestId(event: RunServiceEventRecord): string {
+  const value = event.payload?.requestId ?? event.payload?.id;
+  return value == null ? "" : String(value).trim();
 }
 
 function parsePersistedEvent(line: string): RunServiceEventRecord | null {

@@ -59,6 +59,33 @@ describe("run service event store", () => {
     expect(store.result("run-2").status).toBe("running");
   });
 
+  it("exposes unresolved interaction and permission requests", () => {
+    const store = new RunServiceEventStore();
+    store.append({ runId: "run-pending", type: "run.created" });
+    store.append({
+      runId: "run-pending",
+      type: "interaction.required",
+      payload: { requestId: "ask-1", question: "Proceed?" },
+    });
+    store.append({
+      runId: "run-pending",
+      type: "permission.required",
+      payload: { requestId: "perm-1", tool: "Bash" },
+    });
+    store.append({
+      runId: "run-pending",
+      type: "interaction.resolved",
+      payload: { requestId: "ask-1" },
+    });
+
+    const pending = store.pending("run-pending");
+    expect(pending.status).toBe("waiting");
+    expect(pending.pendingInteractions).toHaveLength(0);
+    expect(pending.pendingPermissions).toHaveLength(1);
+    expect(pending.pendingPermissions[0].payload?.requestId).toBe("perm-1");
+    expect(pending.pendingCount).toBe(1);
+  });
+
   it("keeps run streams isolated", () => {
     const store = new RunServiceEventStore();
     store.append({ runId: "run-a", type: "run.created" });

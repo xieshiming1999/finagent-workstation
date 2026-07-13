@@ -384,6 +384,14 @@ export class WorkflowAutomationControl {
     return this.runService.eventStore.result(runId);
   }
 
+  runServicePending(runId: string): Record<string, unknown> {
+    return {
+      ok: true,
+      kind: "run.pending",
+      ...this.runService.eventStore.pending(runId),
+    };
+  }
+
   private async runServicePromptRunner(
     request: Required<Pick<RunServiceRunRequest, "prompt">> & RunServiceRunRequest,
   ) {
@@ -1296,6 +1304,15 @@ async function handleRequest(
         res,
         200,
         control.runServiceResult(decodeURIComponent(runResultMatch[1])),
+      );
+      return;
+    }
+    const runPendingMatch = url.pathname.match(/^\/runs\/([^/]+)\/pending$/);
+    if (runPendingMatch) {
+      writeJson(
+        res,
+        200,
+        control.runServicePending(decodeURIComponent(runPendingMatch[1])),
       );
       return;
     }

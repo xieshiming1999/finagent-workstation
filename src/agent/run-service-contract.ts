@@ -114,6 +114,7 @@ export function runServiceCapabilityDescriptor(input: {
     "POST /runs",
     "GET /runs/{runId}/events?after={sequence}",
     "GET /runs/{runId}/result",
+    "GET /runs/{runId}/pending",
     "POST /runs/{runId}/responses",
     ...(input.supportsPermissionResponse
       ? ["POST /runs/{runId}/permissions"]
@@ -168,6 +169,7 @@ export function runServiceAdapterDescriptor(input: {
     operationDescriptor("finagent.workflow.run", "POST /runs", "Start a run with prompt, session mode, UI runtime, and optional structured payload."),
     operationDescriptor("finagent.workflow.events", "GET /runs/{runId}/events?after={sequence}", "Replay typed run events after a sequence cursor."),
     operationDescriptor("finagent.workflow.result", "GET /runs/{runId}/result", "Fetch the final run snapshot with answer, trace, artifacts, and errors."),
+    operationDescriptor("finagent.workflow.pending", "GET /runs/{runId}/pending", "Inspect pending AskUserQuestion and permission requests for a run."),
     operationDescriptor("finagent.workflow.answer", "POST /runs/{runId}/responses", "Answer a pending AskUserQuestion with an explicit caller-selected value."),
     ...(input.supportsPermissionResponse
       ? [operationDescriptor("finagent.workflow.permission", "POST /runs/{runId}/permissions", "Resolve a pending permission request with an explicit approve/deny decision.")]

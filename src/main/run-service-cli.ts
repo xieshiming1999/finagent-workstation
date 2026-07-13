@@ -228,6 +228,13 @@ async function handleStdioLine(
       input.stdout.write(`${JSON.stringify({ id, ok: true, result })}\n`);
       return;
     }
+    if (method === "pending") {
+      const runId = String(params.runId ?? "");
+      if (!runId) throw new Error("pending requires params.runId");
+      const result = await input.getJson(`/runs/${encodeURIComponent(runId)}/pending`);
+      input.stdout.write(`${JSON.stringify({ id, ok: true, result })}\n`);
+      return;
+    }
     if (method === "capability") {
       const result = await input.getJson("/runs/capabilities");
       input.stdout.write(`${JSON.stringify({ id, ok: true, result })}\n`);
