@@ -1332,6 +1332,24 @@ describe("WorkflowAutomationControl", () => {
       runId: streamedRunId,
       state: { terminal: true },
     });
+    const typedAdmission = await postJson(server!.port, "/runs/start", {
+      contract: "finagent.finance-operation.v1",
+      category: "analysis",
+      operation: "run",
+      arguments: { subject: "600519", question: "Summarize reusable evidence" },
+      sessionMode: "new",
+      uiRuntime: "visible",
+    });
+    expect(typedAdmission.status).toBe(202);
+    expect(typedAdmission.json).toMatchObject({ kind: "run.accepted" });
+    const typedStream = await fetch(
+      `http://127.0.0.1:${server!.port}/runs/${typedAdmission.json.runId}/stream`,
+    );
+    expect(typedStream.status).toBe(200);
+    await typedStream.text();
+    const typedResult = await getJson(server!.port, `/runs/${typedAdmission.json.runId}/result`);
+    expect(typedResult.status).toBe(200);
+    expect(typedResult.json).toMatchObject({ status: "completed" });
     const pending = await getJson(server!.port, `/runs/${runId}/pending`);
     expect(pending.status).toBe(200);
     expect(pending.json).toMatchObject({

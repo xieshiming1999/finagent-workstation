@@ -110,6 +110,17 @@ describe("run service contract", () => {
     expect(descriptor.routes).toContain("GET /artifacts");
     expect(descriptor.routes).toContain("GET /artifacts/{artifactId}");
     expect(descriptor.routes).toContain("POST /runs/{runId}/permissions");
+    expect(descriptor.externalFinance).toMatchObject({
+      contract: "finagent.external-capabilities.v1",
+      runtime: "workstation",
+      operationEnvelope: "finagent.finance-operation.v1",
+    });
+    expect((descriptor.externalFinance as { operations: unknown[] }).operations).toEqual(
+      expect.arrayContaining([
+        expect.objectContaining({ id: "analysis.run", resultContract: "analysis-evidence-v1" }),
+        expect.objectContaining({ id: "execution.real", availability: "unavailable" }),
+      ]),
+    );
   });
 
   it("describes code-agent adapter operations", () => {

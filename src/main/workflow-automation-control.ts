@@ -12,6 +12,7 @@ import { join } from "path";
 import type { Agent } from "../agent/agent";
 import type { AgentEvent } from "../agent/agent-event";
 import type { Message } from "../agent/message";
+import { promptForExternalFinanceOperation } from "../agent/external-finance-contract";
 import {
   RunServiceController,
   type RunServiceRunRequest,
@@ -1618,7 +1619,26 @@ async function handleRequest(
   }
   if (req.method === "POST" && (req.url === "/runs" || req.url === "/runs/start")) {
     const body = await readJsonBody(req);
-    const prompt = String(body.prompt ?? "").trim();
+    let prompt = String(body.prompt ?? "").trim();
+    const contract = String(body.contract ?? "").trim();
+    const payload = body.payload && typeof body.payload === "object" && !Array.isArray(body.payload)
+      ? body.payload as Record<string, unknown>
+      : {};
+    if (!prompt && contract === "finagent.finance-operation.v1") {
+      try {
+        prompt = promptForExternalFinanceOperation({
+          runtime: "workstation",
+          category: String(body.category ?? "").trim(),
+          operation: String(body.operation ?? "").trim(),
+          arguments: body.arguments && typeof body.arguments === "object" && !Array.isArray(body.arguments)
+            ? body.arguments as Record<string, unknown>
+            : payload,
+        });
+      } catch (error) {
+        writeJson(res, 400, { error: error instanceof Error ? error.message : String(error) });
+        return;
+      }
+    }
     if (!prompt) {
       writeJson(res, 400, { error: "prompt is required" });
       return;
@@ -1635,10 +1655,7 @@ async function handleRequest(
           : String(body.uiRuntime) as RunServiceRunRequest["uiRuntime"],
       sessionId: body.sessionId == null ? undefined : String(body.sessionId),
       timeoutMs: asOptionalNumber(body.timeoutMs),
-      payload:
-        body.payload && typeof body.payload === "object" && !Array.isArray(body.payload)
-          ? body.payload as Record<string, unknown>
-          : undefined,
+      payload,
     };
     if (req.url === "/runs/start") {
       writeJson(res, 202, control.startRunServicePrompt(runRequest));

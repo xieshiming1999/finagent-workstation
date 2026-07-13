@@ -1,0 +1,4 @@
+interface:
+  display_name: "FinAgent Workstation Service"
+  short_description: "Use workstation finance workflows through typed local APIs"
+  default_prompt: "Use FinAgent Workstation to complete this finance task through its typed run service, streaming interactions and returning provenance and artifacts."

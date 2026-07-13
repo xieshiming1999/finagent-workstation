@@ -1,3 +1,5 @@
+import { externalFinanceCapabilityDescriptor } from "./external-finance-contract";
+
 export type RunServiceSessionMode =
   | "new"
   | "resume"
@@ -162,6 +164,7 @@ export function runServiceCapabilityDescriptor(input: {
       permissionResponse: input.supportsPermissionResponse ?? false,
       hiddenAutoAnswer: false,
     },
+    externalFinance: externalFinanceCapabilityDescriptor(input.runtime),
     notes: input.notes ?? [],
   };
 }
@@ -206,6 +209,7 @@ export function runServiceAdapterDescriptor(input: {
     runtime: input.runtime,
     transports: capability.transports,
     operations,
+    externalFinance: externalFinanceCapabilityDescriptor(input.runtime),
     notes: [
       "The packaged finagent-run-service-mcp stdio executable maps these operations to the run-service HTTP contract.",
       "Callers must handle AskUserQuestion and permission replies explicitly; no hidden answer selection is provided.",
