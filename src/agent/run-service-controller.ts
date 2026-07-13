@@ -28,6 +28,8 @@ export interface RunServicePromptRunResult {
   sessionId?: string;
   turnId?: string;
   error?: string;
+  errorCategory?: string;
+  recovery?: string;
   toolCalls?: Array<Record<string, unknown>>;
   toolResults?: Array<Record<string, unknown>>;
   uiArtifacts?: Array<Record<string, unknown>>;
@@ -151,6 +153,8 @@ export class RunServiceController {
         payload: {
           finalAnswer: result.finalAnswer,
           ...(result.error ? { error: result.error } : {}),
+          ...(result.errorCategory ? { category: result.errorCategory } : {}),
+          ...(result.recovery ? { recovery: result.recovery } : {}),
           ...(result.provenance ? { provenance: result.provenance } : {}),
         },
       });

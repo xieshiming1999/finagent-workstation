@@ -478,11 +478,6 @@ export class WorkflowAutomationControl {
           provenance: { uiRuntime },
         };
       }
-      const injectedFailure = this.nextRunServiceFailure;
-      if (injectedFailure) {
-        this.nextRunServiceFailure = undefined;
-        throw new Error(`RUN_SERVICE_TEST_AGENT_FAILURE: deterministic ${injectedFailure} failure`);
-      }
       const sessionError = this.prepareRunServiceSession(request);
       if (sessionError) {
         return {
@@ -490,6 +485,19 @@ export class WorkflowAutomationControl {
           finalAnswer: "",
           sessionId: this.deps.getAgent()?.session.id,
           error: sessionError,
+          provenance: { uiRuntime },
+        };
+      }
+      const injectedFailure = this.nextRunServiceFailure;
+      if (injectedFailure) {
+        this.nextRunServiceFailure = undefined;
+        return {
+          ok: false,
+          finalAnswer: "",
+          sessionId: this.deps.getAgent()?.session.id,
+          error: `RUN_SERVICE_TEST_AGENT_FAILURE: deterministic ${injectedFailure} failure`,
+          errorCategory: "agent.runtime",
+          recovery: "Resume the same session after the one-shot failure is cleared.",
           provenance: { uiRuntime },
         };
       }
@@ -2770,6 +2778,16 @@ function runServiceResultSummary(
     status: result.status,
     ...(result.sessionId ? { sessionId: result.sessionId } : {}),
     ...(created?.createdAt ? { createdAt: created.createdAt } : {}),
+    ...(created?.payload?.sessionMode != null
+      ? { sessionMode: String(created.payload.sessionMode) }
+      : {}),
+    ...(created?.payload?.uiRuntime != null
+      ? { uiRuntime: String(created.payload.uiRuntime) }
+      : {}),
+    ...(requestPayload && typeof requestPayload === "object" &&
+      (requestPayload as Record<string, unknown>).scenarioId != null
+      ? { correlationId: String((requestPayload as Record<string, unknown>).scenarioId) }
+      : {}),
     ...(entryMode != null ? { entryMode: String(entryMode) } : {}),
     ...(result.finalAnswer != null ? { finalAnswer: result.finalAnswer } : {}),
     ...(result.error != null ? { error: result.error } : {}),

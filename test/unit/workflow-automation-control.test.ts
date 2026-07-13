@@ -1548,6 +1548,7 @@ describe("WorkflowAutomationControl", () => {
     });
     expect(failed.json).toMatchObject({
       status: "failed",
+      sessionId: expect.any(String),
       error: expect.stringContaining("RUN_SERVICE_TEST_AGENT_FAILURE"),
       errors: [expect.objectContaining({
         payload: expect.objectContaining({ category: "agent.runtime" }),
@@ -1557,11 +1558,13 @@ describe("WorkflowAutomationControl", () => {
     const recovered = await postJson(server!.port, "/runs", {
       prompt: "recover now",
       uiRuntime: "visible",
-      sessionMode: "new",
+      sessionMode: "resume",
+      sessionId: failed.json.sessionId,
     });
     expect(recovered.json).toMatchObject({
       status: "completed",
       finalAnswer: "recovered",
+      sessionId: failed.json.sessionId,
     });
   });
 
