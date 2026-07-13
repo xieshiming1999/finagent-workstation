@@ -59,6 +59,37 @@ describe("run service event store", () => {
     expect(store.result("run-2").status).toBe("running");
   });
 
+  it("projects typed final-result evidence from the event trace", () => {
+    const store = new RunServiceEventStore();
+    const add = (type: Parameters<typeof store.append>[0]["type"], payload = {}) =>
+      store.append({ runId: "run-evidence", type, payload });
+
+    add("run.created", { category: "strategy" });
+    add("tool.call", { tool: "DataStore" });
+    add("tool.result", { tool: "DataStore" });
+    add("interaction.required", { requestId: "ask-1" });
+    add("interaction.resolved", { requestId: "ask-1" });
+    add("permission.required", { requestId: "perm-1" });
+    add("permission.resolved", { requestId: "perm-1" });
+    add("ui.operation.completed", { operation: "capture" });
+    add("artifact.created", { artifactId: "shot-1" });
+    add("tool.result", { tool: "Bash", isError: true });
+    add("run.completed", { finalAnswer: "done" });
+
+    const result = store.result("run-evidence");
+    expect(result.trace).toHaveLength(11);
+    expect(result.toolCalls).toHaveLength(1);
+    expect(result.toolResults).toHaveLength(2);
+    expect(result.interactions).toHaveLength(2);
+    expect(result.permissions).toHaveLength(2);
+    expect(result.uiArtifacts).toHaveLength(2);
+    expect(result.errors).toHaveLength(1);
+    expect(result.provenance).toMatchObject({
+      source: "run-service-events",
+      request: { category: "strategy" },
+    });
+  });
+
   it("exposes unresolved interaction and permission requests", () => {
     const store = new RunServiceEventStore();
     store.append({ runId: "run-pending", type: "run.created" });

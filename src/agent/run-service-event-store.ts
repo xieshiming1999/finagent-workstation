@@ -20,6 +20,14 @@ export interface RunServiceResultSnapshot {
   finalAnswer?: string;
   error?: string;
   events: RunServiceEventRecord[];
+  trace: RunServiceEventRecord[];
+  toolCalls: RunServiceEventRecord[];
+  toolResults: RunServiceEventRecord[];
+  interactions: RunServiceEventRecord[];
+  permissions: RunServiceEventRecord[];
+  uiArtifacts: RunServiceEventRecord[];
+  errors: RunServiceEventRecord[];
+  provenance: Record<string, unknown>;
 }
 
 export interface RunServicePendingState {
@@ -86,7 +94,7 @@ export class RunServiceEventStore {
 
   result(runId: string): RunServiceResultSnapshot {
     const events = this.events({ runId });
-    if (events.length === 0) return { runId, status: "missing", events: [] };
+    if (events.length === 0) return resultSnapshot(runId, "missing", []);
     const terminal = [...events].reverse().find(isTerminal);
     const last = terminal ?? events[events.length - 1];
     const status = terminal
@@ -94,17 +102,14 @@ export class RunServiceEventStore {
       : hasPending(events)
         ? "waiting"
         : "running";
-    return {
-      runId,
-      status,
+    return resultSnapshot(runId, status, events, {
       ...(last.sessionId ? { sessionId: last.sessionId } : {}),
       ...(last.turnId ? { turnId: last.turnId } : {}),
       ...(terminal?.payload?.finalAnswer != null
         ? { finalAnswer: String(terminal.payload.finalAnswer) }
         : {}),
       ...(terminal?.payload?.error != null ? { error: String(terminal.payload.error) } : {}),
-      events,
-    };
+    });
   }
 
   pending(runId: string): RunServicePendingState {
@@ -148,6 +153,46 @@ export class RunServiceEventStore {
       this.nextSequence = Math.max(this.nextSequence, parsed.sequence + 1);
     }
   }
+}
+
+function resultSnapshot(
+  runId: string,
+  status: RunServiceResultSnapshot["status"],
+  events: RunServiceEventRecord[],
+  fields: Pick<RunServiceResultSnapshot, "sessionId" | "turnId" | "finalAnswer" | "error"> = {},
+): RunServiceResultSnapshot {
+  const ofType = (...types: RunServiceEventType[]) =>
+    events.filter((event) => types.includes(event.type));
+  const created = ofType("run.created").at(-1);
+  return {
+    runId,
+    status,
+    ...fields,
+    events,
+    trace: events,
+    toolCalls: ofType("tool.call"),
+    toolResults: ofType("tool.result"),
+    interactions: ofType("interaction.required", "interaction.resolved"),
+    permissions: ofType("permission.required", "permission.resolved"),
+    uiArtifacts: ofType(
+      "ui.operation.started",
+      "ui.operation.completed",
+      "artifact.created",
+      "artifact.updated",
+    ),
+    errors: events.filter((event) =>
+      event.type === "run.failed" ||
+      (event.type === "tool.result" && event.payload?.isError === true)),
+    provenance: {
+      source: "run-service-events",
+      runId,
+      ...(fields.sessionId ? { sessionId: fields.sessionId } : {}),
+      ...(fields.turnId ? { turnId: fields.turnId } : {}),
+      ...(created?.payload ? { request: created.payload } : {}),
+      firstSequence: events.at(0)?.sequence ?? null,
+      lastSequence: events.at(-1)?.sequence ?? null,
+    },
+  };
 }
 
 function unresolvedEvents(
