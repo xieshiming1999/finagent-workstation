@@ -165,6 +165,7 @@ def build_evidence_ledger(brief_value, product, events_value, result_value, assi
             status = "error"
         if requirement_id == "_unmapped" and status == "success" and event_type in {"tool.call", "tool.result"}:
             continue
+        evidence_metadata = _evidence_metadata(payload, artifact_id)
         entries.append({
             "id": f"event:{sequence}",
             "requirementId": requirement_id,
@@ -179,6 +180,7 @@ def build_evidence_ledger(brief_value, product, events_value, result_value, assi
                 **({"artifactId": artifact_id} if artifact_id else {}),
             },
             "preview": _bounded(payload, 4000),
+            **({"evidenceMetadata": evidence_metadata} if evidence_metadata else {}),
         })
         if len(entries) == 200:
             entries.append({
@@ -298,6 +300,42 @@ def _assigned_requirement(assignments, sequence, event_type, tool_call_id, artif
 def _bounded(value, limit=12000):
     text = json.dumps(value, ensure_ascii=False, separators=(",", ":"))
     return value if len(text) <= limit else {"truncated": True, "preview": text[:limit]}
+
+
+def _evidence_metadata(payload, artifact_id=None):
+    result = payload.get("result")
+    if isinstance(result, str):
+        try:
+            result = json.loads(result)
+        except json.JSONDecodeError:
+            result = None
+    if not isinstance(result, dict):
+        result = {}
+
+    coverage = result.get("sourceCoverage")
+    coverage = coverage if isinstance(coverage, dict) else {}
+    metadata = {}
+    fields = {
+        "financeContract": result.get("contract"),
+        "interfaceId": result.get("interfaceId"),
+        "canonicalSchema": result.get("canonicalSchema"),
+        "canonicalTable": result.get("canonicalTable"),
+        "provider": result.get("provider") or result.get("source"),
+        "sourceDataTime": result.get("sourceDataTime") or coverage.get("sourceDataTime"),
+        "fetchedAt": result.get("fetchedAt") or coverage.get("fetchedAt"),
+        "cacheStatus": result.get("cacheStatus") or coverage.get("cacheStatus"),
+        "cacheDecision": result.get("cacheDecision"),
+        "artifactId": artifact_id,
+        "stableRef": payload.get("stableRef"),
+        "artifactKind": payload.get("kind"),
+    }
+    for key, value in fields.items():
+        if isinstance(value, (str, int, float, bool)) and str(value):
+            metadata[key] = value
+    sources = result.get("sourceProviders") or coverage.get("sources")
+    if isinstance(sources, list):
+        metadata["sourceProviders"] = [str(item) for item in sources[:20]]
+    return metadata
 
 
 def _contract(value, expected):
