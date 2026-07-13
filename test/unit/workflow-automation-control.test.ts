@@ -1035,6 +1035,14 @@ describe("WorkflowAutomationControl", () => {
     });
     expect(unsupported.status).toBe("failed");
     expect(unsupported.error).toContain("RUN_SERVICE_SESSION_MODE_UNSUPPORTED");
+
+    const unsupportedUi = await control.runServicePrompt({
+      prompt: "render without a backend",
+      sessionMode: "attached",
+      uiRuntime: "headless",
+    });
+    expect(unsupportedUi.status).toBe("failed");
+    expect(unsupportedUi.error).toContain("RUN_SERVICE_UI_RUNTIME_UNSUPPORTED");
   });
 
   it("serves local HTTP control endpoints when explicitly enabled", async () => {
@@ -1080,7 +1088,7 @@ describe("WorkflowAutomationControl", () => {
 
     const run = await postJson(server!.port, "/runs", {
       prompt: "use the run service path",
-      uiRuntime: "headless",
+      uiRuntime: "visible",
       sessionMode: "new",
     });
     expect(run.status).toBe(200);

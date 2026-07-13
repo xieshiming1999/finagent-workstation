@@ -395,6 +395,16 @@ export class WorkflowAutomationControl {
   private async runServicePromptRunner(
     request: Required<Pick<RunServiceRunRequest, "prompt">> & RunServiceRunRequest,
   ) {
+    const uiRuntime = request.uiRuntime ?? "visible";
+    if (uiRuntime !== "visible") {
+      return {
+        ok: false,
+        finalAnswer: "",
+        sessionId: this.deps.getAgent()?.session.id,
+        error: `RUN_SERVICE_UI_RUNTIME_UNSUPPORTED: ${uiRuntime} requires a service-owned UI backend; retry with uiRuntime visible`,
+        provenance: { uiRuntime },
+      };
+    }
     const sessionError = this.prepareRunServiceSession(request);
     if (sessionError) {
       return {
@@ -1270,6 +1280,7 @@ async function handleRequest(
         notes: [
           "CLI and stdio currently connect to an existing loopback HTTP host.",
           "Permission replies are exposed through structured run-service routes and stdio methods.",
+          "Only visible UI runtime is currently operational; headless and mirror fail explicitly until service-owned backends are implemented.",
         ],
       }),
     );
